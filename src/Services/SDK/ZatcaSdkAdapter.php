@@ -1,14 +1,14 @@
 <?php
 
-namespace Asas\Zatca\Services\SDK;
+namespace Zatca\Services\SDK;
 
-use Asas\Zatca\Contracts\ZatcaSdkInterface;
-use Asas\Zatca\DTOs\SdkWorkspace;
-use Asas\Zatca\Enums\ZatcaEnvironment;
-use Asas\Zatca\Exceptions\ZatcaSdkProcessException;
-use Asas\Zatca\Services\SDK\OutputParsers\V3_4_8\CsrOutputParser;
-use Asas\Zatca\Services\SDK\OutputParsers\V3_4_8\HashOutputParser;
-use Asas\Zatca\Services\SDK\OutputParsers\V3_4_8\ValidationOutputParser;
+use Zatca\Contracts\ZatcaSdkInterface;
+use Zatca\DTOs\SdkWorkspace;
+use Zatca\Enums\ZatcaEnvironment;
+use Zatca\Exceptions\ZatcaSdkProcessException;
+use Zatca\Services\SDK\OutputParsers\V3_4_8\CsrOutputParser;
+use Zatca\Services\SDK\OutputParsers\V3_4_8\HashOutputParser;
+use Zatca\Services\SDK\OutputParsers\V3_4_8\ValidationOutputParser;
 use Illuminate\Support\Facades\Config;
 use Symfony\Component\Process\Process;
 

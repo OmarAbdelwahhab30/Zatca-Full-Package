@@ -1,20 +1,20 @@
 <?php
 
-namespace Asas\Zatca\Services\Execute;
+namespace Zatca\Services\Execute;
 
-use Asas\Zatca\Contracts\InvoiceSourceContract;
-use Asas\Zatca\Contracts\OwnerResolverInterface;
-use Asas\Zatca\Contracts\ZatcaSdkInterface;
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Enums\ZatcaInvoiceStatus;
-use Asas\Zatca\Events\ZatcaInvoiceGenerated;
-use Asas\Zatca\Exceptions\ZatcaCredentialsMissingException;
-use Asas\Zatca\Models\ZatcaInvoice;
-use Asas\Zatca\Services\Invoice\XmlGeneratorFactory;
-use Asas\Zatca\Services\Security\ZatcaSigningKeyProvider;
-use Asas\Zatca\State\EgsRegistry;
-use Asas\Zatca\State\ProductionInvoiceCounterManager;
-use Asas\Zatca\State\ProductionPreviousInvoiceHashManager;
+use Zatca\Contracts\InvoiceSourceContract;
+use Zatca\Contracts\OwnerResolverInterface;
+use Zatca\Contracts\ZatcaSdkInterface;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Enums\ZatcaInvoiceStatus;
+use Zatca\Events\ZatcaInvoiceGenerated;
+use Zatca\Exceptions\ZatcaCredentialsMissingException;
+use Zatca\Models\ZatcaInvoice;
+use Zatca\Services\Invoice\XmlGeneratorFactory;
+use Zatca\Services\Security\ZatcaSigningKeyProvider;
+use Zatca\State\EgsRegistry;
+use Zatca\State\ProductionInvoiceCounterManager;
+use Zatca\State\ProductionPreviousInvoiceHashManager;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;

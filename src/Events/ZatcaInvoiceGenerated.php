@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Events;
+namespace Zatca\Events;
 
-use Asas\Zatca\Models\ZatcaInvoice;
+use Zatca\Models\ZatcaInvoice;
 
 /**
  * Fired right after a production invoice is signed and stored, before

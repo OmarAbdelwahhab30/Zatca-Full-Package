@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\DTOs;
+namespace Zatca\DTOs;
 
 /** Absolute paths for one isolated SDK invocation workspace. */
 class SdkWorkspace

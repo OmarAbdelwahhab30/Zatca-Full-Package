@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\Contracts;
+namespace Zatca\Contracts;
 
 /** One implementation per API version — maps package DTOs to the wire request body. */
 interface RequestMapperInterface

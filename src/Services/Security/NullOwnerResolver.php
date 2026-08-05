@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Services\Security;
+namespace Zatca\Services\Security;
 
-use Asas\Zatca\Contracts\OwnerResolverInterface;
+use Zatca\Contracts\OwnerResolverInterface;
 
 class NullOwnerResolver implements OwnerResolverInterface
 {

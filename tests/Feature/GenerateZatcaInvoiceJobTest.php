@@ -1,19 +1,19 @@
 <?php
 
-namespace Asas\Zatca\Tests\Feature;
+namespace Zatca\Tests\Feature;
 
-use Asas\Zatca\Contracts\InvoiceSourceContract;
-use Asas\Zatca\Contracts\InvoiceSourceResolverContract;
-use Asas\Zatca\Contracts\ZatcaSdkInterface;
-use Asas\Zatca\DTOs\InvoiceSourceReference;
-use Asas\Zatca\DTOs\ZatcaInvoiceData;
-use Asas\Zatca\DTOs\ZatcaInvoiceLine;
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Enums\ZatcaEnvironment;
-use Asas\Zatca\Jobs\GenerateZatcaInvoiceJob;
-use Asas\Zatca\Jobs\ReportZatcaInvoiceJob;
-use Asas\Zatca\Services\Security\ZatcaCredentialStore;
-use Asas\Zatca\Tests\TestCase;
+use Zatca\Contracts\InvoiceSourceContract;
+use Zatca\Contracts\InvoiceSourceResolverContract;
+use Zatca\Contracts\ZatcaSdkInterface;
+use Zatca\DTOs\InvoiceSourceReference;
+use Zatca\DTOs\ZatcaInvoiceData;
+use Zatca\DTOs\ZatcaInvoiceLine;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Enums\ZatcaEnvironment;
+use Zatca\Jobs\GenerateZatcaInvoiceJob;
+use Zatca\Jobs\ReportZatcaInvoiceJob;
+use Zatca\Services\Security\ZatcaCredentialStore;
+use Zatca\Tests\TestCase;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\Bus;
 
@@ -55,7 +55,7 @@ class GenerateZatcaInvoiceJobTest extends TestCase
         Bus::fake([ReportZatcaInvoiceJob::class]);
 
         $job = new GenerateZatcaInvoiceJob('fake-order-type', '9101', self::EGS);
-        $job->handle(app(\Asas\Zatca\Services\Execute\ProductionInvoiceOrchestrator::class), app(InvoiceSourceContract::class), app(InvoiceSourceResolverContract::class));
+        $job->handle(app(\Zatca\Services\Execute\ProductionInvoiceOrchestrator::class), app(InvoiceSourceContract::class), app(InvoiceSourceResolverContract::class));
 
         $this->assertDatabaseHas('zatca_invoices', ['source_reference' => 'order:9101']);
         Bus::assertDispatched(ReportZatcaInvoiceJob::class);
@@ -76,7 +76,7 @@ class GenerateZatcaInvoiceJobTest extends TestCase
 
         $job = new GenerateZatcaInvoiceJob('App\\Models\\DeletedOrder', '404', self::EGS);
         $job->handle(
-            app(\Asas\Zatca\Services\Execute\ProductionInvoiceOrchestrator::class),
+            app(\Zatca\Services\Execute\ProductionInvoiceOrchestrator::class),
             app(InvoiceSourceContract::class),
             app(InvoiceSourceResolverContract::class)
         );

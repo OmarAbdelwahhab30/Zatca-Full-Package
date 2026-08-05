@@ -1,10 +1,10 @@
 <?php
 
-namespace Asas\Zatca\Models;
+namespace Zatca\Models;
 
-use Asas\Zatca\Enums\ZatcaCertificateState;
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Enums\ZatcaEnvironment;
+use Zatca\Enums\ZatcaCertificateState;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Enums\ZatcaEnvironment;
 use Illuminate\Database\Eloquent\Model;
 
 class ZatcaEgsCredential extends Model

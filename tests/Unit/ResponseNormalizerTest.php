@@ -1,10 +1,10 @@
 <?php
 
-namespace Asas\Zatca\Tests\Unit;
+namespace Zatca\Tests\Unit;
 
-use Asas\Zatca\Enums\ZatcaResponseStatus;
-use Asas\Zatca\Services\Connectors\V2\ResponseNormalizer;
-use Asas\Zatca\Tests\TestCase;
+use Zatca\Enums\ZatcaResponseStatus;
+use Zatca\Services\Connectors\V2\ResponseNormalizer;
+use Zatca\Tests\TestCase;
 use GuzzleHttp\Psr7\Response;
 
 /** Fixtures copied verbatim from ZATCA's own Sandbox Swagger docs — not invented shapes. */

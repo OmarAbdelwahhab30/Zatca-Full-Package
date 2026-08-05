@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\Exceptions;
+namespace Zatca\Exceptions;
 
 use RuntimeException;
 

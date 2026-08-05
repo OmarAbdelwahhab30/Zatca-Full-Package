@@ -1,10 +1,10 @@
 <?php
 
-namespace Asas\Zatca\Console\Commands;
+namespace Zatca\Console\Commands;
 
-use Asas\Zatca\Enums\ZatcaCertificateState;
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Services\Certificate\CertificateLifecycleManager;
+use Zatca\Enums\ZatcaCertificateState;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Services\Certificate\CertificateLifecycleManager;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Config;
 

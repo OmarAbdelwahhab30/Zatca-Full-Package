@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\DTOs;
+namespace Zatca\DTOs;
 
-use Asas\Zatca\Enums\ZatcaCertificateState;
+use Zatca\Enums\ZatcaCertificateState;
 use DateTimeImmutable;
 
 /** Decrypted credential bundle for one egs_identifier/environment/credential_type. */

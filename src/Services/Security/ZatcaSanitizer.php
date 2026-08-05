@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\Services\Security;
+namespace Zatca\Services\Security;
 
 /**
  * Single shared redaction point used by every place the package turns raw

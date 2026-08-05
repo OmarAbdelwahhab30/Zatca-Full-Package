@@ -1,9 +1,9 @@
 <?php
 
-namespace Asas\Zatca\Services\Invoice;
+namespace Zatca\Services\Invoice;
 
-use Asas\Zatca\Exceptions\ZatcaException;
-use Asas\Zatca\Services\Invoice\XmlGenerators\V2\SimplifiedInvoiceXmlGenerator;
+use Zatca\Exceptions\ZatcaException;
+use Zatca\Services\Invoice\XmlGenerators\V2\SimplifiedInvoiceXmlGenerator;
 use Illuminate\Support\Facades\Config;
 
 /**

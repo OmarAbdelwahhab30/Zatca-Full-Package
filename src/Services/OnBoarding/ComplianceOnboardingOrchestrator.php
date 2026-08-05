@@ -1,22 +1,22 @@
 <?php
 
-namespace Asas\Zatca\Services\OnBoarding;
+namespace Zatca\Services\OnBoarding;
 
-use Asas\Zatca\Contracts\ZatcaSdkInterface;
-use Asas\Zatca\Enums\ZatcaCertificateState;
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Exceptions\ZatcaException;
-use Asas\Zatca\Models\ZatcaComplianceDocument;
-use Asas\Zatca\Services\Connectors\ConnectorFactory;
-use Asas\Zatca\Services\Invoice\ComplianceTestInvoiceDataFactory;
-use Asas\Zatca\Services\Invoice\XmlGeneratorFactory;
-use Asas\Zatca\Services\SDK\ZatcaSdkFingerprint;
-use Asas\Zatca\Services\Security\CsrGenerator;
-use Asas\Zatca\Services\Security\ZatcaCredentialStore;
-use Asas\Zatca\Services\Security\ZatcaSigningKeyProvider;
-use Asas\Zatca\State\ComplianceInvoiceCounterManager;
-use Asas\Zatca\State\CompliancePreviousInvoiceHashManager;
-use Asas\Zatca\State\EgsRegistry;
+use Zatca\Contracts\ZatcaSdkInterface;
+use Zatca\Enums\ZatcaCertificateState;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Exceptions\ZatcaException;
+use Zatca\Models\ZatcaComplianceDocument;
+use Zatca\Services\Connectors\ConnectorFactory;
+use Zatca\Services\Invoice\ComplianceTestInvoiceDataFactory;
+use Zatca\Services\Invoice\XmlGeneratorFactory;
+use Zatca\Services\SDK\ZatcaSdkFingerprint;
+use Zatca\Services\Security\CsrGenerator;
+use Zatca\Services\Security\ZatcaCredentialStore;
+use Zatca\Services\Security\ZatcaSigningKeyProvider;
+use Zatca\State\ComplianceInvoiceCounterManager;
+use Zatca\State\CompliancePreviousInvoiceHashManager;
+use Zatca\State\EgsRegistry;
 use Illuminate\Support\Str;
 
 /**

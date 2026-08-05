@@ -1,13 +1,13 @@
 <?php
 
-namespace Asas\Zatca\Tests\Feature;
+namespace Zatca\Tests\Feature;
 
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Enums\ZatcaEnvironment;
-use Asas\Zatca\Exceptions\ZatcaCredentialsMissingException;
-use Asas\Zatca\Models\ZatcaEgsCredential;
-use Asas\Zatca\Services\Security\ZatcaCredentialStore;
-use Asas\Zatca\Tests\TestCase;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Enums\ZatcaEnvironment;
+use Zatca\Exceptions\ZatcaCredentialsMissingException;
+use Zatca\Models\ZatcaEgsCredential;
+use Zatca\Services\Security\ZatcaCredentialStore;
+use Zatca\Tests\TestCase;
 
 class CredentialStoreTest extends TestCase
 {

@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\DTOs;
+namespace Zatca\DTOs;
 
-use Asas\Zatca\Enums\ZatcaResponseStatus;
+use Zatca\Enums\ZatcaResponseStatus;
 
 /**
  * Shared shape for every ZATCA API response. Concrete payload DTOs

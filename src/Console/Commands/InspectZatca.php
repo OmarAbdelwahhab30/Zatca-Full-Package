@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Console\Commands;
+namespace Zatca\Console\Commands;
 
-use Asas\Zatca\Services\Diagnostics\ZatcaInspector;
+use Zatca\Services\Diagnostics\ZatcaInspector;
 use Illuminate\Console\Command;
 
 class InspectZatca extends Command

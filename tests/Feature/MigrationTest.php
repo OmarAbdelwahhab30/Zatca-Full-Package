@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Tests\Feature;
+namespace Zatca\Tests\Feature;
 
-use Asas\Zatca\Tests\TestCase;
+use Zatca\Tests\TestCase;
 use Illuminate\Support\Facades\Schema;
 
 /** Proves the package's migrations run cleanly on their own (no host schema assumed). */

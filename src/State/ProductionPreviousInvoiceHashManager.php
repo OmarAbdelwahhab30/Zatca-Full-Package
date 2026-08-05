@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\State;
+namespace Zatca\State;
 
-use Asas\Zatca\Enums\ZatcaCredentialType;
+use Zatca\Enums\ZatcaCredentialType;
 
 class ProductionPreviousInvoiceHashManager extends AbstractPreviousInvoiceHashManager
 {

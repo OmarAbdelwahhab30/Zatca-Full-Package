@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Contracts;
+namespace Zatca\Contracts;
 
-use Asas\Zatca\Enums\ZatcaEnvironment;
+use Zatca\Enums\ZatcaEnvironment;
 
 /**
  * Wraps the ZATCA SDK CLI (Java jar / fatoora executable) so the rest of the

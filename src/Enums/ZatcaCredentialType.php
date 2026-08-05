@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\Enums;
+namespace Zatca\Enums;
 
 enum ZatcaCredentialType: string
 {

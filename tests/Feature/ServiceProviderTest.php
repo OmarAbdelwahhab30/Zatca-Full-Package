@@ -1,20 +1,20 @@
 <?php
 
-namespace Asas\Zatca\Tests\Feature;
+namespace Zatca\Tests\Feature;
 
-use Asas\Zatca\Contracts\CredentialEncrypterInterface;
-use Asas\Zatca\Contracts\InvoiceSourceResolverContract;
-use Asas\Zatca\Contracts\OwnerResolverInterface;
-use Asas\Zatca\Contracts\ZatcaSdkInterface;
-use Asas\Zatca\Services\Certificate\CertificateLifecycleManager;
-use Asas\Zatca\Services\Connectors\ConnectorFactory;
-use Asas\Zatca\Services\Execute\ProductionInvoiceOrchestrator;
-use Asas\Zatca\Services\OnBoarding\ComplianceOnboardingOrchestrator;
-use Asas\Zatca\Services\Security\ZatcaCredentialStore;
-use Asas\Zatca\Services\Security\ZatcaSanitizer;
-use Asas\Zatca\Services\Security\ZatcaSigningKeyProvider;
-use Asas\Zatca\State\EgsRegistry;
-use Asas\Zatca\Tests\TestCase;
+use Zatca\Contracts\CredentialEncrypterInterface;
+use Zatca\Contracts\InvoiceSourceResolverContract;
+use Zatca\Contracts\OwnerResolverInterface;
+use Zatca\Contracts\ZatcaSdkInterface;
+use Zatca\Services\Certificate\CertificateLifecycleManager;
+use Zatca\Services\Connectors\ConnectorFactory;
+use Zatca\Services\Execute\ProductionInvoiceOrchestrator;
+use Zatca\Services\OnBoarding\ComplianceOnboardingOrchestrator;
+use Zatca\Services\Security\ZatcaCredentialStore;
+use Zatca\Services\Security\ZatcaSanitizer;
+use Zatca\Services\Security\ZatcaSigningKeyProvider;
+use Zatca\State\EgsRegistry;
+use Zatca\Tests\TestCase;
 
 /** Proves the package boots and wires all its bindings on a bare Laravel app — not just inside the host. */
 class ServiceProviderTest extends TestCase

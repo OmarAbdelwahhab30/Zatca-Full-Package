@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\DTOs;
+namespace Zatca\DTOs;
 
 /** Result of atomically reserving the next ICV slot for one EGS/environment/state_type. */
 class InvoiceSequenceReservation

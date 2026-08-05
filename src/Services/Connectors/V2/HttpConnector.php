@@ -1,14 +1,14 @@
 <?php
 
-namespace Asas\Zatca\Services\Connectors\V2;
+namespace Zatca\Services\Connectors\V2;
 
-use Asas\Zatca\Contracts\ZatcaConnectorInterface;
-use Asas\Zatca\DTOs\ZatcaApiResult;
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Enums\ZatcaEnvironment;
-use Asas\Zatca\Enums\ZatcaResponseStatus;
-use Asas\Zatca\Services\Security\ZatcaCredentialStore;
-use Asas\Zatca\State\EgsRegistry;
+use Zatca\Contracts\ZatcaConnectorInterface;
+use Zatca\DTOs\ZatcaApiResult;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Enums\ZatcaEnvironment;
+use Zatca\Enums\ZatcaResponseStatus;
+use Zatca\Services\Security\ZatcaCredentialStore;
+use Zatca\State\EgsRegistry;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use Illuminate\Support\Facades\Config;

@@ -1,11 +1,11 @@
 <?php
 
-namespace Asas\Zatca\Services\Diagnostics;
+namespace Zatca\Services\Diagnostics;
 
-use Asas\Zatca\Models\ZatcaEgsCredential;
-use Asas\Zatca\Models\ZatcaEgsState;
-use Asas\Zatca\Models\ZatcaInvoice;
-use Asas\Zatca\State\EgsRegistry;
+use Zatca\Models\ZatcaEgsCredential;
+use Zatca\Models\ZatcaEgsState;
+use Zatca\Models\ZatcaInvoice;
+use Zatca\State\EgsRegistry;
 
 /**
  * Single resource-dispatched diagnostics class (plan §2.1 — one class,

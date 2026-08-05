@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\Enums;
+namespace Zatca\Enums;
 
 /**
  * Note: an earlier revision had a separate `Active` state reached only

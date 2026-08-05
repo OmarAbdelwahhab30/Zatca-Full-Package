@@ -1,9 +1,9 @@
 <?php
 
-namespace Asas\Zatca\Services\Invoice;
+namespace Zatca\Services\Invoice;
 
-use Asas\Zatca\DTOs\ZatcaInvoiceData;
-use Asas\Zatca\DTOs\ZatcaInvoiceLine;
+use Zatca\DTOs\ZatcaInvoiceData;
+use Zatca\DTOs\ZatcaInvoiceLine;
 use DateTimeImmutable;
 
 /**

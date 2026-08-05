@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Services\Security;
+namespace Zatca\Services\Security;
 
-use Asas\Zatca\Contracts\CredentialEncrypterInterface;
+use Zatca\Contracts\CredentialEncrypterInterface;
 use Illuminate\Contracts\Encryption\Encrypter;
 
 /**

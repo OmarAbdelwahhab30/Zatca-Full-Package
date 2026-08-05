@@ -1,17 +1,17 @@
 <?php
 
-namespace Asas\Zatca\Services\Certificate;
+namespace Zatca\Services\Certificate;
 
-use Asas\Zatca\Enums\ZatcaCertificateState;
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Enums\ZatcaEnvironment;
-use Asas\Zatca\Enums\ZatcaInvoiceStatus;
-use Asas\Zatca\Jobs\RetryZatcaInvoiceJob;
-use Asas\Zatca\Models\ZatcaEgsCredential;
-use Asas\Zatca\Models\ZatcaInvoice;
-use Asas\Zatca\Services\Connectors\ConnectorFactory;
-use Asas\Zatca\Services\Security\ZatcaSigningKeyProvider;
-use Asas\Zatca\State\EgsRegistry;
+use Zatca\Enums\ZatcaCertificateState;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Enums\ZatcaEnvironment;
+use Zatca\Enums\ZatcaInvoiceStatus;
+use Zatca\Jobs\RetryZatcaInvoiceJob;
+use Zatca\Models\ZatcaEgsCredential;
+use Zatca\Models\ZatcaInvoice;
+use Zatca\Services\Connectors\ConnectorFactory;
+use Zatca\Services\Security\ZatcaSigningKeyProvider;
+use Zatca\State\EgsRegistry;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;

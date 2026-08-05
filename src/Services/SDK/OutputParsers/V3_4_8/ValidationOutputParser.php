@@ -1,9 +1,9 @@
 <?php
 
-namespace Asas\Zatca\Services\SDK\OutputParsers\V3_4_8;
+namespace Zatca\Services\SDK\OutputParsers\V3_4_8;
 
-use Asas\Zatca\DTOs\SdkValidationResult;
-use Asas\Zatca\Exceptions\ZatcaSdkOutputChangedException;
+use Zatca\DTOs\SdkValidationResult;
+use Zatca\Exceptions\ZatcaSdkOutputChangedException;
 
 /**
  * Parses `-validate` console output. Pinned to SDK 3.4.8's exact log format,

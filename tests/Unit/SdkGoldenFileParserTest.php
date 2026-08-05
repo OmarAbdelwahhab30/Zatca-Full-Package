@@ -1,13 +1,13 @@
 <?php
 
-namespace Asas\Zatca\Tests\Unit;
+namespace Zatca\Tests\Unit;
 
-use Asas\Zatca\Exceptions\ZatcaSdkOutputChangedException;
-use Asas\Zatca\Services\SDK\OutputParsers\V3_4_8\CsrOutputParser;
-use Asas\Zatca\Services\SDK\OutputParsers\V3_4_8\HashOutputParser;
-use Asas\Zatca\Services\SDK\OutputParsers\V3_4_8\ValidationOutputParser;
-use Asas\Zatca\Services\SDK\SignedInvoiceXmlReader;
-use Asas\Zatca\Tests\TestCase;
+use Zatca\Exceptions\ZatcaSdkOutputChangedException;
+use Zatca\Services\SDK\OutputParsers\V3_4_8\CsrOutputParser;
+use Zatca\Services\SDK\OutputParsers\V3_4_8\HashOutputParser;
+use Zatca\Services\SDK\OutputParsers\V3_4_8\ValidationOutputParser;
+use Zatca\Services\SDK\SignedInvoiceXmlReader;
+use Zatca\Tests\TestCase;
 
 /**
  * Golden-file tests for every OutputParsers/V3_4_8 parser. Fixtures under

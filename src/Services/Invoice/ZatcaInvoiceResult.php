@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\Services\Invoice;
+namespace Zatca\Services\Invoice;
 
 class ZatcaInvoiceResult
 {

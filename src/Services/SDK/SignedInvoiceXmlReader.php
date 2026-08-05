@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\Services\SDK;
+namespace Zatca\Services\SDK;
 
 use DOMDocument;
 use DOMXPath;

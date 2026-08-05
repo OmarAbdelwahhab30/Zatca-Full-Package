@@ -1,9 +1,9 @@
 <?php
 
-namespace Asas\Zatca\Services\Security;
+namespace Zatca\Services\Security;
 
-use Asas\Zatca\Contracts\ZatcaSdkInterface;
-use Asas\Zatca\DTOs\EgsConfig;
+use Zatca\Contracts\ZatcaSdkInterface;
+use Zatca\DTOs\EgsConfig;
 use Illuminate\Support\Str;
 
 /**

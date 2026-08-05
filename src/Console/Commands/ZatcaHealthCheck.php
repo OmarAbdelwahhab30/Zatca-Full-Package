@@ -1,13 +1,13 @@
 <?php
 
-namespace Asas\Zatca\Console\Commands;
+namespace Zatca\Console\Commands;
 
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Exceptions\ZatcaException;
-use Asas\Zatca\Services\SDK\ZatcaSdkFingerprint;
-use Asas\Zatca\Services\SDK\ZatcaSdkRuntimeManager;
-use Asas\Zatca\Services\Security\ZatcaCredentialStore;
-use Asas\Zatca\State\EgsRegistry;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Exceptions\ZatcaException;
+use Zatca\Services\SDK\ZatcaSdkFingerprint;
+use Zatca\Services\SDK\ZatcaSdkRuntimeManager;
+use Zatca\Services\Security\ZatcaCredentialStore;
+use Zatca\State\EgsRegistry;
 use Illuminate\Console\Command;
 
 /**

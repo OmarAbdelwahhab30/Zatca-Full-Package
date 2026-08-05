@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\Contracts;
+namespace Zatca\Contracts;
 
 /**
  * Optional multi-tenant hook. The system is not multi-tenant today, so no

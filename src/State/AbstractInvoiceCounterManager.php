@@ -1,11 +1,11 @@
 <?php
 
-namespace Asas\Zatca\State;
+namespace Zatca\State;
 
-use Asas\Zatca\DTOs\InvoiceSequenceReservation;
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Enums\ZatcaEnvironment;
-use Asas\Zatca\Models\ZatcaEgsState;
+use Zatca\DTOs\InvoiceSequenceReservation;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Enums\ZatcaEnvironment;
+use Zatca\Models\ZatcaEgsState;
 use Illuminate\Support\Facades\DB;
 
 /**

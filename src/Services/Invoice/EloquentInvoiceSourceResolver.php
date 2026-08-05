@@ -1,9 +1,9 @@
 <?php
 
-namespace Asas\Zatca\Services\Invoice;
+namespace Zatca\Services\Invoice;
 
-use Asas\Zatca\Contracts\InvoiceSourceResolverContract;
-use Asas\Zatca\DTOs\InvoiceSourceReference;
+use Zatca\Contracts\InvoiceSourceResolverContract;
+use Zatca\DTOs\InvoiceSourceReference;
 use Illuminate\Database\Eloquent\Model;
 
 /**

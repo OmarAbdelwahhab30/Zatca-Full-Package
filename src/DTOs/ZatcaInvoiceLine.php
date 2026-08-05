@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\DTOs;
+namespace Zatca\DTOs;
 
 class ZatcaInvoiceLine
 {

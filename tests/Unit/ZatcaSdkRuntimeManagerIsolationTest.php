@@ -1,9 +1,9 @@
 <?php
 
-namespace Asas\Zatca\Tests\Unit;
+namespace Zatca\Tests\Unit;
 
-use Asas\Zatca\Services\SDK\ZatcaSdkRuntimeManager;
-use Asas\Zatca\Tests\TestCase;
+use Zatca\Services\SDK\ZatcaSdkRuntimeManager;
+use Zatca\Tests\TestCase;
 
 /**
  * Proves two concurrent SDK operations get fully isolated workspaces —

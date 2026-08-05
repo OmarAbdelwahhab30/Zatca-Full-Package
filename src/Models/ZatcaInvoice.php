@@ -1,9 +1,9 @@
 <?php
 
-namespace Asas\Zatca\Models;
+namespace Zatca\Models;
 
-use Asas\Zatca\Enums\ZatcaEnvironment;
-use Asas\Zatca\Enums\ZatcaInvoiceStatus;
+use Zatca\Enums\ZatcaEnvironment;
+use Zatca\Enums\ZatcaInvoiceStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 

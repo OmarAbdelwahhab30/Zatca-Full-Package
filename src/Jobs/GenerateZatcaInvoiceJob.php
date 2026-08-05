@@ -1,12 +1,12 @@
 <?php
 
-namespace Asas\Zatca\Jobs;
+namespace Zatca\Jobs;
 
-use Asas\Zatca\Contracts\InvoiceSourceContract;
-use Asas\Zatca\Contracts\InvoiceSourceResolverContract;
-use Asas\Zatca\DTOs\InvoiceSourceReference;
-use Asas\Zatca\Exceptions\ZatcaCredentialsMissingException;
-use Asas\Zatca\Services\Execute\ProductionInvoiceOrchestrator;
+use Zatca\Contracts\InvoiceSourceContract;
+use Zatca\Contracts\InvoiceSourceResolverContract;
+use Zatca\DTOs\InvoiceSourceReference;
+use Zatca\Exceptions\ZatcaCredentialsMissingException;
+use Zatca\Services\Execute\ProductionInvoiceOrchestrator;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Model;

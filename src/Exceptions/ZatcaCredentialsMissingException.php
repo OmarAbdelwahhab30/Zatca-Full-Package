@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Exceptions;
+namespace Zatca\Exceptions;
 
-use Asas\Zatca\Enums\ZatcaCredentialType;
+use Zatca\Enums\ZatcaCredentialType;
 
 class ZatcaCredentialsMissingException extends ZatcaException
 {

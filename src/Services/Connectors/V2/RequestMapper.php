@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Services\Connectors\V2;
+namespace Zatca\Services\Connectors\V2;
 
-use Asas\Zatca\Contracts\RequestMapperInterface;
+use Zatca\Contracts\RequestMapperInterface;
 
 /** Maps package inputs to ZATCA API V2 wire request bodies — verified against ZATCA's own sandbox API docs. */
 class RequestMapper implements RequestMapperInterface

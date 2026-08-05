@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Tests\Feature;
+namespace Zatca\Tests\Feature;
 
-use Asas\Zatca\Tests\TestCase;
+use Zatca\Tests\TestCase;
 
 /** Proves every documented artisan command is actually registered by the package. */
 class CommandsTest extends TestCase

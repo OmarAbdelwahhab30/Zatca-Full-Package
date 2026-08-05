@@ -1,15 +1,15 @@
 <?php
 
-namespace Asas\Zatca\Jobs\Concerns;
+namespace Zatca\Jobs\Concerns;
 
-use Asas\Zatca\Enums\ZatcaCertificateState;
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Enums\ZatcaInvoiceStatus;
-use Asas\Zatca\Enums\ZatcaResponseStatus;
-use Asas\Zatca\Models\ZatcaEgsCredential;
-use Asas\Zatca\Models\ZatcaInvoice;
-use Asas\Zatca\Models\ZatcaSubmissionAttempt;
-use Asas\Zatca\Services\Connectors\ConnectorFactory;
+use Zatca\Enums\ZatcaCertificateState;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Enums\ZatcaInvoiceStatus;
+use Zatca\Enums\ZatcaResponseStatus;
+use Zatca\Models\ZatcaEgsCredential;
+use Zatca\Models\ZatcaInvoice;
+use Zatca\Models\ZatcaSubmissionAttempt;
+use Zatca\Services\Connectors\ConnectorFactory;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;

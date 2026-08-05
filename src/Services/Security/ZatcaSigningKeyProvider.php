@@ -1,9 +1,9 @@
 <?php
 
-namespace Asas\Zatca\Services\Security;
+namespace Zatca\Services\Security;
 
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Enums\ZatcaEnvironment;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Enums\ZatcaEnvironment;
 use Illuminate\Support\Str;
 
 /**

@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Contracts;
+namespace Zatca\Contracts;
 
-use Asas\Zatca\DTOs\ZatcaInvoiceData;
+use Zatca\DTOs\ZatcaInvoiceData;
 
 /**
  * The key reusability seam. Every consuming app has a different Order/domain

@@ -1,9 +1,9 @@
 <?php
 
-namespace Asas\Zatca\Services\SDK;
+namespace Zatca\Services\SDK;
 
-use Asas\Zatca\DTOs\SdkWorkspace;
-use Asas\Zatca\Exceptions\ZatcaException;
+use Zatca\DTOs\SdkWorkspace;
+use Zatca\Exceptions\ZatcaException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
 use RuntimeException;

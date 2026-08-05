@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Contracts;
+namespace Zatca\Contracts;
 
-use Asas\Zatca\DTOs\ZatcaApiResult;
+use Zatca\DTOs\ZatcaApiResult;
 
 /**
  * The primary versioning seam. One implementation per ZATCA API version

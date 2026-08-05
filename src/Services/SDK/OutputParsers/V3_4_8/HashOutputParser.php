@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Services\SDK\OutputParsers\V3_4_8;
+namespace Zatca\Services\SDK\OutputParsers\V3_4_8;
 
-use Asas\Zatca\Exceptions\ZatcaSdkOutputChangedException;
+use Zatca\Exceptions\ZatcaSdkOutputChangedException;
 
 /**
  * Parses console output of `-generateHash` / `-sign` (both services print

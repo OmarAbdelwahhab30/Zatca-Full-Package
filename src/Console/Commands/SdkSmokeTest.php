@@ -1,16 +1,16 @@
 <?php
 
-namespace Asas\Zatca\Console\Commands;
+namespace Zatca\Console\Commands;
 
-use Asas\Zatca\Contracts\ZatcaSdkInterface;
-use Asas\Zatca\DTOs\EgsConfig;
-use Asas\Zatca\DTOs\InvoiceSequenceReservation;
-use Asas\Zatca\DTOs\ZatcaInvoiceData;
-use Asas\Zatca\DTOs\ZatcaInvoiceLine;
-use Asas\Zatca\Enums\ZatcaEnvironment;
-use Asas\Zatca\Services\Invoice\XmlGeneratorFactory;
-use Asas\Zatca\Services\SDK\ZatcaSdkFingerprint;
-use Asas\Zatca\Services\SDK\ZatcaSdkRuntimeManager;
+use Zatca\Contracts\ZatcaSdkInterface;
+use Zatca\DTOs\EgsConfig;
+use Zatca\DTOs\InvoiceSequenceReservation;
+use Zatca\DTOs\ZatcaInvoiceData;
+use Zatca\DTOs\ZatcaInvoiceLine;
+use Zatca\Enums\ZatcaEnvironment;
+use Zatca\Services\Invoice\XmlGeneratorFactory;
+use Zatca\Services\SDK\ZatcaSdkFingerprint;
+use Zatca\Services\SDK\ZatcaSdkRuntimeManager;
 use DateTimeImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Config;

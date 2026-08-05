@@ -1,5 +1,5 @@
 {
-    "name": "asas/zatca",
+    "name": "zatca/zatca",
     "description": "ZATCA (FATOORA) e-invoicing integration package: compliance/production onboarding, XML generation, signing via the ZATCA SDK, reporting, certificate lifecycle.",
     "type": "library",
     "license": "proprietary",
@@ -16,12 +16,12 @@
     },
     "autoload": {
         "psr-4": {
-            "Asas\\Zatca\\": "src/"
+            "Zatca\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Asas\\Zatca\\Tests\\": "tests/"
+            "Zatca\\Tests\\": "tests/"
         }
     },
     "require-dev": {
@@ -36,7 +36,7 @@
     "extra": {
         "laravel": {
             "providers": [
-                "Asas\\Zatca\\ZatcaServiceProvider"
+                "Zatca\\ZatcaServiceProvider"
             ]
         }
     },

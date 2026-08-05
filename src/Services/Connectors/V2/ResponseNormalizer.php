@@ -1,15 +1,15 @@
 <?php
 
-namespace Asas\Zatca\Services\Connectors\V2;
+namespace Zatca\Services\Connectors\V2;
 
-use Asas\Zatca\Contracts\ResponseNormalizerInterface;
-use Asas\Zatca\DTOs\Payloads\ComplianceCsidPayload;
-use Asas\Zatca\DTOs\Payloads\ComplianceInvoicePayload;
-use Asas\Zatca\DTOs\Payloads\ProductionCsidPayload;
-use Asas\Zatca\DTOs\Payloads\ReportingPayload;
-use Asas\Zatca\DTOs\ZatcaApiResult;
-use Asas\Zatca\Enums\ZatcaResponseStatus;
-use Asas\Zatca\Exceptions\ZatcaContractChangedException;
+use Zatca\Contracts\ResponseNormalizerInterface;
+use Zatca\DTOs\Payloads\ComplianceCsidPayload;
+use Zatca\DTOs\Payloads\ComplianceInvoicePayload;
+use Zatca\DTOs\Payloads\ProductionCsidPayload;
+use Zatca\DTOs\Payloads\ReportingPayload;
+use Zatca\DTOs\ZatcaApiResult;
+use Zatca\Enums\ZatcaResponseStatus;
+use Zatca\Exceptions\ZatcaContractChangedException;
 use Psr\Http\Message\ResponseInterface;
 
 /**

@@ -1,9 +1,9 @@
 <?php
 
-namespace Asas\Zatca\Jobs;
+namespace Zatca\Jobs;
 
-use Asas\Zatca\Jobs\Concerns\ReportsZatcaInvoice;
-use Asas\Zatca\Services\Connectors\ConnectorFactory;
+use Zatca\Jobs\Concerns\ReportsZatcaInvoice;
+use Zatca\Services\Connectors\ConnectorFactory;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;

@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Exceptions;
+namespace Zatca\Exceptions;
 
-use Asas\Zatca\Services\Security\ZatcaSanitizer;
+use Zatca\Services\Security\ZatcaSanitizer;
 
 class ZatcaSdkProcessException extends ZatcaException
 {

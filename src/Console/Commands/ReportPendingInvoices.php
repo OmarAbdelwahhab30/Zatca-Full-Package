@@ -1,10 +1,10 @@
 <?php
 
-namespace Asas\Zatca\Console\Commands;
+namespace Zatca\Console\Commands;
 
-use Asas\Zatca\Enums\ZatcaInvoiceStatus;
-use Asas\Zatca\Jobs\RetryZatcaInvoiceJob;
-use Asas\Zatca\Models\ZatcaInvoice;
+use Zatca\Enums\ZatcaInvoiceStatus;
+use Zatca\Jobs\RetryZatcaInvoiceJob;
+use Zatca\Models\ZatcaInvoice;
 use Illuminate\Console\Command;
 
 /**

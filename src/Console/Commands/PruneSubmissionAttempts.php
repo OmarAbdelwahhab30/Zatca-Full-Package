@@ -1,9 +1,9 @@
 <?php
 
-namespace Asas\Zatca\Console\Commands;
+namespace Zatca\Console\Commands;
 
-use Asas\Zatca\Enums\ZatcaInvoiceStatus;
-use Asas\Zatca\Models\ZatcaSubmissionAttempt;
+use Zatca\Enums\ZatcaInvoiceStatus;
+use Zatca\Models\ZatcaSubmissionAttempt;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Config;
 

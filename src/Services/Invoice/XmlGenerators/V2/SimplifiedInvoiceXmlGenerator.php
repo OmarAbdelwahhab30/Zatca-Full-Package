@@ -1,11 +1,11 @@
 <?php
 
-namespace Asas\Zatca\Services\Invoice\XmlGenerators\V2;
+namespace Zatca\Services\Invoice\XmlGenerators\V2;
 
-use Asas\Zatca\DTOs\EgsConfig;
-use Asas\Zatca\DTOs\InvoiceSequenceReservation;
-use Asas\Zatca\DTOs\ZatcaInvoiceData;
-use Asas\Zatca\DTOs\ZatcaInvoiceLine;
+use Zatca\DTOs\EgsConfig;
+use Zatca\DTOs\InvoiceSequenceReservation;
+use Zatca\DTOs\ZatcaInvoiceData;
+use Zatca\DTOs\ZatcaInvoiceLine;
 
 /**
  * Builds the unsigned UBL 2.1 Simplified Tax Invoice (Reporting model, B2C)

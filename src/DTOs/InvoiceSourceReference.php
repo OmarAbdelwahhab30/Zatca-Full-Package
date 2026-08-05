@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\DTOs;
+namespace Zatca\DTOs;
 
 /**
  * A fully scalar, serialization-safe reference to a host-app record —

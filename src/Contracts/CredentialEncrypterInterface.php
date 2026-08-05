@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\Contracts;
+namespace Zatca\Contracts;
 
 /**
  * Secret backend seam — host apps may swap Laravel's encrypter for Vault/KMS

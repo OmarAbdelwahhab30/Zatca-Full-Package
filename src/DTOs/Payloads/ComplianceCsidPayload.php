@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\DTOs\Payloads;
+namespace Zatca\DTOs\Payloads;
 
 /** Result of POST /compliance */
 class ComplianceCsidPayload

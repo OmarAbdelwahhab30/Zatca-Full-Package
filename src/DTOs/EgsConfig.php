@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\DTOs;
+namespace Zatca\DTOs;
 
-use Asas\Zatca\Enums\ZatcaEnvironment;
+use Zatca\Enums\ZatcaEnvironment;
 
 /** Typed view over one config('zatca.egs.{identifier}') entry. */
 class EgsConfig

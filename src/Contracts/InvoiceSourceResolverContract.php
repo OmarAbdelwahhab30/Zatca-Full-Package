@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Contracts;
+namespace Zatca\Contracts;
 
-use Asas\Zatca\DTOs\InvoiceSourceReference;
+use Zatca\DTOs\InvoiceSourceReference;
 
 /**
  * The host app implements this to reload its own Order/domain record from

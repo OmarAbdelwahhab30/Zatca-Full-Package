@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Services\SDK;
+namespace Zatca\Services\SDK;
 
-use Asas\Zatca\Exceptions\ZatcaSdkFingerprintMismatchException;
+use Zatca\Exceptions\ZatcaSdkFingerprintMismatchException;
 use Illuminate\Support\Facades\Config;
 
 /**

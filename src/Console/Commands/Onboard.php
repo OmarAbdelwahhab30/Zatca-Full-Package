@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Console\Commands;
+namespace Zatca\Console\Commands;
 
-use Asas\Zatca\Services\OnBoarding\ComplianceOnboardingOrchestrator;
+use Zatca\Services\OnBoarding\ComplianceOnboardingOrchestrator;
 use Illuminate\Console\Command;
 
 /**

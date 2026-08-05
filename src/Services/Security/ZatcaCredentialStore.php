@@ -1,14 +1,14 @@
 <?php
 
-namespace Asas\Zatca\Services\Security;
+namespace Zatca\Services\Security;
 
-use Asas\Zatca\Contracts\CredentialEncrypterInterface;
-use Asas\Zatca\DTOs\ZatcaCredentialSet;
-use Asas\Zatca\Enums\ZatcaCertificateState;
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Enums\ZatcaEnvironment;
-use Asas\Zatca\Exceptions\ZatcaCredentialsMissingException;
-use Asas\Zatca\Models\ZatcaEgsCredential;
+use Zatca\Contracts\CredentialEncrypterInterface;
+use Zatca\DTOs\ZatcaCredentialSet;
+use Zatca\Enums\ZatcaCertificateState;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Enums\ZatcaEnvironment;
+use Zatca\Exceptions\ZatcaCredentialsMissingException;
+use Zatca\Models\ZatcaEgsCredential;
 use Carbon\CarbonImmutable;
 
 /**

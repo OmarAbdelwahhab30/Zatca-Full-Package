@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\Models;
+namespace Zatca\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;

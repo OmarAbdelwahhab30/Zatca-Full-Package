@@ -1,10 +1,10 @@
 <?php
 
-namespace Asas\Zatca\Services\Connectors;
+namespace Zatca\Services\Connectors;
 
-use Asas\Zatca\Contracts\ZatcaConnectorInterface;
-use Asas\Zatca\Exceptions\ZatcaException;
-use Asas\Zatca\Services\Connectors\V2\HttpConnector;
+use Zatca\Contracts\ZatcaConnectorInterface;
+use Zatca\Exceptions\ZatcaException;
+use Zatca\Services\Connectors\V2\HttpConnector;
 use Illuminate\Support\Facades\Config;
 
 /**

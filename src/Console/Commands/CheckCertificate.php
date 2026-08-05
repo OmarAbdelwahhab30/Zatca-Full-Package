@@ -1,10 +1,10 @@
 <?php
 
-namespace Asas\Zatca\Console\Commands;
+namespace Zatca\Console\Commands;
 
-use Asas\Zatca\Enums\ZatcaCredentialType;
-use Asas\Zatca\Services\Certificate\CertificateLifecycleManager;
-use Asas\Zatca\State\EgsRegistry;
+use Zatca\Enums\ZatcaCredentialType;
+use Zatca\Services\Certificate\CertificateLifecycleManager;
+use Zatca\State\EgsRegistry;
 use Illuminate\Console\Command;
 
 class CheckCertificate extends Command

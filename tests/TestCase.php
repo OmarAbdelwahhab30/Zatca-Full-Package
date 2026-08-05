@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Tests;
+namespace Zatca\Tests;
 
-use Asas\Zatca\ZatcaServiceProvider;
+use Zatca\ZatcaServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 
 /**

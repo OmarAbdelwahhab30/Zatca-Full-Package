@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\Contracts;
+namespace Zatca\Contracts;
 
-use Asas\Zatca\DTOs\ZatcaApiResult;
+use Zatca\DTOs\ZatcaApiResult;
 use Psr\Http\Message\ResponseInterface;
 
 /** One implementation per API version — normalizes the wire response into ZatcaApiResult + typed payload. */

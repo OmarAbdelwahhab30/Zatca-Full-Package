@@ -1,8 +1,8 @@
 <?php
 
-namespace Asas\Zatca\State;
+namespace Zatca\State;
 
-use Asas\Zatca\DTOs\EgsConfig;
+use Zatca\DTOs\EgsConfig;
 use Illuminate\Support\Facades\Config;
 use InvalidArgumentException;
 

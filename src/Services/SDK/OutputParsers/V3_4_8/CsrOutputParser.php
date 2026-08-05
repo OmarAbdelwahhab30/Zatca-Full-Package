@@ -1,6 +1,6 @@
 <?php
 
-namespace Asas\Zatca\Services\SDK\OutputParsers\V3_4_8;
+namespace Zatca\Services\SDK\OutputParsers\V3_4_8;
 
 class CsrOutputParser
 {

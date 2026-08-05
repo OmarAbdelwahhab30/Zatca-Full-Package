@@ -1,11 +1,11 @@
 <?php
 
-namespace Asas\Zatca\Tests\Feature;
+namespace Zatca\Tests\Feature;
 
-use Asas\Zatca\Enums\ZatcaEnvironment;
-use Asas\Zatca\State\ComplianceInvoiceCounterManager;
-use Asas\Zatca\State\CompliancePreviousInvoiceHashManager;
-use Asas\Zatca\Tests\TestCase;
+use Zatca\Enums\ZatcaEnvironment;
+use Zatca\State\ComplianceInvoiceCounterManager;
+use Zatca\State\CompliancePreviousInvoiceHashManager;
+use Zatca\Tests\TestCase;
 
 class InvoiceCounterManagerTest extends TestCase
 {
@@ -46,7 +46,7 @@ class InvoiceCounterManagerTest extends TestCase
     public function test_compliance_and_production_sequences_are_isolated(): void
     {
         $compliance = app(ComplianceInvoiceCounterManager::class);
-        $production = app(\Asas\Zatca\State\ProductionInvoiceCounterManager::class);
+        $production = app(\Zatca\State\ProductionInvoiceCounterManager::class);
 
         $compliance->reserve(self::EGS, ZatcaEnvironment::Sandbox);
         $compliance->reserve(self::EGS, ZatcaEnvironment::Sandbox);

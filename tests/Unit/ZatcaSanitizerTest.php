@@ -1,11 +1,11 @@
 <?php
 
-namespace Asas\Zatca\Tests\Unit;
+namespace Zatca\Tests\Unit;
 
-use Asas\Zatca\Exceptions\ZatcaSdkOutputChangedException;
-use Asas\Zatca\Exceptions\ZatcaSdkProcessException;
-use Asas\Zatca\Services\Security\ZatcaSanitizer;
-use Asas\Zatca\Tests\TestCase;
+use Zatca\Exceptions\ZatcaSdkOutputChangedException;
+use Zatca\Exceptions\ZatcaSdkProcessException;
+use Zatca\Services\Security\ZatcaSanitizer;
+use Zatca\Tests\TestCase;
 
 class ZatcaSanitizerTest extends TestCase
 {
