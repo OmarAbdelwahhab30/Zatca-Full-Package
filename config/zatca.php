@@ -69,6 +69,15 @@ return [
         'prune_after_days' => (int) env('ZATCA_PRUNE_ATTEMPTS_AFTER_DAYS', 180),
     ],
 
+    'sdk_files' => [
+        // How long to keep leftover files under storage/app/private/zatca (SDK output copies,
+        // and workspaces/temp key material orphaned by a killed process). Nothing reads them
+        // after a call finishes — the signed invoice itself lives in the database and is never
+        // pruned. Used by zatca:prune-sdk-files, which additionally refuses to touch anything
+        // younger than one hour so an in-flight SDK call is never disturbed.
+        'prune_after_days' => (int) env('ZATCA_PRUNE_SDK_FILES_AFTER_DAYS', 7),
+    ],
+
     // EGS registry: one entry today (default), more later without code changes.
     // Everything EGS-scoped (credentials, ICV, PIH, certificate state) is resolved
     // through EgsRegistry::for($egsIdentifier) — never read directly by code.

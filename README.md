@@ -33,6 +33,8 @@ This is the company-wide standard package for ZATCA integration. If your app nee
 - [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
 - [FAQ](#faq)
+- [Database Guide](docs/DATABASE.md) — the 5 tables, and what each command writes
+- [Operations Runbook](docs/OPERATIONS.md) — deployment, version upgrades, certificate expiry
 - [Changelog / Versioning](#changelog--versioning)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
@@ -91,6 +93,8 @@ Give the package an order (or any "paid" record), and it will:
 
 These are pinned on purpose. See `docs/COMPATIBILITY.md` inside the package for the full compatibility table and the process for adding a new version combination.
 
+For what to do when any of these versions change — plus production deployment steps and certificate expiry handling — see [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+
 ---
 
 ## Installation
@@ -142,12 +146,19 @@ You do **not** need `jq`, and you do **not** need to run the SDK's own `install.
 
 ### 6. Filesystem / storage requirements
 
-The package writes temporary files under `storage/app/zatca/`:
+The package writes files under `storage/app/private/zatca/`:
 
-- `storage/app/zatca/runtime/` — one folder per SDK call, created and deleted automatically.
-- `storage/app/zatca/tmp/` — temporary certificate/key files, deleted right after use.
+- `storage/app/private/zatca/runtime/{uuid}/` — one isolated SDK workspace per call, created and deleted automatically.
+- `storage/app/private/zatca/tmp/` — temporary certificate/key files handed to the SDK, deleted in a `finally` block right after use.
+- `storage/app/private/zatca/sdk-output/` — files copied out of a workspace before it is destroyed. CSR and key files are deleted after being read; signed-XML copies stay until pruned.
+- `storage/app/private/zatca/csr-config-{uuid}.properties` — the CSR config handed to the SDK, deleted right after use.
+- `storage/app/private/zatca/smoke-test/` — only used by `zatca:sdk-smoke-test`; its files are deleted after each run.
 
-Make sure the **queue worker process** (not just the web server) can write to `storage/app/`.
+Directories are created with mode `0700` and files with `0600`.
+
+Make sure the **queue worker process** (not just the web server) can write to `storage/app/private/`.
+
+Run `zatca:prune-sdk-files` on a schedule to clear leftovers from this directory — none of it is needed once a call finishes, and orphaned workspaces can contain key material. See [`docs/OPERATIONS.md`](docs/OPERATIONS.md) §1.
 
 ### 7. Required environment variables
 

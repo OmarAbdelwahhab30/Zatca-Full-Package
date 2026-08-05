@@ -24,6 +24,7 @@ class CommandsTest extends TestCase
             ['zatca:certificate:check'],
             ['zatca:certificate:renew'],
             ['zatca:prune-submission-attempts'],
+            ['zatca:prune-sdk-files'],
             ['zatca:sdk-smoke-test'],
         ];
     }

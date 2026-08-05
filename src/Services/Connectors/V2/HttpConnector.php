@@ -7,6 +7,7 @@ use Zatca\DTOs\ZatcaApiResult;
 use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaEnvironment;
 use Zatca\Enums\ZatcaResponseStatus;
+use Zatca\Exceptions\ZatcaException;
 use Zatca\Services\Security\ZatcaCredentialStore;
 use Zatca\State\EgsRegistry;
 use GuzzleHttp\Client;
@@ -22,6 +23,15 @@ use Illuminate\Support\Facades\Config;
  */
 class HttpConnector implements ZatcaConnectorInterface
 {
+    /**
+     * The API version this connector implements, sent as `Accept-Version` on
+     * every request. Deliberately a constant and not config('zatca.api_version'):
+     * this class's RequestMapper/ResponseNormalizer speak V2, so it must always
+     * announce V2. The config value is the seam that decides WHICH connector is
+     * used (ConnectorFactory), not what a given connector sends.
+     */
+    private const API_VERSION = 'V2';
+
     public function __construct(
         private readonly Client $client,
         private readonly RequestMapper $requestMapper,
@@ -35,11 +45,7 @@ class HttpConnector implements ZatcaConnectorInterface
         $environment = $this->environmentFor($egsIdentifier);
 
         return $this->send($environment, 'POST', '/compliance', [
-            'headers' => [
-                'OTP' => $otp,
-                'Accept-Version' => 'V2',
-                'Content-Type' => 'application/json',
-            ],
+            'headers' => $this->headers(['OTP' => $otp]),
             'json' => $this->requestMapper->mapComplianceCsidRequest($csrBase64),
         ], fn ($response) => $this->responseNormalizer->normalizeComplianceCsid($response));
     }
@@ -50,10 +56,7 @@ class HttpConnector implements ZatcaConnectorInterface
         $credentials = $this->credentialStore->get($egsIdentifier, $environment, ZatcaCredentialType::Compliance);
 
         return $this->send($environment, 'POST', '/compliance/invoices', [
-            'headers' => [
-                'Accept-Version' => 'V2',
-                'Content-Type' => 'application/json',
-            ],
+            'headers' => $this->headers(),
             'auth' => [$credentials->authUsername(), $credentials->authPassword()],
             'json' => $this->requestMapper->mapInvoiceSubmissionRequest($invoiceHash, $uuid, $signedInvoiceBase64),
         ], fn ($response) => $this->responseNormalizer->normalizeComplianceInvoice($response));
@@ -65,10 +68,7 @@ class HttpConnector implements ZatcaConnectorInterface
         $credentials = $this->credentialStore->get($egsIdentifier, $environment, ZatcaCredentialType::Compliance);
 
         return $this->send($environment, 'POST', '/production/csids', [
-            'headers' => [
-                'Accept-Version' => 'V2',
-                'Content-Type' => 'application/json',
-            ],
+            'headers' => $this->headers(),
             'auth' => [$credentials->authUsername(), $credentials->authPassword()],
             'json' => $this->requestMapper->mapProductionCsidRequest($complianceRequestId),
         ], fn ($response) => $this->responseNormalizer->normalizeProductionCsid($response));
@@ -84,10 +84,7 @@ class HttpConnector implements ZatcaConnectorInterface
         // separate method rather than an alias, and config('zatca.certificate.auto_renewal_enabled')
         // for why this is not called automatically until the real renewal contract is verified.
         return $this->send($environment, 'POST', '/production/csids', [
-            'headers' => [
-                'Accept-Version' => 'V2',
-                'Content-Type' => 'application/json',
-            ],
+            'headers' => $this->headers(),
             'auth' => [$credentials->authUsername(), $credentials->authPassword()],
             'json' => $this->requestMapper->mapProductionCsidRenewalRequest($complianceRequestId),
         ], fn ($response) => $this->responseNormalizer->normalizeProductionCsidRenewal($response));
@@ -99,15 +96,51 @@ class HttpConnector implements ZatcaConnectorInterface
         $credentials = $this->credentialStore->get($egsIdentifier, $environment, ZatcaCredentialType::Production);
 
         return $this->send($environment, 'POST', '/invoices/reporting/single', [
-            'headers' => [
-                'Accept-Version' => 'V2',
-                'Content-Type' => 'application/json',
-                'Accept-Language' => Config::get('zatca.http.accept_language', 'ar'),
-                'Clearance-Status' => '0', // Reporting model only — clearance not used in this package's scope.
-            ],
+            // Reporting model only — clearance not used in this package's scope.
+            'headers' => $this->headers(['Clearance-Status' => '0']),
             'auth' => [$credentials->authUsername(), $credentials->authPassword()],
             'json' => $this->requestMapper->mapInvoiceSubmissionRequest($invoiceHash, $uuid, $signedInvoiceBase64),
         ], fn ($response) => $this->responseNormalizer->normalizeReporting($response));
+    }
+
+    /**
+     * The headers every V2 request shares. Single source of `Accept-Version`
+     * so the five endpoints can never drift apart when the version changes.
+     *
+     * @param  array<string, string>  $extra  Per-endpoint headers (OTP, Clearance-Status).
+     * @return array<string, string>
+     */
+    private function headers(array $extra = []): array
+    {
+        $this->assertConfiguredApiVersionMatches();
+
+        return array_merge([
+            'Accept-Version' => self::API_VERSION,
+            'Content-Type' => 'application/json',
+            'Accept-Language' => Config::get('zatca.http.accept_language', 'ar'),
+        ], $extra);
+    }
+
+    /**
+     * Guards against this connector being resolved directly from the container
+     * (bypassing ConnectorFactory) while config points at a different API
+     * version. Sending V2 headers with a V3 config — or vice versa — would be a
+     * silent wrong-version request; failing here makes the mismatch obvious.
+     */
+    private function assertConfiguredApiVersionMatches(): void
+    {
+        $configured = Config::get('zatca.api_version');
+
+        if ($configured !== self::API_VERSION) {
+            throw new ZatcaException(
+                sprintf(
+                    'ZATCA_API_VERSION is [%s] but the %s connector was used. Resolve the connector through ConnectorFactory, and add Connectors/%s/ before switching config to it.',
+                    $configured,
+                    self::API_VERSION,
+                    $configured,
+                )
+            );
+        }
     }
 
     private function send(ZatcaEnvironment $environment, string $method, string $path, array $options, callable $normalize): ZatcaApiResult

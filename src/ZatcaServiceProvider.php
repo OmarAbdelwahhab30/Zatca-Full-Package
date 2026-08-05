@@ -6,6 +6,7 @@ use Zatca\Console\Commands\CheckCertificate;
 use Zatca\Console\Commands\GenerateCredentials;
 use Zatca\Console\Commands\InspectZatca;
 use Zatca\Console\Commands\Onboard;
+use Zatca\Console\Commands\PruneSdkFiles;
 use Zatca\Console\Commands\PruneSubmissionAttempts;
 use Zatca\Console\Commands\RenewCertificate;
 use Zatca\Console\Commands\ReportPendingInvoices;
@@ -88,6 +89,7 @@ class ZatcaServiceProvider extends ServiceProvider
                 CheckCertificate::class,
                 RenewCertificate::class,
                 PruneSubmissionAttempts::class,
+                PruneSdkFiles::class,
                 SdkSmokeTest::class,
             ]);
         }
