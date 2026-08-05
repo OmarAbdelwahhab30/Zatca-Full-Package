@@ -1,0 +1,4 @@
+********** Welcome to ZATCA E-Invoice Java SDK 3.9.9 (hypothetical future version) *********************
+2026-07-28 12:51:04,471 [INFO] ValidationProcessorImpl - xsd check: OK
+2026-07-28 12:51:05,500 [INFO] ValidationProcessorImpl - en check: OK
+2026-07-28 12:51:06,545 [INFO] InvoiceValidationService - FINAL RESULT: OK

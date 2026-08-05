@@ -1,0 +1,3 @@
+********** Welcome to ZATCA E-Invoice Java SDK 3.9.9 (hypothetical future version) *********************
+2026-07-28 12:50:29,586 [INFO] HashGenerationService - hash computed: OK
+2026-07-28 12:50:29,586 [INFO] HashGenerationService - digest=SGVsbG9UaGlzSXNBRmFrZUhhc2hWYWx1ZUZvclRlc3Rpbmc=
