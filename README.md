@@ -33,7 +33,9 @@ This is the company-wide standard package for ZATCA integration. If your app nee
 - [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
 - [FAQ](#faq)
+- [**When Something Breaks**](docs/WHEN_SOMETHING_BREAKS.md) — start here during an incident
 - [Database Guide](docs/DATABASE.md) — the 5 tables, and what each command writes
+- [AI Support Prompt](docs/AI_SUPPORT_PROMPT.md) — copy-paste prompt for debugging with an AI assistant
 - [Operations Runbook](docs/OPERATIONS.md) — deployment, version upgrades, certificate expiry
 - [Changelog / Versioning](#changelog--versioning)
 - [Roadmap](#roadmap)
@@ -93,7 +95,7 @@ Give the package an order (or any "paid" record), and it will:
 
 These are pinned on purpose. See `docs/COMPATIBILITY.md` inside the package for the full compatibility table and the process for adding a new version combination.
 
-For what to do when any of these versions change — plus production deployment steps and certificate expiry handling — see [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+For what to do when any of these versions change — plus deployment steps (staging and production) and certificate expiry handling — see [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 ---
 
@@ -200,7 +202,7 @@ ZATCA_ACCEPT_LANGUAGE=ar
 
 # --- Retries (generation and reporting are separate policies) ---
 ZATCA_GENERATION_RETRY_TRIES=5
-ZATCA_REPORTING_RETRY_ATTEMPTS=4
+ZATCA_REPORTING_RETRY_ATTEMPTS=12   # x every-5-minutes ≈ 1 hour of ZATCA downtime survived
 
 # --- Certificate renewal — leave false until the real ZATCA renewal contract is verified ---
 ZATCA_AUTO_RENEWAL_ENABLED=false
@@ -211,6 +213,7 @@ ZATCA_QUEUE_NAME=zatca
 
 # --- Housekeeping ---
 ZATCA_PRUNE_ATTEMPTS_AFTER_DAYS=180
+ZATCA_PRUNE_SDK_FILES_AFTER_DAYS=7
 ```
 
 > **Never** put real ZATCA tokens, secrets, or private keys in `.env`. Those are created by the onboarding commands and stored **encrypted** in the database.
@@ -255,7 +258,7 @@ All options live in `config/zatca.php`. Here is what every key does.
 |---|---|---|---|---|
 | `retries.generation.tries` | `ZATCA_GENERATION_RETRY_TRIES` | `5` | How many times Laravel retries `GenerateZatcaInvoiceJob` itself (signing/creation) if it throws. | Rarely. |
 | `retries.generation.backoff_seconds` | *(array in config file)* | `[5, 30, 120, 600]` | Delay before each `GenerateZatcaInvoiceJob` retry. | Adjust pacing if needed. |
-| `retries.reporting.max_attempts` | `ZATCA_REPORTING_RETRY_ATTEMPTS` | `4` | How many times a **signed** invoice may be re-submitted to ZATCA before moving to `manual_review`. Reporting never regenerates the invoice — only re-sends the same stored hash/UUID/XML. | Rarely — 4 is a safe default. |
+| `retries.reporting.max_attempts` | `ZATCA_REPORTING_RETRY_ATTEMPTS` | `12` | How many times a **signed** invoice may be re-submitted to ZATCA before moving to `manual_review`. Reporting never regenerates the invoice — only re-sends the same stored hash/UUID/XML. | Attempts are consumed at the pace `zatca:report-pending` runs, so this is really a downtime budget: `12 × every-5-minutes ≈ 1 hour`. Raise it to sleep through a longer ZATCA maintenance window. |
 
 ### `certificate`
 
@@ -282,6 +285,12 @@ All options live in `config/zatca.php`. Here is what every key does.
 | Key | Env variable | Default | What it does | When to change it |
 |---|---|---|---|---|
 | `submission_attempts.prune_after_days` | `ZATCA_PRUNE_ATTEMPTS_AFTER_DAYS` | `180` | How long to keep old attempt-history rows for successfully reported invoices. | Lower it to save database space; raise it if you need a longer audit trail. |
+
+### `sdk_files`
+
+| Key | Env variable | Default | What it does | When to change it |
+|---|---|---|---|---|
+| `sdk_files.prune_after_days` | `ZATCA_PRUNE_SDK_FILES_AFTER_DAYS` | `7` | How long `zatca:prune-sdk-files` keeps leftover files under `storage/app/private/zatca/`. Nothing reads them after a call finishes — the signed invoice itself lives in the database and is never pruned. | Lower it if disk is tight. The command additionally refuses to delete anything younger than one hour, whatever this is set to. |
 
 ### `egs`
 
@@ -762,6 +771,114 @@ Pruned 12 submission attempt(s) older than 180 days.
 
 ---
 
+### `zatca:status`
+
+**Purpose:** Answers one question — *is there anything a human needs to do right now?* Checks invoices in `manual_review`, invoices unreported for too long, certificate expiry per EGS, and failed jobs on the `zatca` queue. Built to be wired into a monitor or a cron that mails on failure.
+
+**Syntax:**
+```bash
+php artisan zatca:status [--stale-minutes=60] [--strict] [--json]
+```
+
+**Example:**
+```bash
+php artisan zatca:status
+```
+
+**Expected output:**
+```
++----------------------------------+-------+-----------------------------------------------------+
+| Check                            | Level | Detail                                              |
++----------------------------------+-------+-----------------------------------------------------+
+| Manual review                    | OK    | No invoices waiting for a human.                    |
+| Reporting queue                  | OK    | No invoice has been waiting longer than 60 minutes. |
+| Certificate [default/production] | OK    | Valid for 887 days (state: valid).                  |
+| Failed jobs                      | OK    | No failed jobs on the "zatca" queue.                 |
++----------------------------------+-------+-----------------------------------------------------+
+Nothing needs attention.
+```
+
+**Exit codes:** `0` when nothing is broken, `1` when something needs a human. Warnings print but do not fail unless you pass `--strict` — a certificate 45 days out should not page anyone daily for six weeks, while at 30 days it becomes a failure because renewal needs a portal OTP and someone's calendar.
+
+**How this differs from `zatca:health-check`:** health-check asks *"is the installation wired up correctly"* (SDK jar, fingerprint, credentials present) — run it after deploying. Status asks *"is anything wrong right now"* — run it continuously.
+
+**ZATCA API used:** None — reads local state only.
+
+---
+
+### `zatca:requeue`
+
+**Purpose:** Puts stuck invoices back into the reporting queue. `zatca:report-pending` deliberately never touches `manual_review`; this is the way to restart those once the cause is fixed — or automatically, for the subset that only failed because ZATCA was unreachable.
+
+**Syntax:**
+```bash
+php artisan zatca:requeue [--status=manual_review] [--only-transient] [--max-total-attempts=50]
+                          [--egs=] [--id=*] [--limit=0] [--keep-attempts] [--dry-run]
+```
+
+**Example — scheduled, safe:**
+```bash
+php artisan zatca:requeue --only-transient
+```
+
+Requeues only invoices whose last attempt failed with HTTP `0` or `5xx` (a ZATCA outage or network failure). Invoices ZATCA actively **rejected** (`4xx`) are left alone, because retrying identical data fails identically. Safe to run hourly.
+
+**Example — manual, after fixing a rejection:**
+```bash
+php artisan zatca:requeue --id=41 --dry-run
+php artisan zatca:requeue --id=41
+```
+
+**Expected output:**
+```
++----+---------------+----------+-----------+--------------------------+
+| ID | Status        | Attempts | Last HTTP | Last error               |
++----+---------------+----------+-----------+--------------------------+
+| 41 | manual_review | 12       | 503       | Service Unavailable      |
++----+---------------+----------+-----------+--------------------------+
+Requeued 1 invoice(s) with attempt counters reset.
+```
+
+**Safety:** never re-signs (the stored signed XML, UUID, ICV and PIH are re-sent unchanged), never touches an invoice ZATCA already accepted even if you pass its ID, skips invoices with no attempt history under `--only-transient`, and gives up on anything already attempted more than `--max-total-attempts` times.
+
+**ZATCA API used:** None directly — it dispatches `RetryZatcaInvoiceJob`, which calls the reporting endpoint.
+
+---
+
+### `zatca:prune-sdk-files`
+
+**Purpose:** Deletes leftover files under `storage/app/private/zatca/`. Nothing reads them once a call finishes — the authoritative signed invoice lives in the database and is never pruned. Orphaned `runtime/` and `tmp/` entries can contain key material, so this is a security cleanup as much as a disk-space one.
+
+**Syntax:**
+```bash
+php artisan zatca:prune-sdk-files [--days=] [--dry-run]
+```
+
+**Example:**
+```bash
+php artisan zatca:prune-sdk-files --dry-run
+```
+
+**Expected output:**
+```
++-------------------------------+---------+---------+
+| Location                      | Deleted | Size    |
++-------------------------------+---------+---------+
+| sdk-output                    | 2       | 21.8 KB |
+| tmp                           | 0       | 0 B     |
+| smoke-test                    | 0       | 0 B     |
+| runtime (orphaned workspaces) | 0       | 0 B     |
+| csr-config-*.properties       | 0       | 0 B     |
++-------------------------------+---------+---------+
+Freed 21.8 KB across 2 entr(ies) older than 7 day(s).
+```
+
+**Safety:** never deletes anything younger than one hour, even with `--days=0`, so an SDK call in flight can never lose its workspace.
+
+**ZATCA API used:** None — a local filesystem cleanup only.
+
+---
+
 ## Public API
 
 Everything below is a class you can inject (via Laravel's container) or resolve with `app(...)`.
@@ -1003,13 +1120,25 @@ Every place the package turns raw SDK output or an HTTP body into an exception m
 | `ZatcaResponseStatus` | `Pass`, `Warning`, `Error`, `Unknown` |
 | `ZatcaCertificateState` | `Valid`, `ExpiringSoon`, `Expired`, `Renewing`, `Failed` — `Valid` is the one durable "safe to report" state; there is no separate `Active` state (an earlier revision had one, but nothing ever treated it differently from `Valid`, so it was removed) |
 
-### Event
+### Events
 
 | Event | Fired when | Payload |
 |---|---|---|
 | `ZatcaInvoiceGenerated` | Right after an invoice is signed and stored, before reporting | `$event->invoice` (a `ZatcaInvoice` model) |
+| `ZatcaInvoiceNeedsAttention` | An invoice lands in `manual_review` and will not resolve itself | `$event->invoice`, `$event->reason` (sanitized, safe to put in an alert) |
+| `ZatcaCertificateExpiring` | A certificate first becomes `expiring_soon` or `expired` — **once per transition**, not once per daily check | `$event->egsIdentifier`, `credentialType`, `state`, `expiresAt`, `daysRemaining`, `hasExpired()` |
 
-Listen to this event to send/render the student-facing PDF invoice — the package deliberately does not generate PDFs itself, so you can use your own branding/template.
+The last two are the package's alerting seam. Everything is logged as well, but a log line is not an alerting channel — without listeners these fire into the void, by design: the package ships no mail/Slack code of its own.
+
+```php
+// app/Providers/EventServiceProvider.php
+protected $listen = [
+    \Zatca\Events\ZatcaCertificateExpiring::class => [SendZatcaCertificateAlert::class],
+    \Zatca\Events\ZatcaInvoiceNeedsAttention::class => [SendZatcaInvoiceAlert::class],
+];
+```
+
+Listen to `ZatcaInvoiceGenerated` to send/render the student-facing PDF invoice — the package deliberately does not generate PDFs itself, so you can use your own branding/template.
 
 ```php
 use Zatca\Events\ZatcaInvoiceGenerated;
@@ -1082,7 +1211,18 @@ The **Clearance model** is not implemented in v1. Only Reporting is supported.
 
 ### Retry behavior
 
-If ZATCA is unreachable, or returns a temporary (5xx) error, the invoice is marked `retrying` and picked up again by `zatca:report-pending` (run this on a schedule). If ZATCA returns a real validation error, the invoice moves to `manual_review` — it is **not** retried automatically, because retrying the same broken data would just fail again. An admin must look at it first.
+If ZATCA is unreachable, or returns a temporary (5xx) error, the invoice is marked `retrying` and picked up again by `zatca:report-pending` (run this on a schedule). If ZATCA returns a real validation error, the invoice moves to `manual_review` — it is **not** retried automatically, because retrying the same broken data would just fail again.
+
+**How long an outage survives itself.** Attempts are consumed at the pace `zatca:report-pending` runs, so `ZATCA_REPORTING_RETRY_ATTEMPTS` is really a downtime budget: `12 × every-5-minutes ≈ 1 hour`. Past that, the invoice waits in `manual_review`. Nothing is lost — the signed invoice, hash chain, UUID and ICV are all untouched.
+
+**`manual_review` covers two different situations**, and only one of them can be fixed by retrying:
+
+| Cause | Last HTTP status | Retrying helps? |
+|---|---|---|
+| ZATCA outage — server down, network failure | `0` or `5xx` | ✅ Yes — the invoice is fine, ZATCA simply wasn't reachable |
+| ZATCA rejected it — validation error, bad data | `4xx` | ❌ No — it will fail identically until a human fixes the cause |
+
+Schedule `zatca:requeue --only-transient` (hourly is plenty) to restart the first kind automatically while leaving the second alone. A ZATCA outage that outlasts the retry budget then repairs itself, and only genuine rejections wait for a human — surfaced through `ZatcaInvoiceNeedsAttention` and `zatca:status`.
 
 ### Idempotency
 
@@ -1174,13 +1314,18 @@ Network failures and HTTP errors are caught inside the connector and turned into
 
 | Command | What it verifies | ZATCA API used |
 |---|---|---|
+| `zatca:status` | **Whether anything needs a human right now** — stuck invoices, certificate expiry, failed jobs. Exit code `1` when it does. | None |
 | `zatca:health-check` | SDK jar exists, SDK fingerprint matches, credentials exist per EGS, certificate state is healthy | None |
 | `zatca:inspect credentials` | Which credentials exist, certificate state/expiry — never raw secrets | None |
 | `zatca:inspect state` | Current ICV and a truncated PIH preview | None |
 | `zatca:inspect invoice --id=` | One invoice's status, attempt count, last error | None |
 | `zatca:certificate:check` | Certificate expiry state transitions | None |
+| `zatca:requeue --dry-run` | Which stuck invoices would be restarted, and why | None |
+| `zatca:prune-sdk-files --dry-run` | Which leftover files would be deleted | None |
 
-All diagnostics are **read-only** and safe to run at any time, including in production.
+All of these are **read-only** and safe to run at any time, including in production — the two `--dry-run` forms change nothing.
+
+Use `zatca:health-check` after a deploy ("is the install wired up correctly?") and `zatca:status` continuously ("is anything wrong right now?"). `zatca:certificate:check` is the one exception to read-only: it repairs a missing `certificate_expires_at` by re-reading the stored certificate, because a null expiry means the certificate cannot be monitored at all.
 
 ---
 
@@ -1197,25 +1342,29 @@ All diagnostics are **read-only** and safe to run at any time, including in prod
 
 ### Standalone package test suite (Orchestra Testbench)
 
-The package has its own self-contained test suite under `packages/zatca/zatca/tests/` — it boots a throwaway Laravel app via [Orchestra Testbench](https://packages.tools/testbench) with an in-memory SQLite database, with **no dependency on any host application**. This is the authoritative suite that proves the package works on its own.
+All tests live inside the package, under `packages/zatca/tests/`. They boot a throwaway Laravel app via [Orchestra Testbench](https://packages.tools/testbench) with an in-memory SQLite database and **no dependency on any host application** — so they can never touch a real database.
 
 ```bash
-cd packages/zatca/zatca
+cd packages/zatca
 composer install   # first time only — installs its own isolated vendor/
-composer test       # runs vendor/bin/phpunit
+composer test      # runs vendor/bin/phpunit
 ```
 
-It covers: unit tests (sanitizer, response normalizer, XML generator), feature tests (service provider bindings, migrations, registered commands, ICV/PIH isolation, credential encryption, certificate lifecycle, queue job payload safety), golden-file SDK output parser tests, and SDK runtime workspace isolation tests.
+It covers: the sanitizer, response normalizer, XML generator and certificate parser (unit); service-provider bindings, migrations, registered commands, credential encryption, ICV/PIH isolation and chaining, ICV safety across a signing failure, certificate lifecycle and alerting events, queue job payload safety, and the status/requeue/prune commands (feature); plus golden-file SDK output parsing and SDK workspace isolation.
 
-### Host-application integration tests
-
-`tests/Unit/Zatca` and `tests/Feature/Zatca` inside the host app cover what's specific to this host: exercising the real SDK jar against a live MySQL connection, and (once implemented) the host's own `InvoiceSourceContract` mapping and payment trigger.
+Two tests are **skipped by default** — they drive the real Java SDK. Run them before releasing any change to signing:
 
 ```bash
-php artisan test --filter=Zatca
-# or:
-vendor/bin/phpunit tests/Unit/Zatca tests/Feature/Zatca
+ZATCA_SDK_EXECUTABLE=/path/to.jar ZATCA_SDK_ROOT=/path/to/sdk vendor/bin/phpunit
 ```
+
+### Continuous integration
+
+`.github/workflows/zatca_tests.yml` runs the whole suite on PHP 8.1, 8.2 and 8.3 for every push or PR touching `packages/zatca/**`. It needs no database, no credentials and no secrets. The SDK-backed tests skip there, which is why you should run them locally before a signing change.
+
+### Host-application tests
+
+The host app used to carry duplicated copies of these tests; they have been consolidated into the package. Anything host-specific — your own `InvoiceSourceContract` mapping and the payment trigger that dispatches `GenerateZatcaInvoiceJob` — belongs in the host suite once implemented.
 
 ### Sandbox testing
 
@@ -1304,7 +1453,9 @@ ZATCA_AUTO_RENEWAL_ENABLED=true php artisan zatca:certificate:renew --type=produ
 | A 409 response was expected to succeed but didn't | The response body didn't confirm "already reported" | Check `last_zatca_response`/`last_error` on the invoice — this is by design (see [Error Handling](#error-handling)), not a bug. |
 | `Unable to resolve invoice source [...]` | `InvoiceSourceResolverContract` returned `null` — the record was deleted, or `source_type` isn't a recognized Eloquent model | If your source isn't a plain Eloquent model, bind your own `InvoiceSourceResolverContract` implementation. |
 | Migration fails with a MySQL "identifier too long" error | Should not happen — already fixed in the package's migrations | If you see this, you're on an outdated copy of the package; update it. |
-| `Changing columns ... requires Doctrine DBAL` when running the package's own tests | `doctrine/dbal` not installed in the package's own `packages/zatca/zatca/vendor/` | Run `composer install` inside `packages/zatca/zatca/` — it's declared as a real dependency in that `composer.json`. |
+| `Changing columns ... requires Doctrine DBAL` when running the package's own tests | `doctrine/dbal` not installed in the package's own `packages/zatca/vendor/` | Run `composer install` inside `packages/zatca/` — it's declared as a real dependency in that `composer.json`. |
+| Invoices stuck in `manual_review` after a ZATCA outage | The retry budget ran out while ZATCA was unreachable | Schedule `zatca:requeue --only-transient` so this repairs itself. See [Production Reporting](#production-reporting). |
+| `certificate_expires_at` is `null` and expiry warnings never fire | Onboarding ran before the certificate parser was fixed | Run `zatca:certificate:check` — it recovers the date from the stored certificate. Confirm with `zatca:status`. |
 
 ---
 

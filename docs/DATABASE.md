@@ -111,11 +111,18 @@ The fake invoices sent to ZATCA during registration. Kept as proof that onboardi
 | `zatca:prune-submission-attempts` | Old rows in `zatca_submission_attempts` | Invoices, credentials, counters |
 | `zatca:prune-sdk-files` | Files on disk only | **Nothing in the database** |
 
+| `zatca:requeue` | `zatca_invoices` | Sets stuck invoices back to `retrying` and resets `attempt_count`. Never touches an invoice ZATCA accepted. |
+
 ### Commands that only READ
 
-`zatca:inspect` · `zatca:health-check` · `zatca:sdk-smoke-test`
+`zatca:inspect` · `zatca:health-check` · `zatca:status` · `zatca:sdk-smoke-test`
 
 These never change anything. Safe to run any time, including on production.
+
+> One exception worth knowing: `zatca:certificate:check` will fill in a missing
+> `certificate_expires_at` by reading the stored certificate. That is a repair,
+> not a change of meaning — a null expiry means the certificate cannot be
+> monitored at all.
 
 ### Not a command — the automatic part
 

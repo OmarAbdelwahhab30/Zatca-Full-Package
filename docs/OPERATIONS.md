@@ -2,14 +2,29 @@
 
 Follow the steps in order. Each step says **what to run** and **what you should see**.
 
+- **Something is broken right now** → [`WHEN_SOMETHING_BREAKS.md`](WHEN_SOMETHING_BREAKS.md)
 - Setup and code examples → [`README.md`](../README.md)
+- What each command writes to the database → [`DATABASE.md`](DATABASE.md)
 - Version table → [`COMPATIBILITY.md`](COMPATIBILITY.md)
+- Prompt to paste into an AI assistant when something breaks → [`AI_SUPPORT_PROMPT.md`](AI_SUPPORT_PROMPT.md)
 
 ---
 
-## 1. Production Deployment
+## 1. Deployment (staging and production)
 
-### Before you deploy (one time, on the server)
+The same order works for both. On staging set `ZATCA_ENVIRONMENT=sandbox`; on production set `production`.
+
+> ### ⭐ The golden rule: prove the server can sign **before** you ask for an OTP
+>
+> The natural instinct is to start with onboarding. Don't.
+>
+> Onboarding needs an OTP from the Fatoora portal. If Java is missing or an SDK path is wrong on that server, the onboarding call fails and you are back at the portal for another OTP — an avoidable round trip, and an avoidable delay on production. Treat every OTP as single-use.
+>
+> `zatca:sdk-smoke-test` checks Java, the SDK, signing and validation **without contacting ZATCA and without needing any certificate**. Run it first. Get the OTP only after it passes.
+>
+> **Stage C below is that check. Never skip it, and never reorder it after Stage D.**
+
+### Stage A — Server prerequisites (once per server)
 
 **Step 1 — Install Java.**
 
@@ -31,7 +46,7 @@ mkdir -p storage/app/private/zatca && chmod 700 storage/app/private/zatca
 **Step 4 — Check `APP_KEY` is set and will never change.**
 It decrypts the certificate and private key in the database. If you change it, all ZATCA credentials become unreadable and you must onboard again.
 
-### Deploy (in this exact order)
+### Stage B — Install the package
 
 **Step 1 — Put these values in `.env`:**
 
@@ -45,9 +60,13 @@ ZATCA_SDK_EXECUTABLE=/full/path/to/zatca-einvoicing-sdk-238-R3.4.8.jar
 ZATCA_SDK_ROOT=/full/path/to/ZACTA-SDK-JAVA
 ZATCA_SDK_FINGERPRINT=<sha256 printed by zatca:generate-credentials>
 
-ZATCA_ENVIRONMENT=production
+ZATCA_ENVIRONMENT=production        # staging: sandbox
 ZATCA_QUEUE_NAME=zatca
 ```
+
+⚠ Double-check `ZATCA_ENVIRONMENT` on staging. Setting it to `production` there means staging sends test purchases to the real ZATCA.
+
+Leave `ZATCA_SDK_FINGERPRINT` empty for now — Stage D prints the value to put here.
 
 Plus your company data: `ZATCA_VAT_NUMBER`, `ZATCA_ORG_NAME`, `ZATCA_ORG_UNIT_NAME`, `ZATCA_ORG_IDENTIFIER`, `ZATCA_CSR_COMMON_NAME`, `ZATCA_CSR_SERIAL_NUMBER`, `ZATCA_CRN`, `ZATCA_LOCATION_ADDRESS`, `ZATCA_BUSINESS_CATEGORY`, `ZATCA_INVOICE_TYPE`, `ZATCA_COUNTRY_CODE`.
 
@@ -75,50 +94,105 @@ php artisan config:cache
 php artisan queue:work --queue=zatca --tries=1
 ```
 
-### After you deploy — check it works
+### ⭐ Stage C — Prove the server can sign (before any OTP)
 
-**Step 1 — Health check:**
+**Step 1 — Run the real-SDK check:**
+
+```bash
+php artisan zatca:sdk-smoke-test
+```
+
+You must see **nine `[OK]` lines**: Java, SDK executable, SDK root, fingerprint, CSR generation, hash, signing, QR extraction, validation.
+
+| What you see | What it means | Do this |
+|---|---|---|
+| 9 × `[OK]` | The server can sign. | Continue to Stage D. |
+| `SKIPPED` | `ZATCA_SDK_EXECUTABLE` / `ZATCA_SDK_ROOT` are wrong or unset. **The command still exits 0** — read the text, not the exit code. | Fix the paths in `.env`, re-run. |
+| `[FAIL]` on Java | Java missing, or not version 11–15, or not on the PHP user's `PATH`. | Fix Java, re-run. |
+| `[FAIL]` on signing | Usually the SDK folder is incomplete or unreadable by the PHP user. | Fix, re-run. |
+
+**Do not continue until all nine are `[OK]`.** This step contacts nobody and costs nothing to repeat.
+
+**Step 2 — Health check (before onboarding):**
 
 ```bash
 php artisan zatca:health-check
 ```
 
-You should see `[OK] SDK executable found`, `[OK] SDK fingerprint matches`, and `[OK] ... credentials present`.
-If you see `[FAIL]` or `[PENDING]`, stop and fix it before sending invoices.
+At this point this is the **expected and correct** output:
 
-**Step 2 — Look at the stored credentials:**
+```
+[OK] SDK executable found: ...
+[SKIP] No SDK fingerprint recorded yet ...
+[PENDING] [default] compliance credentials not yet onboarded.
+[PENDING] [default] production credentials not yet onboarded.
+```
+
+`[PENDING]` is normal here — you have not onboarded yet. Only the SDK lines matter at this stage.
+
+### Stage D — Onboarding (one time per EGS, by hand)
+
+Now — and only now — get the OTP from the Fatoora portal.
+
+**Step 1 — Generate the key and CSR:**
+
+```bash
+php artisan zatca:generate-credentials
+```
+
+It prints `SDK fingerprint: <sha256>`. **Copy it into `.env` as `ZATCA_SDK_FINGERPRINT`**, then run `php artisan config:cache` again.
+
+**Step 2 — The three ZATCA calls, in order:**
+
+```bash
+php artisan zatca:onboard compliance --otp=XXXXXX
+php artisan zatca:onboard test-invoice
+php artisan zatca:onboard production
+```
+
+If a step fails, fix the cause and re-run **that step** — you do not restart the whole sequence. Get a fresh OTP from the portal before retrying the compliance step; treat OTPs as single-use.
+
+### Stage E — Final verification
+
+**Step 1 — Health check (now everything should pass):**
+
+```bash
+php artisan zatca:health-check
+```
+
+Expected now: `[OK]` on the SDK lines, `[OK] SDK fingerprint matches recorded value`, and both credentials present with `certificate state: valid`.
+
+**Step 2 — Look at what was stored:**
 
 ```bash
 php artisan zatca:inspect credentials
+php artisan zatca:inspect state
 ```
 
 **Step 3 — Create one real invoice** and confirm its status becomes `reported`.
 
+> See [`DATABASE.md`](DATABASE.md) for exactly which rows each of these stages adds.
+
 ### ⚠ Things you must know
 
-1. **Onboarding is separate from deployment.** You do it once per device (EGS), by hand, using an OTP from the Fatoora portal:
-
-   ```bash
-   php artisan zatca:generate-credentials
-   php artisan zatca:onboard compliance --otp=XXXXXX
-   php artisan zatca:onboard test-invoice
-   php artisan zatca:onboard production
-   ```
-
-2. **Two things are missing in the main app right now** and must be added before going live (see `docs/ZATCA_ACTIVATION_GUIDE.md` §8 and §13):
+1. **Two things are missing in the main app right now** and must be added before going live (see `docs/ZATCA_ACTIVATION_GUIDE.md` §8 and §13):
    - a binding for `InvoiceSourceContract` — without it, invoice generation cannot run;
    - scheduled commands:
 
      ```php
      $schedule->command('zatca:report-pending')->everyFiveMinutes();
+     $schedule->command('zatca:requeue --only-transient')->hourly();
      $schedule->command('zatca:certificate:check')->daily();
+     $schedule->command('zatca:status')->hourly()->emailOutputOnFailure('ops@example.com');
      $schedule->command('zatca:prune-submission-attempts')->weekly();
      $schedule->command('zatca:prune-sdk-files')->daily();
      ```
 
-3. **All ZATCA files live under `storage/app/private/zatca/`** — not `storage/app/zatca/`. The queue worker (not just the web server) must be able to write there.
+   - listeners for the two alerting events (see "Getting told when something breaks" below).
 
-4. **Two different cleanup commands — you need both.**
+2. **All ZATCA files live under `storage/app/private/zatca/`** — not `storage/app/zatca/`. The queue worker (not just the web server) must be able to write there.
+
+3. **Two different cleanup commands — you need both.**
 
    | Command | Cleans | Default age |
    |---|---|---|
@@ -126,6 +200,92 @@ php artisan zatca:inspect credentials
    | `zatca:prune-sdk-files` | files on disk under `storage/app/private/zatca/` | 7 days |
 
    Neither one ever touches the invoices themselves.
+
+### Getting told when something breaks
+
+Everything in this package logs. **Nobody reads logs.** Two things close that gap.
+
+**1. `zatca:status` — one command that answers "is anything wrong?"**
+
+```bash
+php artisan zatca:status              # human-readable table
+php artisan zatca:status --json       # for a monitor
+php artisan zatca:status --strict     # warnings also count as failure
+```
+
+| Exit code | Meaning |
+|---|---|
+| `0` | Nothing needs doing (warnings may still be printed) |
+| `1` | Something needs a human |
+
+It checks: invoices in `manual_review`, invoices unreported for over an hour, certificate expiry per EGS, and failed jobs on the `zatca` queue.
+
+Severity is deliberate: a certificate 45 days out is a **warning** (exit 0) so nobody is paged daily for two months, but at **30 days it becomes a failure** — renewal needs a portal OTP and a human's calendar. An hour-old reporting backlog is a failure too: it means the worker died or the certificate expired.
+
+This is different from `zatca:health-check`, which asks "is the install wired up correctly" (SDK, fingerprint, credentials present). Use health-check after deploying; use status continuously.
+
+**2. Two events to hook your own alerting onto**
+
+```php
+// app/Providers/EventServiceProvider.php
+protected $listen = [
+    \Zatca\Events\ZatcaCertificateExpiring::class => [SendZatcaCertificateAlert::class],
+    \Zatca\Events\ZatcaInvoiceNeedsAttention::class => [SendZatcaInvoiceAlert::class],
+];
+```
+
+| Event | Fired when | Properties |
+|---|---|---|
+| `ZatcaCertificateExpiring` | A certificate first becomes `expiring_soon` or `expired` — **once per transition**, not once per daily check | `egsIdentifier`, `credentialType`, `state`, `expiresAt`, `daysRemaining`, `hasExpired()` |
+| `ZatcaInvoiceNeedsAttention` | An invoice lands in `manual_review` | `invoice`, `reason` (already sanitized, safe to put in an email) |
+
+Without listeners these fire into the void — the package deliberately ships no mail/Slack code of its own.
+
+### Restarting stuck invoices — `zatca:requeue`
+
+`manual_review` covers two very different situations, and the difference decides whether a retry can help at all:
+
+| Cause | Last HTTP status | Retrying helps? |
+|---|---|---|
+| **ZATCA outage** — server down, network failure | `0` or `5xx` | ✅ Yes. The invoice is fine; ZATCA simply wasn't reachable. |
+| **ZATCA rejected it** — validation error, bad data | `4xx` | ❌ No. It will fail identically forever until a human fixes the cause. |
+
+**Schedule the safe half.** `--only-transient` requeues only the outage victims and never touches a rejection:
+
+```php
+$schedule->command('zatca:requeue --only-transient')->hourly();
+```
+
+Now a ZATCA outage that outlasts the retry budget repairs itself an hour later, with nobody woken up. Genuine rejections stay in `manual_review` and wait for the alert you wired to `ZatcaInvoiceNeedsAttention`.
+
+Two safeguards make this safe to leave running unattended: an invoice with **no attempt history** is skipped (nothing proves it was an outage), and one already attempted more than `--max-total-attempts` times (default 50) is skipped as genuinely stuck rather than retried forever.
+
+**Manual use**, after you have fixed a rejection:
+
+```bash
+php artisan zatca:requeue --dry-run          # show what would be requeued
+php artisan zatca:requeue                    # every manual_review invoice
+php artisan zatca:requeue --id=41 --id=42    # specific invoices
+php artisan zatca:requeue --egs=default --limit=50
+```
+
+It resets `attempt_count` by default — without that the invoice would be sent once and immediately fall back into `manual_review` for exceeding the budget. Use `--keep-attempts` to override.
+
+**It never re-signs anything.** The stored signed XML, UUID, ICV and PIH are sent again exactly as they are. And it refuses to touch an invoice ZATCA already accepted, even if you pass its ID explicitly.
+
+⚠ Only the `--only-transient` form belongs on the scheduler. Plain `zatca:requeue` retries rejections too, which just burns attempts and hides the real problem.
+
+### Surviving a ZATCA outage
+
+Reporting attempts are consumed at the pace `zatca:report-pending` runs:
+
+```
+ZATCA_REPORTING_RETRY_ATTEMPTS (default 12) × every-5-minutes ≈ 1 hour of downtime survived
+```
+
+Past that budget the invoice moves to `manual_review` — and if `zatca:requeue --only-transient` is scheduled, it is picked back up on the next hourly run and keeps trying. So the practical answer to "ZATCA went down at 2am" is: **nothing to do**. Nothing is ever lost either way; the signed invoice, hash chain, UUID and ICV are untouched throughout.
+
+Raise `ZATCA_REPORTING_RETRY_ATTEMPTS` if you would rather absorb a longer outage without invoices passing through `manual_review` at all.
 
 ### Cleaning up disk space — `zatca:prune-sdk-files`
 
@@ -384,232 +544,9 @@ Keep them updated by hand when a version changes, or they will slowly become wro
 
 ## 6. AI Support Prompt
 
-Use this when a ZATCA problem happens in production and you want help from an AI assistant (Claude, ChatGPT, or similar).
+When something breaks and you want help from an AI assistant, use the ready-made prompt in **[`AI_SUPPORT_PROMPT.md`](AI_SUPPORT_PROMPT.md)**.
 
-**How to use it**
+It is kept in its own file so you can copy it in one go. It tells the assistant how this package is built, forbids it from inventing ZATCA behavior, and makes it ask for evidence before proposing a fix.
 
-1. Copy the whole block below.
-2. Fill in the `[ ... ]` placeholders at the bottom with what you actually know. Leave a placeholder empty if you don't know it — the assistant will ask.
-3. Paste it into the assistant as your first message.
+⚠ Redact `APP_KEY`, private keys, secrets, CSIDs and OTPs before pasting anything into any AI assistant. The instructions in that file list exactly what to strip.
 
-**⚠ Before you paste — redact these. Never send them to any AI assistant:**
-
-`APP_KEY` · private keys (`-----BEGIN ... KEY-----`) · the `secret` column · `binary_security_token` / CSID values · `Authorization` headers · OTP codes · full customer data.
-
-Replace each with `[REDACTED]`. The package's own `ZatcaSanitizer` already does this for logged output, but anything you copy by hand from the database or `.env` is **not** sanitized.
-
-````text
-You are helping me debug a production issue in a Laravel package that integrates with
-ZATCA (Saudi Arabia e-invoicing / Fatoora). Read all of this before you answer.
-
-============================================================
-PART 1 — THE SYSTEM YOU ARE DEBUGGING
-============================================================
-Assume you cannot see the source code. These are the facts about the package.
-Treat them as ground truth. If you need a file, ask for it by path.
-
-Package: "zatca/zatca", PHP namespace Zatca\, PHP 8.1+, Laravel 9/10.
-Installed as a local Composer path repository inside the host application.
-
-SCOPE — what it does and does NOT do:
-  - Reporting model only: POST /invoices/reporting/single, header Clearance-Status: 0.
-  - Simplified Tax Invoice (B2C) only.
-  - It does NOT implement Clearance. There is no clearance endpoint in the code.
-  - It does NOT implement Standard Tax Invoice (B2B), credit notes, or debit notes.
-  If my problem is about any of those, say so immediately — it is unimplemented,
-  not broken.
-
-HOW AN INVOICE IS PRODUCED:
-  1. GenerateZatcaInvoiceJob (queued) -> ProductionInvoiceOrchestrator.
-  2. ICV (counter) and PIH (previous invoice hash) are reserved from table
-     zatca_egs_states inside a DB transaction with a row lock.
-  3. Unsigned UBL XML is built by a hand-written string template
-     (XmlGenerators/V2/SimplifiedInvoiceXmlGenerator).
-  4. The Java ZATCA SDK signs it. Signing is NEVER retried once it succeeds.
-  5. ReportZatcaInvoiceJob sends the stored signed XML to ZATCA.
-     RetryZatcaInvoiceJob re-sends the SAME stored bytes — it never re-signs and
-     never changes UUID / ICV / PIH / hash.
-
-HOW THE JAVA SDK IS CALLED:
-  - Command: java -jar <ZATCA_SDK_EXECUTABLE> --globalVersion <ZATCA_SDK_VERSION> <args>
-  - "java" must be on PATH. Required Java: JRE/JDK 11 to 15.
-  - The package does NOT use the bundled fatoora / fatoora.bat wrappers, does not
-    need jq, and never sets JAVA_HOME, FATOORA_HOME or SDK_CONFIG.
-  - Every call gets a fresh throwaway workspace at
-    storage/app/private/zatca/runtime/{uuid} containing its own Configuration/config.json
-    and Data/Certificates. It is deleted right after the call.
-  - That generated config.json points at four files inside the REAL SDK root:
-      Data/Schemas/xsds/UBL2.1/xsd/maindoc/UBL-Invoice-2.1.xsd
-      Data/Rules/Schematrons/CEN-EN16931-UBL.xsl
-      Data/Rules/Schematrons/20210819_ZATCA_E-invoice_Validation_Rules.xsl
-      Configuration/usage.txt
-    If a new SDK release renamed any of these, signing and validation break.
-  - SDK sub-commands used: -csr, -sign, -generateHash, -validate.
-  - Environment flag: sandbox = -nonprod, simulation = -sim, production = no flag.
-    The flag is deliberately NOT sent for -sign.
-  - The SDK's console output is parsed by regex in
-    src/Services/SDK/OutputParsers/V3_4_8/. If ZATCA changes the wording of that
-    output, the package throws ZatcaSdkOutputChangedException.
-  - The SDK jar's sha256 is pinned in ZATCA_SDK_FINGERPRINT. A mismatch throws
-    ZatcaSdkFingerprintMismatchException. An EMPTY value silently disables the check.
-
-CREDENTIALS AND STATE (database):
-  - zatca_egs_credentials — one row per (egs_identifier, environment, credential_type)
-    where credential_type is "compliance" or "production". Columns include
-    binary_security_token (the CSID), secret, private_key, certificate, csr,
-    request_id, certificate_expires_at, certificate_state.
-    secret and private_key are encrypted with Laravel's encrypter, i.e. with APP_KEY.
-    If APP_KEY changed, they cannot be decrypted and onboarding must be redone.
-  - The PRODUCTION certificate reuses the COMPLIANCE private key. The compliance
-    request_id is required to obtain the production CSID.
-  - zatca_egs_states — ICV counter and PIH per EGS. Compliance and production
-    sequences are separate rows.
-  - zatca_invoices, zatca_submission_attempts, zatca_compliance_documents.
-
-CERTIFICATE LIFECYCLE:
-  states: valid -> expiring_soon (60 days before expiry) -> expired
-          -> renewing -> valid | failed
-  When the production certificate is "expired", reporting is SKIPPED entirely:
-  invoices are still generated and signed and wait as pending_reporting.
-  Automatic renewal is OFF by default (ZATCA_AUTO_RENEWAL_ENABLED=false) because
-  ZATCA's real renewal contract has NOT been verified in this codebase.
-
-VERSION SEAMS (important for "it used to work"):
-  - ZATCA_API_VERSION       -> chooses src/Services/Connectors/V{n}/ via ConnectorFactory.
-  - ZATCA_XML_PROFILE_VERSION -> chooses src/Services/Invoice/XmlGenerators/V{n}/ via XmlGeneratorFactory.
-  - ZATCA_SDK_VERSION       -> passed to the jar as --globalVersion ONLY. It does NOT
-                              choose the output-parser folder; that is a hardcoded class
-                              name inside ZatcaSdkAdapter.
-  - Accept-Version is a per-connector constant (V2 connector always sends V2), not
-    read from config. A mismatch between config and the connector in use throws
-    a ZatcaException before any request is sent.
-  - ZATCA_UBL_VERSION, config zatca.compatibility and zatca.credential_encrypter are
-    declared in config but READ BY NO CODE. Changing them has no effect.
-  - The generated XML has ProfileID = reporting:1.0 and contains NO UBLVersionID and
-    NO CustomizationID.
-
-API ENDPOINTS USED (all POST, base URL depends on environment):
-  /compliance                  (OTP header)          -> compliance CSID
-  /compliance/invoices         (basic auth)          -> compliance test invoice
-  /production/csids            (basic auth)          -> production CSID
-  /production/csids            (basic auth)          -> renewal (UNVERIFIED contract)
-  /invoices/reporting/single   (basic auth)          -> report invoice
-  A 409 is treated as an idempotent success ONLY when the error text matches
-  "already ... report". Any unexpected response shape below HTTP 400 throws
-  ZatcaContractChangedException.
-
-DIAGNOSTIC COMMANDS AVAILABLE:
-  php artisan zatca:health-check              (SDK jar, fingerprint, credentials, cert state)
-  php artisan zatca:inspect credentials|state|invoice --id=N   (read-only, no secrets)
-  php artisan zatca:certificate:check
-  php artisan zatca:sdk-smoke-test            (real SDK end-to-end; can print SKIPPED and
-                                               still exit 0 — read the output, do not
-                                               trust the exit code alone)
-  php artisan zatca:report-pending
-  php artisan zatca:prune-sdk-files --dry-run  (safe: shows leftover files, deletes nothing)
-  Docs in the repo: packages/zatca/README.md, packages/zatca/docs/OPERATIONS.md,
-  packages/zatca/docs/COMPATIBILITY.md.
-
-============================================================
-PART 2 — RULES YOU MUST FOLLOW
-============================================================
-1. Understand before fixing. Do not propose a code change in your first reply
-   unless the cause is unambiguous from what I gave you.
-2. Ask clarifying questions until you can name a likely component. Ask them all at
-   once, numbered, so I can answer in one message. Do not guess to fill a gap.
-3. Never invent ZATCA behavior. If you are not certain how a ZATCA endpoint,
-   error code, field, or validation rule behaves, say plainly:
-   "This must be verified against the official ZATCA documentation" — and say
-   which document or endpoint to check. A confident wrong answer about ZATCA is
-   worse than no answer.
-4. Separate FACTS from ASSUMPTIONS in every reply, under those two headings.
-   A fact is something I told you or something in PART 1. Everything else is an
-   assumption and must be labelled as one.
-5. Do not assume the code says something. If you need a file, ask for it by path.
-6. Respect the scope limits in PART 1. Do not suggest clearance, B2B, or credit-note
-   fixes — they are not implemented.
-7. Do not ask me to paste private keys, secrets, CSIDs, tokens, OTPs or APP_KEY.
-   If you need to see one, ask only for its shape (length, prefix, PEM or base64).
-
-============================================================
-PART 3 — WHAT TO DO, IN ORDER
-============================================================
-STEP 1 — Classify the problem into ONE primary component, plus any secondary ones:
-   ZATCA API · SDK · Certificates · Production CSID · Compliance CSID ·
-   Cryptographic Stamp Identifier (CSID/CSI) · Environment configuration ·
-   Java/JDK · CSR generation · XML signing · Invoice validation · Clearance ·
-   Reporting · Network/connectivity · Authentication · Version compatibility ·
-   Package configuration · Server configuration · Other (name it).
-   State why you chose it, and name the one piece of evidence that would
-   disprove your choice.
-
-STEP 2 — Ask me for the evidence you still need. Use this checklist and ask only
-   for what is actually missing:
-   - The exact error message and full stack trace.
-   - Laravel log lines around the failure (storage/logs/laravel.log), including
-     any line starting with [ZATCA].
-   - The failing HTTP request and response: URL, method, status code, headers and
-     body — WITH SECRETS REDACTED.
-   - Raw SDK console output (stdout and stderr) from the failing command.
-   - Output of: php artisan zatca:health-check
-   - Output of: php artisan zatca:inspect credentials  and  zatca:inspect state
-   - Relevant .env values with secrets removed: ZATCA_ENVIRONMENT, ZATCA_API_VERSION,
-     ZATCA_SDK_VERSION, ZATCA_UBL_VERSION, ZATCA_XML_PROFILE_VERSION, whether
-     ZATCA_SDK_FINGERPRINT is set (yes/no, not the value), SDK paths.
-   - java -version output.
-   - Package version and the current row from docs/COMPATIBILITY.md.
-   - The invoice row state: status, reporting_status, attempt_count, last_error.
-   - What changed recently: deploy, SDK upgrade, PHP/Java upgrade, certificate
-     renewal, APP_KEY change, config:cache, server migration.
-
-STEP 3 — Consider a version change as a cause whenever the symptom is
-   "it worked before and now it doesn't". Explicitly check and tell me how to verify:
-   - Did the SDK jar change? Compare sha256 against ZATCA_SDK_FINGERPRINT and run
-     zatca:health-check.
-   - Did the SDK's console output wording change? Symptom:
-     ZatcaSdkOutputChangedException. Verify by running the SDK by hand and comparing
-     with the fixtures in tests/Fixtures/SdkOutput/.
-   - Did the SDK folder layout change? Check the four XSD/Schematron/usage.txt paths
-     listed in PART 1 still exist.
-   - Did the ZATCA API response shape change? Symptom:
-     ZatcaContractChangedException. Verify against ZATCA's current published API docs.
-   - Is the running combination of package / API / SDK / UBL versions actually a
-     verified row in docs/COMPATIBILITY.md?
-
-STEP 4 — If more than one cause is possible, list them RANKED from most likely to
-   least likely. For each: what it would explain, what it would NOT explain, and the
-   single cheapest test to confirm or eliminate it.
-
-STEP 5 — When you propose a fix:
-   - Say which file or setting changes.
-   - Explain WHY it solves the problem, connecting the fix to the specific evidence.
-   - State the risk and how to roll back.
-   - Say whether it needs re-onboarding, a new certificate, a queue restart, or
-     config:cache — and whether already-signed invoices are affected.
-   - Never suggest re-signing or regenerating an invoice that ZATCA already accepted,
-     and never suggest changing ICV or PIH by hand.
-
-============================================================
-PART 4 — HOW TO END EVERY REPLY
-============================================================
-Finish each reply with exactly this block:
-
-   ROOT CAUSE (so far): one or two sentences.
-   COMPONENT: the classification from STEP 1.
-   CONFIDENCE: High / Medium / Low — and what would raise it.
-   NEEDS ZATCA DOC VERIFICATION: yes/no — if yes, exactly what to verify.
-   NEXT ACTION: the single next thing I should do or send.
-
-============================================================
-PART 5 — MY SITUATION
-============================================================
-What is happening:            [ describe the symptom ]
-When it started:              [ date / after which change ]
-Environment:                  [ sandbox | simulation | production ]
-Does it affect all invoices or some:   [ ... ]
-Error message:                [ paste, redacted ]
-What I already tried:         [ ... ]
-zatca:health-check output:    [ paste ]
-Package / API / SDK versions: [ ... ]
-Recent changes:               [ deploy / SDK upgrade / cert renewal / APP_KEY / none ]
-````

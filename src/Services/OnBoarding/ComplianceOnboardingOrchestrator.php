@@ -7,6 +7,7 @@ use Zatca\Enums\ZatcaCertificateState;
 use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Exceptions\ZatcaException;
 use Zatca\Models\ZatcaComplianceDocument;
+use Zatca\Services\Certificate\CertificateParser;
 use Zatca\Services\Connectors\ConnectorFactory;
 use Zatca\Services\Invoice\ComplianceTestInvoiceDataFactory;
 use Zatca\Services\Invoice\XmlGeneratorFactory;
@@ -39,6 +40,7 @@ class ComplianceOnboardingOrchestrator
         private readonly ComplianceTestInvoiceDataFactory $testInvoiceFactory,
         private readonly ComplianceInvoiceCounterManager $counterManager,
         private readonly CompliancePreviousInvoiceHashManager $pihManager,
+        private readonly CertificateParser $certificateParser,
     ) {}
 
     /** @return array{csr:string, privateKeyGenerated:bool, sdkFingerprint:string} */
@@ -184,17 +186,6 @@ class ComplianceOnboardingOrchestrator
     /** @return array{0: ?\DateTimeImmutable, 1: ?\DateTimeImmutable} */
     private function parseCertificateValidity(string $rawBase64Certificate): array
     {
-        $pem = "-----BEGIN CERTIFICATE-----\n".chunk_split($rawBase64Certificate, 64, "\n")."-----END CERTIFICATE-----\n";
-
-        $parsed = @openssl_x509_parse($pem);
-
-        if (! $parsed) {
-            return [null, null];
-        }
-
-        return [
-            isset($parsed['validFrom_time_t']) ? (new \DateTimeImmutable)->setTimestamp($parsed['validFrom_time_t']) : null,
-            isset($parsed['validTo_time_t']) ? (new \DateTimeImmutable)->setTimestamp($parsed['validTo_time_t']) : null,
-        ];
+        return $this->certificateParser->validity($rawBase64Certificate);
     }
 }

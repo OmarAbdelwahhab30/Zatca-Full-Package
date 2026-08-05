@@ -10,8 +10,10 @@ use Zatca\Console\Commands\PruneSdkFiles;
 use Zatca\Console\Commands\PruneSubmissionAttempts;
 use Zatca\Console\Commands\RenewCertificate;
 use Zatca\Console\Commands\ReportPendingInvoices;
+use Zatca\Console\Commands\RequeueInvoices;
 use Zatca\Console\Commands\SdkSmokeTest;
 use Zatca\Console\Commands\ZatcaHealthCheck;
+use Zatca\Console\Commands\ZatcaStatus;
 use Zatca\Contracts\CredentialEncrypterInterface;
 use Zatca\Contracts\InvoiceSourceResolverContract;
 use Zatca\Contracts\OwnerResolverInterface;
@@ -86,6 +88,8 @@ class ZatcaServiceProvider extends ServiceProvider
                 ReportPendingInvoices::class,
                 InspectZatca::class,
                 ZatcaHealthCheck::class,
+                ZatcaStatus::class,
+                RequeueInvoices::class,
                 CheckCertificate::class,
                 RenewCertificate::class,
                 PruneSubmissionAttempts::class,

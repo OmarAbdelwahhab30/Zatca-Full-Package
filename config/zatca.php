@@ -39,8 +39,16 @@ return [
         ],
         // ReportZatcaInvoiceJob / RetryZatcaInvoiceJob: how many times a SIGNED invoice may be
         // re-submitted to ZATCA before moving to manual_review (never regenerates the invoice).
+        //
+        // Attempts are consumed at the pace `zatca:report-pending` runs on the scheduler.
+        // At the documented every-five-minutes cadence, this budget is how much ZATCA
+        // downtime survives without human intervention:
+        //     12 attempts x 5 minutes = ~1 hour
+        // Raise it if you want to sleep through a longer ZATCA maintenance window; once
+        // the budget is spent the invoice waits in manual_review until someone runs
+        // `zatca:requeue`. Nothing is lost either way — the signed invoice is untouched.
         'reporting' => [
-            'max_attempts' => (int) env('ZATCA_REPORTING_RETRY_ATTEMPTS', 4),
+            'max_attempts' => (int) env('ZATCA_REPORTING_RETRY_ATTEMPTS', 12),
         ],
     ],
 

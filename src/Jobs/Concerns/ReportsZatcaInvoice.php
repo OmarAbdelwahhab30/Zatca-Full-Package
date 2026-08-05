@@ -6,12 +6,15 @@ use Zatca\Enums\ZatcaCertificateState;
 use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Enums\ZatcaResponseStatus;
+use Zatca\DTOs\ZatcaApiResult;
+use Zatca\Events\ZatcaInvoiceNeedsAttention;
 use Zatca\Models\ZatcaEgsCredential;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Models\ZatcaSubmissionAttempt;
 use Zatca\Services\Connectors\ConnectorFactory;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -56,11 +59,11 @@ trait ReportsZatcaInvoice
             $invoice->signed_xml_base64,
         );
 
-        DB::transaction(function () use ($zatcaInvoiceId, $result, $attemptNumber) {
+        $finalStatus = DB::transaction(function () use ($zatcaInvoiceId, $result, $attemptNumber) {
             $invoice = ZatcaInvoice::query()->lockForUpdate()->find($zatcaInvoiceId);
 
             if (! $invoice || $invoice->status->isTerminalSuccess()) {
-                return; // Another worker already finalized this invoice — do not double-report/overwrite.
+                return null; // Another worker already finalized this invoice — do not double-report/overwrite.
             }
 
             $isTransient = $result->httpStatus === 0 || $result->httpStatus >= 500;
@@ -92,6 +95,34 @@ trait ReportsZatcaInvoice
                 'error_message' => $result->successful ? null : implode('; ', $result->errors),
                 'attempted_at' => now(),
             ]);
+
+            return $status;
         });
+
+        // Dispatched after the transaction commits, so a listener that reads the
+        // invoice sees the persisted state. Manual review is the one outcome that
+        // will never resolve itself — everything else is retried by the scheduler.
+        if ($finalStatus === ZatcaInvoiceStatus::ManualReview) {
+            $this->announceNeedsAttention($zatcaInvoiceId, $result, $attemptNumber);
+        }
+    }
+
+    private function announceNeedsAttention(int $zatcaInvoiceId, ZatcaApiResult $result, int $attemptNumber): void
+    {
+        $invoice = ZatcaInvoice::query()->find($zatcaInvoiceId);
+
+        if (! $invoice) {
+            return;
+        }
+
+        $errors = $result->errors ? implode('; ', $result->errors) : 'no error message returned';
+
+        $reason = $result->httpStatus === 0 || $result->httpStatus >= 500
+            ? "Reporting gave up after {$attemptNumber} attempt(s) against a transient failure (HTTP {$result->httpStatus}): {$errors}"
+            : "ZATCA rejected the invoice (HTTP {$result->httpStatus}): {$errors}";
+
+        Log::error("[ZATCA] Invoice #{$invoice->id} needs manual review. {$reason}");
+
+        Event::dispatch(new ZatcaInvoiceNeedsAttention($invoice, $reason));
     }
 }

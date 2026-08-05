@@ -21,6 +21,8 @@ class CommandsTest extends TestCase
             ['zatca:report-pending'],
             ['zatca:inspect'],
             ['zatca:health-check'],
+            ['zatca:status'],
+            ['zatca:requeue'],
             ['zatca:certificate:check'],
             ['zatca:certificate:renew'],
             ['zatca:prune-submission-attempts'],

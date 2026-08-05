@@ -28,6 +28,35 @@ class ResponseNormalizerTest extends TestCase
         $this->assertSame('1234567890123', $result->payload->requestId);
     }
 
+    /**
+     * ZATCA accepts the invoice but attaches warnings (HTTP 202). This must stay a
+     * SUCCESS — treating it as a failure would send a perfectly accepted invoice to
+     * manual review, and retrying it risks a duplicate.
+     */
+    public function test_it_normalizes_a_reported_with_warnings_response(): void
+    {
+        $body = '{"validationResults":{"infoMessages":[],"warningMessages":[{"type":"WARNING","code":"BR-KSA-98","category":"KSA","message":"The simplified invoice should be submitted within 24 hours of issuing the invoice.","status":"WARNING"}],"errorMessages":[],"status":"WARNING"},"reportingStatus":"REPORTED"}';
+
+        $result = $this->normalizer->normalizeReporting(new Response(202, [], $body));
+
+        $this->assertTrue($result->successful);
+        $this->assertSame(ZatcaResponseStatus::Warning, $result->status);
+        $this->assertCount(1, $result->warnings);
+    }
+
+    /**
+     * A 4xx whose body does not match the documented shape must come back as a plain
+     * error. ZatcaContractChangedException is reserved for unexpected 2xx shapes —
+     * throwing it here would turn an ordinary conflict into a hard crash.
+     */
+    public function test_it_handles_a_409_with_a_changed_response_structure_as_a_plain_error(): void
+    {
+        $result = $this->normalizer->normalizeReporting(new Response(409, [], '{"message":"conflict"}'));
+
+        $this->assertFalse($result->successful);
+        $this->assertSame(409, $result->httpStatus);
+    }
+
     public function test_it_normalizes_an_invalid_otp_error(): void
     {
         $body = '{"errors":[{"code":"Invalid-OTP","message":"The provided OTP is invalid"}]}';

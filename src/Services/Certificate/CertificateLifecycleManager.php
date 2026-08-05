@@ -6,6 +6,7 @@ use Zatca\Enums\ZatcaCertificateState;
 use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaEnvironment;
 use Zatca\Enums\ZatcaInvoiceStatus;
+use Zatca\Events\ZatcaCertificateExpiring;
 use Zatca\Jobs\RetryZatcaInvoiceJob;
 use Zatca\Models\ZatcaEgsCredential;
 use Zatca\Models\ZatcaInvoice;
@@ -14,6 +15,7 @@ use Zatca\Services\Security\ZatcaSigningKeyProvider;
 use Zatca\State\EgsRegistry;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -41,6 +43,7 @@ class CertificateLifecycleManager
         private readonly EgsRegistry $egsRegistry,
         private readonly ConnectorFactory $connectorFactory,
         private readonly ZatcaSigningKeyProvider $signingKeyProvider,
+        private readonly CertificateParser $certificateParser,
     ) {}
 
     /** Evaluates Valid -> ExpiringSoon -> Expired transitions for one credential row. Call from a scheduled command. */
@@ -49,7 +52,35 @@ class CertificateLifecycleManager
         $environment = $this->egsRegistry->for($egsIdentifier)->environment;
         $credential = $this->findCredential($egsIdentifier, $environment, $type);
 
-        if (! $credential || ! $credential->certificate_expires_at) {
+        if (! $credential) {
+            return ZatcaCertificateState::Valid;
+        }
+
+        // Older rows (and any onboarding that ran before the certificate parser was
+        // fixed) can have a null expiry. Left alone, such a credential is invisible
+        // to every expiry check below — so recover the date from the stored
+        // certificate instead of silently reporting Valid forever.
+        if (! $credential->certificate_expires_at && $credential->certificate) {
+            [$issuedAt, $expiresAt] = $this->certificateParser->validity($credential->certificate);
+
+            if ($expiresAt) {
+                $credential->update([
+                    'certificate_issued_at' => $credential->certificate_issued_at ?: $issuedAt,
+                    'certificate_expires_at' => $expiresAt,
+                ]);
+
+                $credential->refresh();
+
+                Log::info("[ZATCA] Recovered missing certificate expiry for EGS [{$egsIdentifier}] ({$type->value}): {$expiresAt->format('Y-m-d')}.");
+            }
+        }
+
+        if (! $credential->certificate_expires_at) {
+            Log::warning(
+                "[ZATCA] Certificate for EGS [{$egsIdentifier}] ({$type->value}) has no expiry date on record — "
+                .'it cannot be monitored. Re-run onboarding, or check that the stored certificate is readable.'
+            );
+
             return ZatcaCertificateState::Valid;
         }
 
@@ -76,6 +107,17 @@ class CertificateLifecycleManager
 
             if ($newState === ZatcaCertificateState::Expired) {
                 Log::error("[ZATCA] Certificate for EGS [{$egsIdentifier}] ({$type->value}) has EXPIRED. Reporting is paused until renewed.");
+            }
+
+            // Only on the transition — one alert per state change, not one per scheduled check.
+            if (in_array($newState, [ZatcaCertificateState::ExpiringSoon, ZatcaCertificateState::Expired], true)) {
+                Event::dispatch(new ZatcaCertificateExpiring(
+                    egsIdentifier: $egsIdentifier,
+                    credentialType: $type,
+                    state: $newState,
+                    expiresAt: $expiresAt,
+                    daysRemaining: (int) $now->diffInDays($expiresAt, false),
+                ));
             }
         }
 
