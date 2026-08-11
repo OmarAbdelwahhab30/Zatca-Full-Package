@@ -149,7 +149,17 @@ class ZatcaSdkAdapter implements ZatcaSdkInterface
         array $args,
         bool $includeEnvironmentFlag = true
     ): string {
-        $command = ['java', '-jar', $this->runtime->jarPath(), '--globalVersion', $this->version(), ...$args];
+        // -Dfile.encoding=UTF-8 is load-bearing, not tidiness. The SDK reads the
+        // UTF-8 invoice correctly but writes the signed XML with the JVM's default
+        // charset; on a Windows host that is a single-byte codepage, so every
+        // Arabic character in the seller name or address comes back as "?" while
+        // the QR code (built in memory) keeps the real text. ZATCA then rejects
+        // the invoice twice over: "seller name does not match with qr code seller
+        // name" and "The invoice hash API body does not match the (calculated)
+        // Hash of the XML". Passed as a JVM flag rather than JAVA_TOOL_OPTIONS
+        // because that variable prints a banner to stderr, which run() merges
+        // into the text the SDK output parsers read.
+        $command = ['java', '-Dfile.encoding=UTF-8', '-jar', $this->runtime->jarPath(), '--globalVersion', $this->version(), ...$args];
 
         if ($includeEnvironmentFlag && $environment->sdkFlag()) {
             $command[] = $environment->sdkFlag();

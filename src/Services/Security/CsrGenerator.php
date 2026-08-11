@@ -58,10 +58,14 @@ class CsrGenerator
             'csr.serial.number='.$egsConfig->serialNumber,
             'csr.organization.identifier='.$egsConfig->organizationIdentifier,
             'csr.organization.unit.name='.$egsConfig->organizationUnitName,
+            // Deliberately the English legal name, never companyNameAr:
+            // non-ASCII in a CSR subject is a known ZATCA compliance-failure source.
             'csr.organization.name='.$egsConfig->organizationName,
             'csr.country.name='.$egsConfig->countryCode,
             'csr.invoice.type='.$egsConfig->invoiceType,
-            'csr.location.address='.$egsConfig->locationAddress,
+            // Free-text single line, assembled from the structured address and
+            // falling back to the legacy ZATCA_LOCATION_ADDRESS.
+            'csr.location.address='.$egsConfig->oneLineAddress(),
             'csr.industry.business.category='.$egsConfig->businessCategory,
         ];
 

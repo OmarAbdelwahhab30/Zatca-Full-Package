@@ -93,16 +93,48 @@ return [
         env('ZATCA_EGS_IDENTIFIER', 'default') => [
             'environment' => env('ZATCA_ENVIRONMENT', 'sandbox'),
             'vat_number' => env('ZATCA_VAT_NUMBER'),
+            // ZATCA_ORG_NAME is the *English* company legal name. It feeds both
+            // csr.organization.name and (as fallback) the invoice RegistrationName.
+            // Do not add a separate ZATCA_COMPANY_NAME_EN — the two would drift.
             'organization_name' => env('ZATCA_ORG_NAME'),
+            // ZATCA defines csr.organization.unit.name as the branch name (or the
+            // branch's 10-digit TIN for VAT-group members). This *is* the
+            // "Branch / Platform Name" shown in the admin UI.
             'organization_unit_name' => env('ZATCA_ORG_UNIT_NAME'),
             'common_name' => env('ZATCA_CSR_COMMON_NAME'),
             'serial_number' => env('ZATCA_CSR_SERIAL_NUMBER'),
+            // Per ZATCA's CSR spec this is the taxpayer's 15-digit VAT registration
+            // number — it must never diverge from vat_number. zatca:health-check
+            // asserts they match.
             'organization_identifier' => env('ZATCA_ORG_IDENTIFIER'),
             'country_code' => env('ZATCA_COUNTRY_CODE', 'SA'),
             'invoice_type' => env('ZATCA_INVOICE_TYPE', '0100'),
+            // Legacy single-line address. Superseded by the structured fields
+            // below; kept as the fallback for deployments that have not set them.
             'location_address' => env('ZATCA_LOCATION_ADDRESS'),
             'business_category' => env('ZATCA_BUSINESS_CATEGORY'),
             'commercial_registration_number' => env('ZATCA_CRN'),
+
+            // Arabic company legal name — used for the invoice's
+            // cac:PartyLegalEntity/cbc:RegistrationName. Never fed to the CSR:
+            // non-ASCII in a CSR subject is a known ZATCA compliance-failure source.
+            'company_name_ar' => env('ZATCA_COMPANY_NAME_AR'),
+
+            // Displayed by the admin ZATCA Settings screen. Not yet consumed by
+            // invoice generation — VAT reaches the XML per-line via
+            // ZatcaInvoiceLine::vatRate, built by the host app's
+            // InvoiceSourceContract implementation (not written yet).
+            'vat_percentage' => (float) env('ZATCA_VAT_PERCENTAGE', 15),
+
+            // Structured national address. Maps 1:1 onto the seller's
+            // cac:PostalAddress in the invoice XML; joined into one line for the
+            // CSR's free-text csr.location.address.
+            'street' => env('ZATCA_STREET'),
+            'district' => env('ZATCA_DISTRICT'),
+            'building_number' => env('ZATCA_BUILDING_NUMBER'),
+            'additional_number' => env('ZATCA_ADDITIONAL_NUMBER'),
+            'city' => env('ZATCA_CITY'),
+            'postal_code' => env('ZATCA_POSTAL_CODE'),
         ],
     ],
 

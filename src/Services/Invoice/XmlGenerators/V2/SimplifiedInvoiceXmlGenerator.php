@@ -135,7 +135,7 @@ XML;
             '<cac:Signature><cbc:ID>urn:oasis:names:specification:ubl:signature:Invoice</cbc:ID><cbc:SignatureMethod>urn:oasis:names:specification:ubl:dsig:enveloped:xades</cbc:SignatureMethod></cac:Signature>'.
             '<cac:AccountingSupplierParty><cac:Party>'.
             '<cac:PartyIdentification><cbc:ID schemeID="CRN">%s</cbc:ID></cac:PartyIdentification>'.
-            '<cac:PostalAddress><cbc:StreetName>%s</cbc:StreetName><cbc:BuildingNumber>0000</cbc:BuildingNumber><cbc:CitySubdivisionName>%s</cbc:CitySubdivisionName><cbc:CityName>%s</cbc:CityName><cbc:PostalZone>00000</cbc:PostalZone><cac:Country><cbc:IdentificationCode>%s</cbc:IdentificationCode></cac:Country></cac:PostalAddress>'.
+            '<cac:PostalAddress><cbc:StreetName>%s</cbc:StreetName><cbc:BuildingNumber>%s</cbc:BuildingNumber><cbc:CitySubdivisionName>%s</cbc:CitySubdivisionName><cbc:CityName>%s</cbc:CityName><cbc:PostalZone>%s</cbc:PostalZone><cac:Country><cbc:IdentificationCode>%s</cbc:IdentificationCode></cac:Country></cac:PostalAddress>'.
             '<cac:PartyTaxScheme><cbc:CompanyID>%s</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>'.
             '<cac:PartyLegalEntity><cbc:RegistrationName>%s</cbc:RegistrationName></cac:PartyLegalEntity>'.
             '</cac:Party></cac:AccountingSupplierParty>'.
@@ -163,12 +163,21 @@ XML;
             $reservation->icv,
             $reservation->previousInvoiceHash,
             $this->esc((string) $egsConfig->commercialRegistrationNumber),
-            $this->esc((string) $egsConfig->locationAddress),
-            $this->esc((string) $egsConfig->locationAddress),
-            $this->esc((string) $egsConfig->locationAddress),
+            // Structured national address. Each field falls back to the legacy
+            // single-line ZATCA_LOCATION_ADDRESS (and, for the numeric fields,
+            // to the placeholders this generator used before the structured
+            // address existed) so a deployment that has not set the new config
+            // keys still produces byte-identical XML.
+            $this->esc((string) ($egsConfig->street ?: $egsConfig->locationAddress)),
+            $this->esc((string) ($egsConfig->buildingNumber ?: '0000')),
+            $this->esc((string) ($egsConfig->district ?: $egsConfig->locationAddress)),
+            $this->esc((string) ($egsConfig->city ?: $egsConfig->locationAddress)),
+            $this->esc((string) ($egsConfig->postalCode ?: '00000')),
             $this->esc($egsConfig->countryCode),
             $this->esc((string) $egsConfig->vatNumber),
-            $this->esc((string) $egsConfig->organizationName),
+            // Arabic legal name where configured — KSA tax invoices are
+            // Arabic-first — falling back to the English one.
+            $this->esc((string) $egsConfig->invoiceLegalName()),
             $buyerXml,
             $invoiceData->currency,
             $this->money($invoiceData->totalVat),
