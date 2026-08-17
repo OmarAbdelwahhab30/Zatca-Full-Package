@@ -103,6 +103,8 @@ The fake invoices sent to ZATCA during registration. Kept as proof that onboardi
 | `zatca:certificate:check` | `zatca_egs_credentials` | Changes `certificate_state` only |
 | `zatca:certificate:renew` | `zatca_egs_credentials` | Updates the certificate (only if auto-renewal is enabled) |
 | `zatca:report-pending` | `zatca_invoices`<br>`zatca_submission_attempts` | Retries sending → updates status, adds attempt rows |
+| `zatca:requeue` | `zatca_invoices` | Sets stuck invoices back to `retrying` and resets `attempt_count`. Never touches an invoice ZATCA accepted. |
+| `zatca:repair-generated-documents` | `zatca_invoices` | Claims eligible unfinished drafts for signing, and claims eligible rejected documents for regeneration. Regeneration creates a replacement row and links it to the rejected row; it never deletes the original. |
 
 ### Commands that DELETE
 
@@ -110,8 +112,6 @@ The fake invoices sent to ZATCA during registration. Kept as proof that onboardi
 |---|---|---|
 | `zatca:prune-submission-attempts` | Old rows in `zatca_submission_attempts` | Invoices, credentials, counters |
 | `zatca:prune-sdk-files` | Files on disk only | **Nothing in the database** |
-
-| `zatca:requeue` | `zatca_invoices` | Sets stuck invoices back to `retrying` and resets `attempt_count`. Never touches an invoice ZATCA accepted. |
 
 ### Commands that only READ
 
@@ -136,6 +136,10 @@ When a customer pays, a background job runs. This is what actually creates invoi
 | | `zatca_egs_states` | Saves the new hash for the next invoice |
 | After sending | `zatca_invoices` | Status becomes `reported` |
 | | `zatca_submission_attempts` | New row with the result |
+
+If signing stops after the `draft` row is created, `zatca:repair-generated-documents` can complete that same draft later. It keeps the same row, UUID/ICV reservation, and business data; it only fills the missing signing fields and moves the document back toward reporting.
+
+If ZATCA rejects a signed document for document-content reasons, `zatca:repair-generated-documents` can queue regeneration. Regeneration creates a new `zatca_invoices` row from the stored business snapshot, sets `regenerated_from_id` on the replacement, and sets `superseded_by_id` on the rejected document only after the replacement is signed. The admin list follows that chain and shows the newest non-superseded document as the invoice's current status.
 
 ---
 

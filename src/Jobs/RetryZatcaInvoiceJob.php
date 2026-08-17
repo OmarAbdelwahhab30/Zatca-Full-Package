@@ -24,14 +24,23 @@ class RetryZatcaInvoiceJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(private readonly int $zatcaInvoiceId)
-    {
+    /**
+     * @param  array{type: string, id: int|string}|null  $triggeredBy  Set only when a human
+     *   asked for this retry. Scalars only — never a model — so the queued payload can
+     *   never go stale, matching how GenerateZatcaInvoiceJob carries its source. Defaults
+     *   to null, so `zatca:report-pending`, `zatca:requeue` and CertificateLifecycleManager
+     *   dispatch exactly as before.
+     */
+    public function __construct(
+        private readonly int $zatcaInvoiceId,
+        private readonly ?array $triggeredBy = null,
+    ) {
         $this->onConnection(Config::get('zatca.queue.connection'));
         $this->onQueue(Config::get('zatca.queue.queue'));
     }
 
     public function handle(ConnectorFactory $connectorFactory): void
     {
-        $this->report($this->zatcaInvoiceId, $connectorFactory);
+        $this->report($this->zatcaInvoiceId, $connectorFactory, $this->triggeredBy);
     }
 }

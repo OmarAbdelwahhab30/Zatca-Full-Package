@@ -77,6 +77,24 @@ class RequeueInvoices extends Command
             ZatcaInvoiceStatus::ReportedWithWarnings->value,
         ]);
 
+        // Same class of guard, for documents that have been replaced rather than accepted.
+        // A superseded document was rejected by ZATCA and a regenerated document has taken
+        // its place; requeueing it would report the rejected content alongside its
+        // replacement. A document with a regeneration in flight is excluded for the same
+        // reason — its replacement is being built right now. Both conditions are NULL for
+        // every invoice that predates regeneration support, so nothing that used to be
+        // requeueable stops being requeueable.
+        $query->whereNull('superseded_by_id')->whereNull('regeneration_claimed_at');
+
+        // Requeueing means resending the stored signed document, so a document that was
+        // never signed has nothing to resend. The status filter above already excludes
+        // draft, but --id bypasses it entirely, and an unsigned row pushed through this
+        // path used to be flipped to `retrying` and then fail inside the reporting job on a
+        // null signed XML — leaving the document stuck under a status that misdescribes it
+        // and blocks every other recovery action. Excluded here rather than in the status
+        // check so it holds however the row was selected.
+        $query->whereNotNull('signed_xml_base64');
+
         if (($limit = (int) $this->option('limit')) > 0) {
             $query->limit($limit);
         }
@@ -92,6 +110,7 @@ class RequeueInvoices extends Command
 
         if ($invoices->isEmpty()) {
             $this->info('Nothing to requeue.');
+            $this->warnAboutUnsignedDrafts($ids);
 
             return self::SUCCESS;
         }
@@ -134,6 +153,38 @@ class RequeueInvoices extends Command
         ));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Explains the one silent exclusion an operator is likely to hit.
+     *
+     * Every other filter here follows from the status the operator asked for, but an
+     * explicitly named ID that turns out to be unsigned just disappears. Naming it — and
+     * naming the action that does apply — is the difference between "the command did
+     * nothing" and knowing what to run instead.
+     *
+     * @param  array<int, mixed>  $ids
+     */
+    private function warnAboutUnsignedDrafts(array $ids): void
+    {
+        if ($ids === []) {
+            return;
+        }
+
+        $unsigned = ZatcaInvoice::query()
+            ->whereIn('id', $ids)
+            ->whereNull('signed_xml_base64')
+            ->pluck('id');
+
+        if ($unsigned->isEmpty()) {
+            return;
+        }
+
+        $this->warn(
+            'Skipped invoice(s) '.$unsigned->implode(', ').': signing never completed, so there is no document '
+            .'to resend. Requeueing sends the stored signed XML; these need their generation completed instead '
+            .'(the E-Invoicing screen offers that, or re-run the generation job).'
+        );
     }
 
     /**

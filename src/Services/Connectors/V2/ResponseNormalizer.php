@@ -141,11 +141,34 @@ class ResponseNormalizer implements ResponseNormalizerInterface
                 'status' => $validationResults['status'],
                 'reportingStatus' => $reportingStatus,
                 'alreadyReported' => $isConfirmedAlreadyReported,
+                // ZATCA's own validation error codes, kept alongside the messages so a
+                // diagnostic screen can show the code rather than parsing it back out
+                // of free text. Codes only — no other field of errorMessages is kept.
+                'errorCodes' => $this->errorCodes($validationResults),
             ],
             warnings: array_column($validationResults['warningMessages'] ?? [], 'message'),
             errors: $errorMessages,
             payload: $payload,
         );
+    }
+
+    /**
+     * Validation error codes, in the same order as the messages.
+     *
+     * ZATCA does not always send a code, so entries without one are dropped rather
+     * than padded with a placeholder — an absent code stays absent.
+     *
+     * @param  array<string,mixed>  $validationResults
+     * @return array<int, string>
+     */
+    private function errorCodes(array $validationResults): array
+    {
+        $codes = array_column($validationResults['errorMessages'] ?? [], 'code');
+
+        return array_values(array_filter(
+            array_map(fn ($code) => is_scalar($code) ? (string) $code : null, $codes),
+            fn (?string $code) => $code !== null && $code !== ''
+        ));
     }
 
     /**

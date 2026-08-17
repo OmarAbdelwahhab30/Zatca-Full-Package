@@ -25,7 +25,12 @@ use Illuminate\Support\Facades\Log;
  */
 trait ReportsZatcaInvoice
 {
-    protected function report(int $zatcaInvoiceId, ConnectorFactory $connectorFactory): void
+    /**
+     * @param  array{type: string, id: int|string}|null  $triggeredBy  Actor that asked for
+     *   this submission. Null means the system did (first report, scheduler, requeue) —
+     *   it is never guessed or backfilled.
+     */
+    protected function report(int $zatcaInvoiceId, ConnectorFactory $connectorFactory, ?array $triggeredBy = null): void
     {
         $invoice = ZatcaInvoice::query()->find($zatcaInvoiceId);
 
@@ -59,7 +64,7 @@ trait ReportsZatcaInvoice
             $invoice->signed_xml_base64,
         );
 
-        $finalStatus = DB::transaction(function () use ($zatcaInvoiceId, $result, $attemptNumber) {
+        $finalStatus = DB::transaction(function () use ($zatcaInvoiceId, $result, $attemptNumber, $triggeredBy) {
             $invoice = ZatcaInvoice::query()->lockForUpdate()->find($zatcaInvoiceId);
 
             if (! $invoice || $invoice->status->isTerminalSuccess()) {
@@ -90,7 +95,11 @@ trait ReportsZatcaInvoice
                 'zatca_invoice_id' => $invoice->id,
                 'attempt_number' => $attemptNumber,
                 'outcome' => $status->isTerminalSuccess() ? $status->value : 'failed',
+                // Null when the system triggered this attempt; set only when a human did.
+                'triggered_by_type' => $triggeredBy['type'] ?? null,
+                'triggered_by_id' => $triggeredBy['id'] ?? null,
                 'http_status' => $result->httpStatus,
+                'error_code' => $result->successful ? null : ($result->sanitizedResponse['errorCodes'][0] ?? null),
                 'sanitized_response' => $result->sanitizedResponse,
                 'error_message' => $result->successful ? null : implode('; ', $result->errors),
                 'attempted_at' => now(),

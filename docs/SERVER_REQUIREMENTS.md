@@ -102,7 +102,19 @@ sudo supervisorctl start zatca-worker:*
 
 ## 5. Cron Job & Laravel Scheduler
 
-The Laravel Scheduler handles certificate status checks, warning notifications, and transient retry jobs (`zatca:requeue --only-transient`).
+The Laravel Scheduler handles certificate status checks, warning notifications, transient retry jobs (`zatca:requeue --only-transient`), and automatic generated-document repair (`zatca:repair-generated-documents`).
+
+The application schedule should include:
+
+```php
+$schedule->command('zatca:report-pending')->everyFiveMinutes();
+$schedule->command('zatca:requeue --only-transient')->hourly();
+$schedule->command('zatca:repair-generated-documents')->everyTenMinutes()->withoutOverlapping();
+$schedule->command('zatca:certificate:check')->daily();
+$schedule->command('zatca:status')->hourly();
+$schedule->command('zatca:prune-submission-attempts')->weekly();
+$schedule->command('zatca:prune-sdk-files')->daily();
+```
 
 ### Add Crontab Entry for `www-data`:
 ```bash

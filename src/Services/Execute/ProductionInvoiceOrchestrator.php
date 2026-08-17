@@ -5,19 +5,26 @@ namespace Zatca\Services\Execute;
 use Zatca\Contracts\InvoiceSourceContract;
 use Zatca\Contracts\OwnerResolverInterface;
 use Zatca\Contracts\ZatcaSdkInterface;
+use Zatca\DTOs\EgsConfig;
+use Zatca\DTOs\InvoiceSequenceReservation;
+use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Events\ZatcaInvoiceGenerated;
 use Zatca\Exceptions\ZatcaCredentialsMissingException;
+use Zatca\Exceptions\ZatcaException;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Services\Invoice\XmlGeneratorFactory;
+use Zatca\Services\SDK\SignedInvoiceXmlReader;
 use Zatca\Services\Security\ZatcaSigningKeyProvider;
 use Zatca\State\EgsRegistry;
 use Zatca\State\ProductionInvoiceCounterManager;
 use Zatca\State\ProductionPreviousInvoiceHashManager;
+use Zatca\Support\InvoiceDataSnapshot;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -30,15 +37,35 @@ use Illuminate\Support\Str;
  *     transaction fails (e.g. a concurrent duplicate insert), the ICV
  *     reservation rolls back with it — no gap, no orphaned invoice.
  *  2. sign() — runs the SDK against the already-persisted draft. If this
- *     fails, the Draft row (with its ICV/UUID/PIH/XML already fixed) is
+ *     fails, the Draft row (with its ICV/UUID/XML already fixed) is
  *     left in place; the NEXT attempt finds it via sourceReference() and
  *     reuses it instead of reserving a new ICV or generating new XML.
  *
  * Once a row is signed (status moves past Draft), it is never re-signed,
- * never re-generated, and never has its UUID/ICV/PIH changed again.
+ * never re-generated, and never has its UUID/ICV changed again.
+ *
+ * regenerate() is the one exception to "never regenerate", and it is not an
+ * exception to the rule above: it never touches the original row. It builds a
+ * SEPARATE document from the original's frozen business snapshot and links the two.
+ * See that method for why it cannot be expressed as a call to generate().
  */
 class ProductionInvoiceOrchestrator
 {
+    /**
+     * Separator appended to a source_reference to distinguish a replacement from the
+     * document it replaces, e.g. "payment:412" -> "payment:412#r1".
+     *
+     * A replacement needs its own source_reference because
+     * zatca_invoices_source_unique spans (egs_identifier, environment,
+     * source_reference) and the original already occupies that slot. Suffixing rather
+     * than relaxing the index keeps the idempotency guarantee that stops the purchase
+     * flow issuing two invoices for one payment, and has a useful side effect: the
+     * replacement no longer matches the "payment:{id}" / "transaction:{id}" lookups
+     * elsewhere in the application, so those keep resolving to the original and the
+     * supersede link decides which document is current.
+     */
+    private const REPLACEMENT_SUFFIX = '#r';
+
     public function __construct(
         private readonly EgsRegistry $egsRegistry,
         private readonly ZatcaSigningKeyProvider $signingKeyProvider,
@@ -47,6 +74,7 @@ class ProductionInvoiceOrchestrator
         private readonly XmlGeneratorFactory $xmlGeneratorFactory,
         private readonly ZatcaSdkInterface $sdk,
         private readonly OwnerResolverInterface $ownerResolver,
+        private readonly SignedInvoiceXmlReader $xmlReader,
     ) {}
 
     public function generate(InvoiceSourceContract $source, mixed $sourceRecord, string $egsIdentifier): ZatcaInvoice
@@ -59,6 +87,152 @@ class ProductionInvoiceOrchestrator
         }
 
         return $this->sign($invoice);
+    }
+
+    /**
+     * Builds a NEW ZATCA document to replace one ZATCA rejected on validation grounds,
+     * and links it to the original.
+     *
+     * Deliberately not a mode of generate(), for three independent reasons:
+     *
+     *  1. generate() resolves an existing row by sourceReference() and returns it. For
+     *     a known source that is always the original, so a replacement would never be
+     *     created at all.
+     *  2. generate() calls $source->toInvoiceData(), re-reading the host record. The
+     *     host's prices, courses or buyer details may have moved since the sale; a
+     *     document built from them would not be a regeneration of this invoice but a
+     *     different invoice wearing its number.
+     *  3. Nothing in generate() expresses the relationship between a rejected document
+     *     and its replacement, and that relationship — not a status — is what decides
+     *     which document represents the invoice from here on.
+     *
+     * What is new: UUID, ICV, PIH, XML (from the CURRENT generator), hash, signature
+     * and QR. What is frozen: every business value, taken from the original's snapshot.
+     * What is untouched: the original row, in full, including its attempt history.
+     *
+     * @param  array{type: string, id: int|string}|null  $regeneratedBy  the admin who asked
+     *   for this. Null means no human did — never guessed, never backfilled.
+     */
+    public function regenerate(ZatcaInvoice $original, ?array $regeneratedBy = null): ZatcaInvoice
+    {
+        if ($original->superseded_by_id !== null) {
+            throw new ZatcaException(
+                "ZATCA document #{$original->id} has already been superseded by #{$original->superseded_by_id}. "
+                .'Regenerating it again would create a second replacement for the same rejected document.'
+            );
+        }
+
+        if ($original->status?->isTerminalSuccess()) {
+            throw new ZatcaException(
+                "ZATCA document #{$original->id} has already been accepted by ZATCA. A reported invoice is "
+                .'never regenerated.'
+            );
+        }
+
+        if ($original->regenerationDepth() >= ZatcaInvoice::MAX_REGENERATION_CHAIN_DEPTH) {
+            throw new ZatcaException(
+                "ZATCA document #{$original->id} is already ".ZatcaInvoice::MAX_REGENERATION_CHAIN_DEPTH
+                .' regenerations deep. Each attempt consumes an ICV slot permanently, so the chain stops here '
+                .'rather than burning the sequence on a document the current generator cannot fix.'
+            );
+        }
+
+        $egsConfig = $this->egsRegistry->for($original->egs_identifier);
+
+        if (! $this->signingKeyProvider->hasProductionCredentials($original->egs_identifier, $egsConfig->environment)) {
+            throw ZatcaCredentialsMissingException::forEgs($original->egs_identifier, ZatcaCredentialType::Production);
+        }
+
+        // The frozen business values. Throws when there is no snapshot rather than
+        // falling back to the host record — see InvoiceDataSnapshot for why that
+        // fallback would be the one genuinely dangerous thing this method could do.
+        $invoiceData = InvoiceDataSnapshot::fromArray($original->invoice_data_snapshot);
+
+        $replacement = $this->resumableReplacement($original, $invoiceData, $egsConfig)
+            ?? $this->reserveReplacement($original, $invoiceData, $egsConfig, $regeneratedBy);
+
+        if ($replacement->status === ZatcaInvoiceStatus::Draft) {
+            $replacement = $this->sign($replacement);
+        }
+
+        return $this->linkSupersededBy($original, $replacement);
+    }
+
+    /**
+     * Finishes signing a Draft whose generation stopped part-way.
+     *
+     * A Draft already holds everything that is scarce or irreversible: its ICV is
+     * reserved, its UUID is assigned, its unsigned XML is built and its business values
+     * are frozen. Only the SDK's output is missing — invoice_hash, signed_xml_base64 and
+     * qr_code. This completes exactly that and nothing else.
+     *
+     * The one thing it must never do is create a document, and it cannot: it neither
+     * reserves an ICV nor inserts a row nor reads the host record. It reaches the same
+     * sign() the purchase flow reaches, on the row it was handed. So the invariant the
+     * caller cares about — same UUID, same ICV, no second invoice — holds by construction
+     * rather than by assertion.
+     *
+     * Also deliberately NOT a re-dispatch of GenerateZatcaInvoiceJob, which is the obvious
+     * way to do this and the wrong one. That job is addressed by (source_type, source_id),
+     * and zatca_invoices stores only source_reference — the opaque string the host mapper
+     * chose, with no reverse route back to a class. Reconstructing one would mean teaching
+     * this package the host's naming conventions, and it would still fail on a Draft whose
+     * host record has since been deleted, even though such a Draft is perfectly signable
+     * from what it already stores. Going straight to sign() has neither problem.
+     *
+     * Idempotent under concurrency without needing a lock of its own: sign() locks the row
+     * and returns it untouched unless it is still Draft, so two callers racing produce one
+     * signature, one chain-head commit and one event.
+     *
+     * Takes no actor. Signing has no actor column, and the thing an administrator's name
+     * belongs on — the submission attempt that follows — is written by the reporting job,
+     * which carries the actor itself.
+     */
+    public function completeGeneration(ZatcaInvoice $draft): ZatcaInvoice
+    {
+        if (! $draft->isUnsignedDraft()) {
+            throw new ZatcaException(
+                "ZATCA document #{$draft->id} is not an unsigned draft (status: "
+                .($draft->status?->value ?? 'unknown').'). A document is signed once and never again: its '
+                .'hash is committed to the EGS chain and everything after it links to that hash.'
+            );
+        }
+
+        if ($draft->isAbandoned()) {
+            throw new ZatcaException(
+                "ZATCA document #{$draft->id} was abandoned because the current generator no longer produces "
+                .'its XML. Signing it would emit the content a regeneration already replaced. Its ICV slot '
+                .'stays consumed; regenerate the original instead.'
+            );
+        }
+
+        if (blank($draft->unsigned_xml)) {
+            throw new ZatcaException(
+                "ZATCA document #{$draft->id} has no unsigned XML, so there is nothing to sign."
+            );
+        }
+
+        $egsConfig = $this->egsRegistry->for($draft->egs_identifier);
+
+        if (! $this->signingKeyProvider->hasProductionCredentials($draft->egs_identifier, $egsConfig->environment)) {
+            throw ZatcaCredentialsMissingException::forEgs($draft->egs_identifier, ZatcaCredentialType::Production);
+        }
+
+        $signed = $this->sign($draft);
+
+        // A Draft can also be an unsigned replacement left behind by a regeneration whose
+        // signing failed. Completing it here has to close the same loop regenerate() would
+        // have closed on its next run, or the rejected original would stay unsuperseded and
+        // both documents would read as current for one sale.
+        if ($signed->regenerated_from_id !== null) {
+            $original = ZatcaInvoice::query()->find($signed->regenerated_from_id);
+
+            if ($original) {
+                $this->linkSupersededBy($original, $signed);
+            }
+        }
+
+        return $signed;
     }
 
     /**
@@ -102,6 +276,11 @@ class ProductionInvoiceOrchestrator
                     'icv' => $reservation->icv,
                     'previous_invoice_hash' => $reservation->previousInvoiceHash,
                     'unsigned_xml' => $unsignedXml,
+                    // The business values behind this document, frozen at the moment it was
+                    // built. Nothing reads them during normal reporting; they exist so the
+                    // document can be re-chained or replaced later without re-reading (and
+                    // therefore silently re-pricing) the host record.
+                    'invoice_data_snapshot' => InvoiceDataSnapshot::toArray($invoiceData),
                     'total_excl_vat' => $invoiceData->totalExclVat,
                     'total_vat' => $invoiceData->totalVat,
                     'total_incl_vat' => $invoiceData->totalInclVat,
@@ -126,46 +305,284 @@ class ProductionInvoiceOrchestrator
         }
     }
 
-    /** Step 2: signs an already-persisted Draft row. Never re-reserves ICV/UUID/PIH. */
+    /**
+     * Step 2: signs an already-persisted Draft row. Never re-reserves ICV/UUID.
+     *
+     * Resolving the hash-chain head, building the document, signing it and committing
+     * the new head are ONE serialized unit per EGS/environment. They have to be.
+     * Reserving a slot captures the head as it stands, but signing can happen much
+     * later — a Draft survives a signing failure and is retried with a backoff that
+     * reaches ten minutes. If another invoice is signed in that window, the captured
+     * head is stale: two invoices end up carrying the same previous_invoice_hash and
+     * the next one chains to the wrong predecessor. ZATCA validates that chain, so the
+     * consequence is not one bad invoice but every invoice after it.
+     *
+     * The fix is to read the head under lock and hold it until the new head is
+     * committed. When the head has moved since reservation the document is re-chained
+     * (see rechain()) rather than signed as-is.
+     *
+     * The cost is that signing is serialized per EGS: the SDK is a local subprocess
+     * bounded by zatca.sdk.process_timeout, so the lock is typically held for about a
+     * second. A competing generation job that exceeds the database's lock wait simply
+     * fails and is retried by its existing tries/backoff policy. Serializing signing
+     * is the price of a correct chain, and it is the right trade at any invoice volume
+     * this application will see.
+     */
     private function sign(ZatcaInvoice $invoice): ZatcaInvoice
     {
         $egsConfig = $this->egsRegistry->for($invoice->egs_identifier);
+        $didSign = false;
 
-        [$certPath, $keyPath, $xmlPath, $cleanup] = $this->signingKeyProvider->prepareSigningWorkspace(
-            $invoice->egs_identifier,
-            $egsConfig->environment,
-            ZatcaCredentialType::Production,
-            $invoice->unsigned_xml
-        );
+        $result = DB::transaction(function () use ($invoice, $egsConfig, &$didSign) {
+            // Lock order is always chain state first, then the invoice — the same order
+            // reserveDraft() takes, so the two paths cannot deadlock against each other.
+            $chainHead = $this->pihManager->lockCurrent($invoice->egs_identifier, $egsConfig->environment);
 
-        try {
-            $signed = $this->sdk->signInvoice($xmlPath, $certPath, $keyPath);
-        } finally {
-            $cleanup();
-        }
-
-        $this->pihManager->commit($invoice->egs_identifier, $egsConfig->environment, $signed['invoiceHash']);
-
-        $invoice = DB::transaction(function () use ($invoice, $signed) {
             $locked = ZatcaInvoice::query()->lockForUpdate()->find($invoice->id);
+
+            if (! $locked) {
+                return $invoice;
+            }
 
             if ($locked->status !== ZatcaInvoiceStatus::Draft) {
                 return $locked; // Another worker already signed it — never overwrite.
             }
 
+            [$unsignedXml, $previousInvoiceHash] = $this->rechain($locked, $chainHead);
+
+            [$certPath, $keyPath, $xmlPath, $cleanup] = $this->signingKeyProvider->prepareSigningWorkspace(
+                $locked->egs_identifier,
+                $egsConfig->environment,
+                ZatcaCredentialType::Production,
+                $unsignedXml
+            );
+
+            try {
+                $signed = $this->sdk->signInvoice($xmlPath, $certPath, $keyPath);
+            } finally {
+                $cleanup();
+            }
+
+            // The new head and the signed document are committed together, under the lock
+            // taken above, so no other invoice can be built from a head this one is about
+            // to replace.
+            $this->pihManager->commit($locked->egs_identifier, $egsConfig->environment, $signed['invoiceHash']);
+
             $locked->update([
+                'unsigned_xml' => $unsignedXml,
+                'previous_invoice_hash' => $previousInvoiceHash,
                 'invoice_hash' => $signed['invoiceHash'],
                 'signed_xml_base64' => $signed['signedXmlBase64'],
                 'qr_code' => $signed['qrCode'],
                 'status' => ZatcaInvoiceStatus::PendingReporting,
             ]);
 
+            $didSign = true;
+
             return $locked->fresh();
         });
 
-        Event::dispatch(new ZatcaInvoiceGenerated($invoice));
+        // Only when this call is the one that signed. On the race path above another
+        // worker already signed and already announced it; announcing again would have
+        // listeners act twice on one invoice.
+        if ($didSign) {
+            Event::dispatch(new ZatcaInvoiceGenerated($result));
+        }
 
-        return $invoice;
+        return $result;
+    }
+
+    /**
+     * Re-points a Draft at the current end of the hash chain when the chain moved on
+     * between reserving its slot and signing it.
+     *
+     * Only the PIH node is rewritten. Everything else about the document — its UUID,
+     * ICV, amounts, lines, and the signature and QR placeholders the SDK locates by
+     * position — is left byte-identical, because none of it is wrong. Rebuilding the
+     * whole document from the business snapshot would work too, but it would also
+     * quietly adopt any generator change since the Draft was built, and it cannot help
+     * a Draft that predates snapshot recording. A targeted swap has neither problem.
+     *
+     * @return array{0: string, 1: string} the XML to sign, and the PIH it now carries
+     */
+    private function rechain(ZatcaInvoice $draft, ?string $chainHead): array
+    {
+        $stored = (string) $draft->previous_invoice_hash;
+
+        // No state row yet (first invoice for this EGS), or nothing has been signed
+        // since this Draft reserved its slot.
+        if ($chainHead === null || $chainHead === $stored) {
+            return [$draft->unsigned_xml, $stored];
+        }
+
+        Log::warning(
+            "[ZATCA] Re-chaining draft invoice #{$draft->id} before signing: the EGS hash chain advanced while "
+            .'this draft was unsigned. Signing it with its original previous-invoice-hash would have forked the chain.',
+            ['egs_identifier' => $draft->egs_identifier, 'icv' => $draft->icv]
+        );
+
+        return [$this->xmlReader->withPreviousInvoiceHash($draft->unsigned_xml, $chainHead), $chainHead];
+    }
+
+    /**
+     * An unsigned replacement left behind by an earlier regeneration attempt, if
+     * resuming it is still correct.
+     *
+     * A Draft already owns a reserved ICV. Reserving a second one for the same rejected
+     * document would consume two slots to produce one invoice, so a previous attempt
+     * that failed while signing is resumed rather than replaced — same UUID, same ICV,
+     * same document.
+     *
+     * "Still correct" is decided by content, not by which exception was thrown last
+     * time. The Draft's XML is rebuilt from the same business snapshot, using the
+     * Draft's OWN uuid, icv and PIH so that generator output is the only thing that can
+     * differ, and compared:
+     *
+     *  - identical  -> the current generator still produces this exact document, so
+     *                  whatever failed before was environmental (SDK crash, timeout,
+     *                  missing jar). Resume it.
+     *  - different  -> the generator has changed since. Re-signing the old XML would
+     *                  re-emit the very document this regeneration exists to replace,
+     *                  which is worse than spending another ICV. Abandon it.
+     *
+     * This works because the XML generator is a pure function of its inputs — no clock,
+     * no randomness — so a difference can only mean the generator itself changed.
+     *
+     * An abandoned Draft keeps its consumed ICV and is never reconsidered.
+     */
+    private function resumableReplacement(ZatcaInvoice $original, ZatcaInvoiceData $invoiceData, EgsConfig $egsConfig): ?ZatcaInvoice
+    {
+        $draft = ZatcaInvoice::query()
+            ->where('regenerated_from_id', $original->getKey())
+            ->where('status', ZatcaInvoiceStatus::Draft->value)
+            ->whereNull('abandoned_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $draft) {
+            return null;
+        }
+
+        $current = $this->xmlGeneratorFactory->make()->generate(
+            $invoiceData,
+            $egsConfig,
+            $draft->uuid,
+            new InvoiceSequenceReservation($draft->icv, (string) $draft->previous_invoice_hash),
+        );
+
+        if ($current === $draft->unsigned_xml) {
+            Log::info(
+                "[ZATCA] Resuming unsigned replacement #{$draft->id} for rejected document #{$original->id} "
+                .'instead of reserving another ICV: the current generator reproduces its XML exactly.',
+                ['icv' => $draft->icv]
+            );
+
+            return $draft;
+        }
+
+        $draft->update(['abandoned_at' => now()]);
+
+        Log::warning(
+            "[ZATCA] Abandoned unsigned replacement #{$draft->id} for rejected document #{$original->id}: the XML "
+            .'generator no longer produces its document, so signing it would re-emit the rejected content. Its ICV '
+            .'slot stays consumed and a fresh replacement will be built.',
+            ['icv' => $draft->icv]
+        );
+
+        return null;
+    }
+
+    /** Reserves ICV/UUID/PIH for a brand-new replacement and persists it as a Draft. */
+    private function reserveReplacement(
+        ZatcaInvoice $original,
+        ZatcaInvoiceData $invoiceData,
+        EgsConfig $egsConfig,
+        ?array $regeneratedBy
+    ): ZatcaInvoice {
+        $uuid = (string) Str::uuid();
+
+        return DB::transaction(function () use ($original, $invoiceData, $egsConfig, $uuid, $regeneratedBy) {
+            // Same atomicity as reserveDraft(): if the insert fails, the ICV increment
+            // rolls back with it rather than leaving a gap in the sequence.
+            $reservation = $this->counterManager->reserve($original->egs_identifier, $egsConfig->environment);
+
+            $unsignedXml = $this->xmlGeneratorFactory->make()->generate($invoiceData, $egsConfig, $uuid, $reservation);
+
+            return ZatcaInvoice::create([
+                'egs_identifier' => $original->egs_identifier,
+                'environment' => $egsConfig->environment->value,
+                'source_reference' => $this->nextReplacementReference($original),
+                'owner_id' => $original->owner_id,
+                'uuid' => $uuid,
+                'icv' => $reservation->icv,
+                'previous_invoice_hash' => $reservation->previousInvoiceHash,
+                'unsigned_xml' => $unsignedXml,
+                // Carried across unchanged, so the replacement can itself be re-chained
+                // or replaced later from the same frozen values.
+                'invoice_data_snapshot' => InvoiceDataSnapshot::toArray($invoiceData),
+                'total_excl_vat' => $invoiceData->totalExclVat,
+                'total_vat' => $invoiceData->totalVat,
+                'total_incl_vat' => $invoiceData->totalInclVat,
+                'currency' => $invoiceData->currency,
+                'status' => ZatcaInvoiceStatus::Draft,
+                'regenerated_from_id' => $original->getKey(),
+                'regenerated_by_type' => $regeneratedBy['type'] ?? null,
+                'regenerated_by_id' => $regeneratedBy['id'] ?? null,
+            ]);
+        });
+    }
+
+    /**
+     * Records that the replacement has taken over from the original.
+     *
+     * Written only once the replacement is actually signed. Until then the original is
+     * still the only submittable document for this invoice, and marking it superseded
+     * would leave the invoice pointing at something that cannot be reported. The
+     * conditional keeps the first writer's link if two callers ever get this far.
+     */
+    private function linkSupersededBy(ZatcaInvoice $original, ZatcaInvoice $replacement): ZatcaInvoice
+    {
+        if (blank($replacement->signed_xml_base64)) {
+            return $replacement;
+        }
+
+        ZatcaInvoice::query()
+            ->whereKey($original->getKey())
+            ->whereNull('superseded_by_id')
+            ->update(['superseded_by_id' => $replacement->getKey()]);
+
+        return $replacement;
+    }
+
+    /**
+     * The next free source_reference for a replacement of this document.
+     *
+     * Derived from the ROOT reference, so a replacement of a replacement reads
+     * "payment:412#r2" rather than accumulating suffixes. Takes the highest existing
+     * suffix rather than counting rows, so an abandoned Draft's reference is never
+     * handed out twice.
+     */
+    private function nextReplacementReference(ZatcaInvoice $original): string
+    {
+        $root = Str::before($original->source_reference, self::REPLACEMENT_SUFFIX);
+
+        $highest = 0;
+
+        $existing = ZatcaInvoice::query()
+            ->where('egs_identifier', $original->egs_identifier)
+            ->where('environment', $original->environment->value)
+            ->where('source_reference', 'like', $root.self::REPLACEMENT_SUFFIX.'%')
+            ->pluck('source_reference');
+
+        foreach ($existing as $reference) {
+            $suffix = (int) Str::after($reference, self::REPLACEMENT_SUFFIX);
+
+            if ($suffix > $highest) {
+                $highest = $suffix;
+            }
+        }
+
+        return $root.self::REPLACEMENT_SUFFIX.($highest + 1);
     }
 
     private function findExisting(string $egsIdentifier, string $environment, string $sourceReference): ?ZatcaInvoice
