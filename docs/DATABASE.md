@@ -88,6 +88,8 @@ This is the only table that gets cleaned automatically (after 180 days, and only
 
 The fake invoices sent to ZATCA during registration. Kept as proof that onboarding was completed. Not related to real sales.
 
+One row per `zatca:onboard test-*` call, `document_type` distinguishing `simplified_invoice` / `simplified_credit_note` / `simplified_debit_note`. `document_reference` holds the invoice's `cbc:ID` (not its `uuid`) — the credit/debit note rows copy it from the invoice row so `zatca:onboard test-credit-note`/`test-debit-note` can find what to bill against without re-parsing stored XML.
+
 ---
 
 ## Part 2 — What Each Command Does to the Database
@@ -98,7 +100,7 @@ The fake invoices sent to ZATCA during registration. Kept as proof that onboardi
 |---|---|---|
 | `zatca:generate-credentials` | `zatca_egs_credentials` | Creates the **compliance** row with `csr` + `private_key` |
 | `zatca:onboard compliance` | `zatca_egs_credentials` | Fills the same row with `binary_security_token`, `secret`, `request_id`, expiry date |
-| `zatca:onboard test-invoice` | `zatca_compliance_documents`<br>`zatca_egs_states` | Adds 1 test document<br>Moves the compliance counter forward |
+| `zatca:onboard test-invoice` / `test-credit-note` / `test-debit-note` | `zatca_compliance_documents`<br>`zatca_egs_states` | Adds 1 test document of that type (notes also copy `document_reference` from the invoice row)<br>Moves the compliance counter forward |
 | `zatca:onboard production` | `zatca_egs_credentials` | Creates the **production** row (reuses the same private key) |
 | `zatca:certificate:check` | `zatca_egs_credentials` | Changes `certificate_state` only |
 | `zatca:certificate:renew` | `zatca_egs_credentials` | Updates the certificate (only if auto-renewal is enabled) |

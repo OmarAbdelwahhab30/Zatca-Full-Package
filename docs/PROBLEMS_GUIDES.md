@@ -89,6 +89,8 @@ This guide provides a comprehensive, Question & Answer (Q&A) reference for AI as
      ```bash
      php artisan zatca:onboard compliance --otp=XXXXXX
      php artisan zatca:onboard test-invoice
+     php artisan zatca:onboard test-credit-note
+     php artisan zatca:onboard test-debit-note
      php artisan zatca:onboard production
      ```
   3. Once `zatca:status` shows valid, push the waiting invoices:
@@ -101,7 +103,33 @@ This guide provides a comprehensive, Question & Answer (Q&A) reference for AI as
 ### Q2.2: `php artisan zatca:status` shows `Certificate ... WARNING (Expires in X days)`. How to renew?
 * **Cause:** Production certificates expire after 1 year (or 2 years depending on CSID type).
 * **Important Note:** Automatic renewal is **DISABLED** by default (`ZATCA_AUTO_RENEWAL_ENABLED=false`) because manual OTP input from the Fatoora Portal is required.
-* **Fix:** Obtain a fresh OTP from the Fatoora portal and run the 3 onboarding commands shown in Q2.1.
+* **Fix:** Obtain a fresh OTP from the Fatoora portal and run the onboarding commands shown in Q2.1.
+
+---
+
+### Q2.1a: `zatca:onboard production` fails with `The compliance certificate is not done with the following compliance steps yet [simplified-credit-note-compliant,simplified-debit-note-compliant]`.
+* **Cause:** ZATCA's Compliance Invoice Check tracks the simplified invoice, simplified credit note, and simplified debit note as three separate checklist items against one compliance certificate, and refuses to issue a Production CSID until all three have a compliant (`PASS`/`WARNING`) submission on record. `zatca:onboard test-invoice` only ever submits the plain invoice — the credit/debit note checks need their own commands.
+* **Fix Steps:**
+  1. Make sure `test-invoice` has already succeeded for this EGS (its result is what the notes bill against):
+     ```bash
+     php artisan zatca:onboard test-invoice
+     ```
+  2. Submit the two missing document types:
+     ```bash
+     php artisan zatca:onboard test-credit-note
+     php artisan zatca:onboard test-debit-note
+     ```
+  3. Retry:
+     ```bash
+     php artisan zatca:onboard production
+     ```
+* **If `test-credit-note`/`test-debit-note` says `No compliant simplified invoice on record for EGS [...]`:** run `test-invoice` first — it did not succeed yet, or ran for a different `--egs` value than the one you're passing to the note commands.
+
+---
+
+### Q2.1b: `zatca:onboard test-credit-note` / `test-debit-note` fails with an Arabic error about "السبب (KSA-10)" ("the reason... leading to the issuance of this type of invoice").
+* **Cause:** ZATCA business rule KSA-10 (BR-KSA-17) — every credit or debit note (`InvoiceTypeCode` 381/383) must state why it was issued, specifically at `cac:PaymentMeans/cbc:InstructionNote`. A top-level `cbc:Note` does **not** satisfy this rule — ZATCA's sandbox rejects it with this same message even though a reason is present, because it's at the wrong path.
+* **Fix:** Make sure you're on a version of the package where `SimplifiedCreditNoteXmlGenerator`/`SimplifiedDebitNoteXmlGenerator` override `paymentMeansInstructionNoteXml()` (not a `noteXml()`/top-level `cbc:Note` — that was an earlier, incorrect attempt at this same fix), then re-run the failed step. You can confirm the generated XML has `<cac:PaymentMeans><cbc:PaymentMeansCode>10</cbc:PaymentMeansCode><cbc:InstructionNote>...</cbc:InstructionNote></cac:PaymentMeans>` and no `<cbc:Note>` anywhere.
 
 ---
 

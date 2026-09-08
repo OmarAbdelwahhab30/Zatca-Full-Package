@@ -147,8 +147,12 @@ It prints `SDK fingerprint: <sha256>`. **Copy it into `.env` as `ZATCA_SDK_FINGE
 ```bash
 php artisan zatca:onboard compliance --otp=XXXXXX
 php artisan zatca:onboard test-invoice
+php artisan zatca:onboard test-credit-note
+php artisan zatca:onboard test-debit-note
 php artisan zatca:onboard production
 ```
+
+ZATCA tracks compliance separately per document type. `production` is refused with `Production CSID request failed: The compliance certificate is not done with the following compliance steps yet [...]` until **all three** `test-*` steps have a PASS/WARNING submission on record — `test-credit-note` and `test-debit-note` each bill against the invoice `test-invoice` already submitted, so **run `test-invoice` first**.
 
 If a step fails, fix the cause and re-run **that step** — you do not restart the whole sequence. Get a fresh OTP from the portal before retrying the compliance step; treat OTPs as single-use.
 
@@ -314,6 +318,22 @@ ZATCA_REPORTING_RETRY_ATTEMPTS (default 12) × every-5-minutes ≈ 1 hour of dow
 Past that budget the invoice moves to `manual_review` — and if `zatca:requeue --only-transient` is scheduled, it is picked back up on the next hourly run and keeps trying. So the practical answer to "ZATCA went down at 2am" is: **nothing to do**. Nothing is ever lost either way; the signed invoice, hash chain, UUID and ICV are untouched throughout.
 
 Raise `ZATCA_REPORTING_RETRY_ATTEMPTS` if you would rather absorb a longer outage without invoices passing through `manual_review` at all.
+
+### Switching ZATCA off entirely — `ZATCA_ENABLED`
+
+Different from an outage: an outage is survived by waiting, this is a deliberate stop. Set the flag, then run **both** commands — the flag is config-cached, and queue workers hold the old config until they restart:
+
+```bash
+php artisan optimize:clear
+```
+
+```bash
+php artisan queue:restart
+```
+
+Safe to do with work in flight: queued jobs exit quietly rather than failing, claims are released, and no invoice status or `attempt_count` is written. Payments, enrollment, local invoices and invoice emails keep working; onboarding and the diagnostic commands stay available so an EGS can still be repaired while invoicing is off.
+
+Full behaviour, including what invoice PDFs look like while disabled, is in the README's [Disabling ZATCA](../README.md#disabling-zatca) section.
 
 ### Cleaning up disk space — `zatca:prune-sdk-files`
 
@@ -495,6 +515,8 @@ Renewal is **manual**. Repeat the onboarding steps with a new OTP from the Fatoo
 ```bash
 php artisan zatca:onboard compliance --otp=XXXXXX
 php artisan zatca:onboard test-invoice
+php artisan zatca:onboard test-credit-note
+php artisan zatca:onboard test-debit-note
 php artisan zatca:onboard production
 ```
 

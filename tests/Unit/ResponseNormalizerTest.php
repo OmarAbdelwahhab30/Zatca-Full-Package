@@ -42,6 +42,35 @@ class ResponseNormalizerTest extends TestCase
         $this->assertTrue($result->successful);
         $this->assertSame(ZatcaResponseStatus::Warning, $result->status);
         $this->assertCount(1, $result->warnings);
+        $this->assertSame([
+            [
+                'code' => 'BR-KSA-98',
+                'message' => 'The simplified invoice should be submitted within 24 hours of issuing the invoice.',
+            ],
+        ], $result->sanitizedResponse['validationWarnings']);
+    }
+
+    public function test_it_preserves_every_validation_code_with_its_own_message(): void
+    {
+        $body = json_encode([
+            'validationResults' => [
+                'infoMessages' => [],
+                'warningMessages' => [],
+                'errorMessages' => [
+                    ['code' => 'BR-CO-15', 'message' => 'Invoice total amount with VAT (BT-112) is invalid.'],
+                    ['code' => 'BR-CO-14', 'message' => 'Invoice total VAT amount (BT-110) is invalid.'],
+                ],
+                'status' => 'ERROR',
+            ],
+            'reportingStatus' => 'NOT_REPORTED',
+        ], JSON_THROW_ON_ERROR);
+
+        $result = $this->normalizer->normalizeReporting(new Response(400, [], $body));
+
+        $this->assertSame([
+            ['code' => 'BR-CO-15', 'message' => 'Invoice total amount with VAT (BT-112) is invalid.'],
+            ['code' => 'BR-CO-14', 'message' => 'Invoice total VAT amount (BT-110) is invalid.'],
+        ], $result->sanitizedResponse['validationErrors']);
     }
 
     /**

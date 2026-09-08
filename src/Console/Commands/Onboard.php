@@ -12,11 +12,11 @@ use Illuminate\Console\Command;
  */
 class Onboard extends Command
 {
-    protected $signature = 'zatca:onboard {step : compliance|test-invoice|production}
+    protected $signature = 'zatca:onboard {step : compliance|test-invoice|test-credit-note|test-debit-note|production}
         {--egs=default : EGS identifier from config(zatca.egs)}
         {--otp= : OTP from the Fatoora portal, required for the compliance step}';
 
-    protected $description = 'Run one step of ZATCA onboarding: compliance (API 1), test-invoice (API 2), or production (API 3).';
+    protected $description = 'Run one step of ZATCA onboarding: compliance (API 1), test-invoice/test-credit-note/test-debit-note (API 2, once per required document type), or production (API 3).';
 
     public function handle(ComplianceOnboardingOrchestrator $orchestrator): int
     {
@@ -26,9 +26,11 @@ class Onboard extends Command
         try {
             return match ($step) {
                 'compliance' => $this->handleCompliance($orchestrator, $egs),
-                'test-invoice' => $this->handleTestInvoice($orchestrator, $egs),
+                'test-invoice' => $this->handleTestDocument($egs, 'invoice', fn () => $orchestrator->testInvoice($egs)),
+                'test-credit-note' => $this->handleTestDocument($egs, 'credit note', fn () => $orchestrator->testCreditNote($egs)),
+                'test-debit-note' => $this->handleTestDocument($egs, 'debit note', fn () => $orchestrator->testDebitNote($egs)),
                 'production' => $this->handleProduction($orchestrator, $egs),
-                default => throw new \InvalidArgumentException("Unknown step [{$step}]. Use compliance, test-invoice, or production."),
+                default => throw new \InvalidArgumentException("Unknown step [{$step}]. Use compliance, test-invoice, test-credit-note, test-debit-note, or production."),
             };
         } catch (\Throwable $e) {
             $this->error($e->getMessage());
@@ -56,10 +58,11 @@ class Onboard extends Command
         return self::SUCCESS;
     }
 
-    private function handleTestInvoice(ComplianceOnboardingOrchestrator $orchestrator, string $egs): int
+    /** @param \Closure(): array{status:string, warnings:array<string>, errors:array<string>} $call */
+    private function handleTestDocument(string $egs, string $label, \Closure $call): int
     {
-        $this->info("Generating, signing, validating and submitting the compliance test invoice for EGS [{$egs}]...");
-        $result = $orchestrator->testInvoice($egs);
+        $this->info("Generating, signing, validating and submitting the compliance test {$label} for EGS [{$egs}]...");
+        $result = $call();
 
         $this->line('Status: '.strtoupper($result['status']));
 

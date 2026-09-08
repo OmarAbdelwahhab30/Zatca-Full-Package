@@ -17,6 +17,14 @@ namespace Zatca\Services\Generation;
  */
 class DraftCompletionVerdict
 {
+    /**
+     * ZATCA invoicing is switched off globally (zatca.enabled=false), so no draft may be
+     * signed. Distinct from every other code here: the draft itself is perfectly eligible,
+     * and becomes actionable again the moment the switch is turned back on — nothing about
+     * the document needs fixing.
+     */
+    public const ZATCA_DISABLED = 'zatca_disabled';
+
     /** Nothing links this invoice to a ZATCA document. */
     public const NO_ZATCA_DOCUMENT = 'no_zatca_document';
 

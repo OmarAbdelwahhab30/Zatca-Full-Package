@@ -4,6 +4,7 @@ namespace Zatca\Services\OnBoarding;
 
 use Zatca\Contracts\ZatcaSdkInterface;
 use Zatca\Enums\ZatcaCertificateState;
+use Zatca\Enums\ZatcaComplianceDocumentType;
 use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Exceptions\ZatcaException;
 use Zatca\Models\ZatcaComplianceDocument;
@@ -25,6 +26,14 @@ use Illuminate\Support\Str;
  * (Compliance CSID → Compliance Invoice check → Production CSID), plus the
  * preceding local key/CSR generation step. No PowerShell, Postman, or manual
  * hash/UUID/Base64 work — every step here is one Laravel call.
+ *
+ * The Compliance Invoice check is called once per document type ZATCA
+ * requires proof for before it will issue a Production CSID: testInvoice()
+ * for the plain simplified invoice, testCreditNote()/testDebitNote() for the
+ * two note types (each billed against the invoice via testInvoice()'s
+ * result). Skipping a required type is exactly what the Production CSID
+ * request reports back as "compliance certificate is not done with the
+ * following compliance steps yet [...]".
  */
 class ComplianceOnboardingOrchestrator
 {
@@ -101,13 +110,50 @@ class ComplianceOnboardingOrchestrator
     /** @return array{status:string, warnings:array<string>, errors:array<string>} */
     public function testInvoice(string $egsIdentifier): array
     {
+        return $this->submitComplianceDocument($egsIdentifier, ZatcaComplianceDocumentType::Invoice);
+    }
+
+    /**
+     * Submits a compliant simplified credit note, billed against the most
+     * recently submitted testInvoice() document for this EGS. ZATCA requires
+     * this — separately from the plain invoice check — before it will issue
+     * a Production CSID.
+     *
+     * @return array{status:string, warnings:array<string>, errors:array<string>}
+     */
+    public function testCreditNote(string $egsIdentifier): array
+    {
+        return $this->submitComplianceDocument(
+            $egsIdentifier,
+            ZatcaComplianceDocumentType::CreditNote,
+            $this->requireInvoiceReference($egsIdentifier)
+        );
+    }
+
+    /** @return array{status:string, warnings:array<string>, errors:array<string>} */
+    public function testDebitNote(string $egsIdentifier): array
+    {
+        return $this->submitComplianceDocument(
+            $egsIdentifier,
+            ZatcaComplianceDocumentType::DebitNote,
+            $this->requireInvoiceReference($egsIdentifier)
+        );
+    }
+
+    /** @return array{status:string, warnings:array<string>, errors:array<string>} */
+    private function submitComplianceDocument(
+        string $egsIdentifier,
+        ZatcaComplianceDocumentType $documentType,
+        ?string $billingReferenceId = null,
+    ): array {
         $egsConfig = $this->egsRegistry->for($egsIdentifier);
 
-        $invoiceData = $this->testInvoiceFactory->make($egsIdentifier);
+        $invoiceData = $this->testInvoiceFactory->make($egsIdentifier, 'Compliance Test Item ('.$documentType->label().')');
         $uuid = (string) Str::uuid();
         $reservation = $this->counterManager->reserve($egsIdentifier, $egsConfig->environment);
 
-        $unsignedXml = $this->xmlGeneratorFactory->make()->generate($invoiceData, $egsConfig, $uuid, $reservation);
+        $unsignedXml = $this->xmlGeneratorFactory->make($documentType)
+            ->generate($invoiceData, $egsConfig, $uuid, $reservation, $billingReferenceId);
 
         [$certPath, $keyPath, $xmlPath, $cleanup] = $this->signingKeyProvider->prepareSigningWorkspace(
             $egsIdentifier,
@@ -131,7 +177,8 @@ class ComplianceOnboardingOrchestrator
 
         ZatcaComplianceDocument::create([
             'egs_identifier' => $egsIdentifier,
-            'document_type' => 'simplified_invoice',
+            'document_type' => $documentType->value,
+            'document_reference' => $invoiceData->sourceReference,
             'uuid' => $uuid,
             'icv' => $reservation->icv,
             'invoice_hash' => $signed['invoiceHash'],
@@ -147,6 +194,25 @@ class ComplianceOnboardingOrchestrator
             'warnings' => $result->warnings,
             'errors' => $result->errors,
         ];
+    }
+
+    /** The invoice a credit/debit note compliance check must bill against — the most recent testInvoice() submission. */
+    private function requireInvoiceReference(string $egsIdentifier): string
+    {
+        $invoice = ZatcaComplianceDocument::query()
+            ->where('egs_identifier', $egsIdentifier)
+            ->where('document_type', ZatcaComplianceDocumentType::Invoice->value)
+            ->latest('id')
+            ->first();
+
+        if (! $invoice || ! $invoice->document_reference) {
+            throw new ZatcaException(
+                "No compliant simplified invoice on record for EGS [{$egsIdentifier}]. Run `zatca:onboard test-invoice` "
+                .'first — ZATCA requires the credit/debit note compliance check to bill against it.'
+            );
+        }
+
+        return $invoice->document_reference;
     }
 
     /** @return array{binarySecurityToken:bool} */

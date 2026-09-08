@@ -13,6 +13,7 @@ use Zatca\Models\ZatcaInvoice;
 use Zatca\Services\Connectors\ConnectorFactory;
 use Zatca\Services\Security\ZatcaSigningKeyProvider;
 use Zatca\State\EgsRegistry;
+use Zatca\Support\ZatcaGate;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Event;
@@ -44,6 +45,7 @@ class CertificateLifecycleManager
         private readonly ConnectorFactory $connectorFactory,
         private readonly ZatcaSigningKeyProvider $signingKeyProvider,
         private readonly CertificateParser $certificateParser,
+        private readonly ZatcaGate $gate = new ZatcaGate,
     ) {}
 
     /** Evaluates Valid -> ExpiringSoon -> Expired transitions for one credential row. Call from a scheduled command. */
@@ -200,6 +202,16 @@ class CertificateLifecycleManager
      */
     private function resumePendingInvoices(string $egsIdentifier, ZatcaEnvironment $environment): void
     {
+        // Renewal itself is deliberately never gated — an expired certificate must stay
+        // renewable while ZATCA is off, so the system is ready the moment it is switched
+        // back on. Only this follow-up dispatch is, because it would otherwise push a
+        // whole EGS worth of invoices back onto the reporting queue.
+        if ($this->gate->disabled()) {
+            $this->gate->skip("resuming pending invoices for EGS [{$egsIdentifier}] after certificate renewal");
+
+            return;
+        }
+
         ZatcaInvoice::query()
             ->where('egs_identifier', $egsIdentifier)
             ->where('environment', $environment->value)

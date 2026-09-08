@@ -4,6 +4,7 @@ namespace Zatca\Services\Security;
 
 use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaEnvironment;
+use Zatca\Services\Certificate\CertificateParser;
 use Illuminate\Support\Str;
 
 /**
@@ -25,7 +26,10 @@ use Illuminate\Support\Str;
  */
 class ZatcaSigningKeyProvider
 {
-    public function __construct(private readonly ZatcaCredentialStore $credentialStore) {}
+    public function __construct(
+        private readonly ZatcaCredentialStore $credentialStore,
+        private readonly CertificateParser $certificateParser,
+    ) {}
 
     public function hasProductionCredentials(string $egsIdentifier, ZatcaEnvironment $environment): bool
     {
@@ -60,7 +64,7 @@ class ZatcaSigningKeyProvider
         $keyPath = $dir.DIRECTORY_SEPARATOR.$id.'-key.pem';
         $xmlPath = $dir.DIRECTORY_SEPARATOR.$id.'-invoice.xml';
 
-        file_put_contents($certPath, (string) $credentials->certificate);
+        file_put_contents($certPath, $this->certificateParser->normalizeForSdk((string) $credentials->certificate));
         chmod($certPath, 0600);
 
         file_put_contents($keyPath, (string) $credentials->privateKey);

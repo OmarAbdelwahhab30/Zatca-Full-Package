@@ -7,6 +7,7 @@ use Zatca\Contracts\InvoiceSourceResolverContract;
 use Zatca\DTOs\InvoiceSourceReference;
 use Zatca\Exceptions\ZatcaCredentialsMissingException;
 use Zatca\Services\Execute\ProductionInvoiceOrchestrator;
+use Zatca\Support\ZatcaGate;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Model;
@@ -59,8 +60,20 @@ class GenerateZatcaInvoiceJob implements ShouldQueue
     public function handle(
         ProductionInvoiceOrchestrator $orchestrator,
         InvoiceSourceContract $invoiceSource,
-        InvoiceSourceResolverContract $resolver
+        InvoiceSourceResolverContract $resolver,
+        ZatcaGate $gate
     ): void {
+        // Backstop for jobs queued before the switch was turned off. A plain return, not
+        // fail() and not an exception: a failed job would be retried five times and would
+        // land in failed_jobs for work that was cancelled on purpose. Nothing is written,
+        // so the source record is left exactly as it was and will be invoiced normally if
+        // ZATCA is switched back on and the job re-dispatched.
+        if ($gate->disabled()) {
+            $gate->skip("invoice generation for [{$this->sourceType}#{$this->sourceId}]");
+
+            return;
+        }
+
         $reference = new InvoiceSourceReference($this->sourceType, $this->sourceId, $this->egsIdentifier);
         $sourceRecord = $resolver->resolve($reference);
 

@@ -12,8 +12,10 @@ use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Events\ZatcaInvoiceGenerated;
 use Zatca\Exceptions\ZatcaCredentialsMissingException;
+use Zatca\Exceptions\ZatcaDisabledException;
 use Zatca\Exceptions\ZatcaException;
 use Zatca\Models\ZatcaInvoice;
+use Zatca\Services\Invoice\InvoiceDataValidator;
 use Zatca\Services\Invoice\XmlGeneratorFactory;
 use Zatca\Services\SDK\SignedInvoiceXmlReader;
 use Zatca\Services\Security\ZatcaSigningKeyProvider;
@@ -21,6 +23,7 @@ use Zatca\State\EgsRegistry;
 use Zatca\State\ProductionInvoiceCounterManager;
 use Zatca\State\ProductionPreviousInvoiceHashManager;
 use Zatca\Support\InvoiceDataSnapshot;
+use Zatca\Support\ZatcaGate;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -75,10 +78,29 @@ class ProductionInvoiceOrchestrator
         private readonly ZatcaSdkInterface $sdk,
         private readonly OwnerResolverInterface $ownerResolver,
         private readonly SignedInvoiceXmlReader $xmlReader,
+        private readonly InvoiceDataValidator $invoiceDataValidator,
+        private readonly ZatcaGate $gate = new ZatcaGate,
     ) {}
+
+    /**
+     * Last-resort guard for the three public entry points below.
+     *
+     * Throws rather than returns, because all three return a non-nullable ZatcaInvoice and
+     * the only alternative would be inventing a document that was never created. Every job
+     * in this package checks the gate before calling in, so this is reached only by code
+     * calling the orchestrator directly — where failing loudly is the correct answer.
+     */
+    private function assertEnabled(string $operation): void
+    {
+        if ($this->gate->disabled()) {
+            throw ZatcaDisabledException::make($operation);
+        }
+    }
 
     public function generate(InvoiceSourceContract $source, mixed $sourceRecord, string $egsIdentifier): ZatcaInvoice
     {
+        $this->assertEnabled('generate a ZATCA invoice');
+
         $invoice = $this->reserveDraft($source, $sourceRecord, $egsIdentifier);
 
         if ($invoice->status !== ZatcaInvoiceStatus::Draft) {
@@ -115,6 +137,8 @@ class ProductionInvoiceOrchestrator
      */
     public function regenerate(ZatcaInvoice $original, ?array $regeneratedBy = null): ZatcaInvoice
     {
+        $this->assertEnabled("regenerate ZATCA document #{$original->id}");
+
         if ($original->superseded_by_id !== null) {
             throw new ZatcaException(
                 "ZATCA document #{$original->id} has already been superseded by #{$original->superseded_by_id}. "
@@ -147,6 +171,13 @@ class ProductionInvoiceOrchestrator
         // falling back to the host record — see InvoiceDataSnapshot for why that
         // fallback would be the one genuinely dangerous thing this method could do.
         $invoiceData = InvoiceDataSnapshot::fromArray($original->invoice_data_snapshot);
+
+        // Checked, never re-reconciled. Snapshots written since reserveDraft() started
+        // reconciling are already settled, and an older one is frozen history: adjusting
+        // it here would change the amounts of the document being replaced, which is the
+        // one thing regeneration must never do. A snapshot that cannot pass is a document
+        // that must not be rebuilt, so this stops rather than repairs.
+        $this->invoiceDataValidator->validate($invoiceData);
 
         $replacement = $this->resumableReplacement($original, $invoiceData, $egsConfig)
             ?? $this->reserveReplacement($original, $invoiceData, $egsConfig, $regeneratedBy);
@@ -190,6 +221,8 @@ class ProductionInvoiceOrchestrator
      */
     public function completeGeneration(ZatcaInvoice $draft): ZatcaInvoice
     {
+        $this->assertEnabled("complete signing of ZATCA document #{$draft->id}");
+
         if (! $draft->isUnsignedDraft()) {
             throw new ZatcaException(
                 "ZATCA document #{$draft->id} is not an unsigned draft (status: "
@@ -255,7 +288,13 @@ class ProductionInvoiceOrchestrator
             throw ZatcaCredentialsMissingException::forEgs($egsIdentifier, ZatcaCredentialType::Production);
         }
 
+        // Checked before an ICV slot is spent on it. The host's figures are taken
+        // exactly as given — nothing here re-prices or re-rounds them — but an invoice
+        // whose own lines do not add up to its own totals, or that carries a negative
+        // line, stops here rather than becoming a document that cannot be withdrawn.
         $invoiceData = $source->toInvoiceData($sourceRecord, $egsIdentifier);
+        $this->invoiceDataValidator->validate($invoiceData);
+
         $uuid = (string) Str::uuid();
 
         try {

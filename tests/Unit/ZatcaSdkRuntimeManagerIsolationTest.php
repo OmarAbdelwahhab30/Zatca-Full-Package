@@ -53,6 +53,21 @@ class ZatcaSdkRuntimeManagerIsolationTest extends TestCase
         $runtime->destroy($workspaceB);
     }
 
+    public function test_workspace_config_points_at_workspace_credentials(): void
+    {
+        $runtime = app(ZatcaSdkRuntimeManager::class);
+
+        $workspace = $runtime->create();
+
+        $config = json_decode(file_get_contents($workspace->configurationDir.DIRECTORY_SEPARATOR.'config.json'), true);
+
+        $this->assertSame($workspace->certificatePath(), $config['certPath']);
+        $this->assertSame($workspace->privateKeyPath(), $config['privateKeyPath']);
+        $this->assertSame($workspace->pihPath, $config['pihPath']);
+
+        $runtime->destroy($workspace);
+    }
+
     public function test_writing_credentials_into_one_workspace_never_touches_the_other(): void
     {
         $runtime = app(ZatcaSdkRuntimeManager::class);

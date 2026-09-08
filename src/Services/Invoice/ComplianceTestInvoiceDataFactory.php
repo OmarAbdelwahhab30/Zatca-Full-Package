@@ -14,10 +14,10 @@ use DateTimeImmutable;
  */
 class ComplianceTestInvoiceDataFactory
 {
-    public function make(string $egsIdentifier): ZatcaInvoiceData
+    public function make(string $egsIdentifier, string $description = 'Compliance Test Item'): ZatcaInvoiceData
     {
         $line = new ZatcaInvoiceLine(
-            description: 'Compliance Test Item',
+            description: $description,
             quantity: 1,
             unitPrice: 100.00,
             vatRate: 15.0,

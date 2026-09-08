@@ -15,6 +15,14 @@ namespace Zatca\Services\Regeneration;
  */
 class RegenerationVerdict
 {
+    /**
+     * ZATCA invoicing is switched off globally (zatca.enabled=false), so nothing may be
+     * regenerated. Distinct from every other code here: the document itself is perfectly
+     * eligible, and becomes actionable again the moment the switch is turned back on —
+     * nothing about the invoice needs fixing.
+     */
+    public const ZATCA_DISABLED = 'zatca_disabled';
+
     /** Nothing links this invoice to a ZATCA document. */
     public const NO_ZATCA_DOCUMENT = 'no_zatca_document';
 

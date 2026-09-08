@@ -141,10 +141,15 @@ class ResponseNormalizer implements ResponseNormalizerInterface
                 'status' => $validationResults['status'],
                 'reportingStatus' => $reportingStatus,
                 'alreadyReported' => $isConfirmedAlreadyReported,
-                // ZATCA's own validation error codes, kept alongside the messages so a
-                // diagnostic screen can show the code rather than parsing it back out
-                // of free text. Codes only — no other field of errorMessages is kept.
+                // Legacy flat arrays remain for existing consumers. The paired lists
+                // below are the authoritative diagnostics representation.
                 'errorCodes' => $this->errorCodes($validationResults),
+                'warningCodes' => $this->warningCodes($validationResults),
+                'warningMessages' => array_column($validationResults['warningMessages'] ?? [], 'message'),
+                // Keep only safe code/message pairs, in ZATCA's original order,
+                // so diagnostics never has to guess which explanation belongs to a code.
+                'validationErrors' => $this->validationDetails($validationResults['errorMessages'] ?? []),
+                'validationWarnings' => $this->validationDetails($validationResults['warningMessages'] ?? []),
             ],
             warnings: array_column($validationResults['warningMessages'] ?? [], 'message'),
             errors: $errorMessages,
@@ -169,6 +174,58 @@ class ResponseNormalizer implements ResponseNormalizerInterface
             array_map(fn ($code) => is_scalar($code) ? (string) $code : null, $codes),
             fn (?string $code) => $code !== null && $code !== ''
         ));
+    }
+
+    /**
+     * Validation warning codes, in the same order as the messages.
+     *
+     * @param  array<string,mixed>  $validationResults
+     * @return array<int, string>
+     */
+    private function warningCodes(array $validationResults): array
+    {
+        $codes = array_column($validationResults['warningMessages'] ?? [], 'code');
+
+        return array_values(array_filter(
+            array_map(fn ($code) => is_scalar($code) ? (string) $code : null, $codes),
+            fn (?string $code) => $code !== null && $code !== ''
+        ));
+    }
+
+    /**
+     * Retains only the two fields the diagnostics UI needs while preserving the
+     * exact ordering and pairing returned by ZATCA.
+     *
+     * @param  mixed  $messages
+     * @return array<int, array{code: ?string, message: ?string}>
+     */
+    private function validationDetails(mixed $messages): array
+    {
+        if (! is_array($messages)) {
+            return [];
+        }
+
+        $details = [];
+
+        foreach ($messages as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $code = is_scalar($item['code'] ?? null) ? trim((string) $item['code']) : '';
+            $message = is_scalar($item['message'] ?? null) ? trim((string) $item['message']) : '';
+
+            if ($code === '' && $message === '') {
+                continue;
+            }
+
+            $details[] = [
+                'code' => $code !== '' ? $code : null,
+                'message' => $message !== '' ? $message : null,
+            ];
+        }
+
+        return $details;
     }
 
     /**

@@ -1,6 +1,30 @@
 <?php
 
 return [
+    // Global kill switch, read everywhere through Zatca\Support\ZatcaGate — never as a
+    // raw config() call in application code.
+    //
+    // False stops every ZATCA side effect: no invoice rows are created, no ICV is
+    // reserved, no PIH is updated, no XML is generated, the SDK is never invoked, no HTTP
+    // request reaches ZATCA, and nothing is reported, retried, regenerated or completed.
+    // Jobs already on the queue exit quietly instead of failing, and invoice statuses and
+    // submission-attempt counters are left exactly as they were.
+    //
+    // Unaffected: payments, enrollment, local application invoices built by
+    // InvoiceBuilder, and invoice emails. Onboarding and the read-only diagnostic
+    // commands also keep working, so an EGS can still be prepared or repaired while the
+    // switch is off.
+    //
+    // This value is config-cached. After changing it, run:
+    //     php artisan optimize:clear
+    //     php artisan queue:restart
+    // Carried through raw, deliberately not cast here. ZatcaGate is the single place this
+    // value is interpreted, so the "what counts as off" rule cannot drift between the two.
+    // A plain (bool) cast here would in fact be a bug: `ZATCA_ENABLED=` with an empty value
+    // arrives as '' and would cast to false, stopping invoicing by accident.
+    // Only a recognisable false (false, "false", 0, "0", "off", "no") disables ZATCA.
+    'enabled' => env('ZATCA_ENABLED', true),
+
     // Independent version knobs — never infer one from another.
     'api_version' => env('ZATCA_API_VERSION', 'V2'),
     'ubl_version' => env('ZATCA_UBL_VERSION', '2.1'),

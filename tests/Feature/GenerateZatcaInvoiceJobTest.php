@@ -55,7 +55,12 @@ class GenerateZatcaInvoiceJobTest extends TestCase
         Bus::fake([ReportZatcaInvoiceJob::class]);
 
         $job = new GenerateZatcaInvoiceJob('fake-order-type', '9101', self::EGS);
-        $job->handle(app(\Zatca\Services\Execute\ProductionInvoiceOrchestrator::class), app(InvoiceSourceContract::class), app(InvoiceSourceResolverContract::class));
+        $job->handle(
+            app(\Zatca\Services\Execute\ProductionInvoiceOrchestrator::class),
+            app(InvoiceSourceContract::class),
+            app(InvoiceSourceResolverContract::class),
+            app(\Zatca\Support\ZatcaGate::class)
+        );
 
         $this->assertDatabaseHas('zatca_invoices', ['source_reference' => 'order:9101']);
         Bus::assertDispatched(ReportZatcaInvoiceJob::class);
@@ -78,7 +83,8 @@ class GenerateZatcaInvoiceJobTest extends TestCase
         $job->handle(
             app(\Zatca\Services\Execute\ProductionInvoiceOrchestrator::class),
             app(InvoiceSourceContract::class),
-            app(InvoiceSourceResolverContract::class)
+            app(InvoiceSourceResolverContract::class),
+            app(\Zatca\Support\ZatcaGate::class)
         );
 
         $this->assertDatabaseMissing('zatca_invoices', ['source_reference' => 'order:404']);

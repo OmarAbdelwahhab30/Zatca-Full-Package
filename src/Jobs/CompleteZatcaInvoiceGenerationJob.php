@@ -13,6 +13,7 @@ use Throwable;
 use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Services\Execute\ProductionInvoiceOrchestrator;
+use Zatca\Support\ZatcaGate;
 
 /**
  * Finishes signing a Draft whose generation stopped part-way, then hands it to the normal
@@ -57,8 +58,21 @@ class CompleteZatcaInvoiceGenerationJob implements ShouldQueue
         $this->onQueue(Config::get('zatca.queue.queue'));
     }
 
-    public function handle(ProductionInvoiceOrchestrator $orchestrator): void
+    public function handle(ProductionInvoiceOrchestrator $orchestrator, ZatcaGate $gate): void
     {
+        // Backstop for a completion queued before the switch was turned off. The claim is
+        // released rather than simply returning: generation_claimed_at was set by the
+        // dispatcher, and a Draft left claimed reads as work-in-progress forever — the
+        // dashboard would never offer the action again. No last_error is written either;
+        // nothing failed, the work was cancelled on purpose.
+        if ($gate->disabled()) {
+            $this->releaseClaim();
+
+            $gate->skip("draft completion for ZATCA document #{$this->zatcaInvoiceId}");
+
+            return;
+        }
+
         $draft = ZatcaInvoice::query()->find($this->zatcaInvoiceId);
 
         if (! $draft) {

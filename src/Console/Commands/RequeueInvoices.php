@@ -5,6 +5,7 @@ namespace Zatca\Console\Commands;
 use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Jobs\RetryZatcaInvoiceJob;
 use Zatca\Models\ZatcaInvoice;
+use Zatca\Support\ZatcaGate;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Config;
 
@@ -47,8 +48,17 @@ class RequeueInvoices extends Command
         ZatcaInvoiceStatus::PendingReporting,
     ];
 
-    public function handle(): int
+    public function handle(ZatcaGate $gate): int
     {
+        // Checked before --dry-run is even read: this command resets attempt_count on the
+        // rows it requeues, so it must not touch anything while ZATCA is off. Scheduled
+        // hourly as `zatca:requeue --only-transient`, hence SUCCESS rather than FAILURE.
+        if ($gate->disabled()) {
+            $this->info('ZATCA invoicing is disabled (zatca.enabled=false). Nothing requeued.');
+
+            return self::SUCCESS;
+        }
+
         $ids = (array) $this->option('id');
         $dryRun = (bool) $this->option('dry-run');
 

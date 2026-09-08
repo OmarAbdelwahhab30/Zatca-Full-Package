@@ -165,7 +165,12 @@ class ZatcaSdkAdapter implements ZatcaSdkInterface
             $command[] = $environment->sdkFlag();
         }
 
-        $process = new Process($command, $workspace->appsDir, null, null, (float) Config::get('zatca.sdk.process_timeout', 60));
+        $env = [
+            'SDK_CONFIG' => $workspace->configurationDir.DIRECTORY_SEPARATOR.'config.json',
+            'FATOORA_HOME' => $workspace->appsDir,
+        ];
+
+        $process = new Process($command, $workspace->appsDir, $env, null, (float) Config::get('zatca.sdk.process_timeout', 60));
         $process->run();
 
         $output = $process->getOutput().$process->getErrorOutput();

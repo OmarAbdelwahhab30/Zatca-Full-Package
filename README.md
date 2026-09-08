@@ -18,6 +18,7 @@ This is the company-wide standard package for ZATCA integration. If your app nee
 - [Supported Versions](#supported-versions)
 - [Installation](#installation)
 - [Configuration](#configuration)
+- [Disabling ZATCA](#disabling-zatca) — the `ZATCA_ENABLED` kill switch
 - [Architecture Overview](#architecture-overview)
 - [Quick Start](#quick-start)
 - [Commands](#commands)
@@ -167,6 +168,10 @@ Run `zatca:prune-sdk-files` on a schedule to clear leftovers from this directory
 Add these to your `.env`:
 
 ```env
+# --- Global kill switch (see "Disabling ZATCA" below) ---
+# Omit it entirely to keep ZATCA on. Set it to false to stop all ZATCA invoicing.
+ZATCA_ENABLED=true
+
 # --- Version pins (do not change unless upgrading intentionally) ---
 ZATCA_API_VERSION=V2
 ZATCA_UBL_VERSION=2.1
@@ -228,6 +233,7 @@ All options live in `config/zatca.php`. Here is what every key does.
 
 | Key | Env variable | Default | What it does | When to change it |
 |---|---|---|---|---|
+| `enabled` | `ZATCA_ENABLED` | `true` | Global kill switch. `false` stops every ZATCA side effect. See [Disabling ZATCA](#disabling-zatca). | When you need to suspend e-invoicing without touching payments or enrollment. |
 | `api_version` | `ZATCA_API_VERSION` | `V2` | Which ZATCA API version the connector uses. | Only when ZATCA releases a new API version **and** the package has added support for it. |
 | `ubl_version` | `ZATCA_UBL_VERSION` | `2.1` | The UBL (invoice XML standard) version. | Only when ZATCA changes the UBL standard. |
 | `xml_profile_version` | `ZATCA_XML_PROFILE_VERSION` | `V2` | Which internal XML generator to use. Independent from `api_version` on purpose — the invoice XML format and the transport API can change on different schedules. | Only when a new XML generator version is added to the package. |
@@ -316,6 +322,99 @@ Change these only when your business details change, or when adding a second EGS
 ### `compatibility`
 
 A read-only array documenting which `api_version` + `sdk_version` + `ubl_version` combinations are supported. Do not edit this by hand — see `docs/COMPATIBILITY.md`.
+
+---
+
+## Disabling ZATCA
+
+One switch stops all ZATCA e-invoicing, without touching payments, enrollment, local invoices or invoice emails.
+
+```env
+ZATCA_ENABLED=false
+```
+
+**Then always run both:**
+
+```bash
+php artisan optimize:clear
+```
+
+```bash
+php artisan queue:restart
+```
+
+`optimize:clear` is required because `config('zatca.enabled')` is read through the config cache, so a cached config keeps the old value. `queue:restart` is required because long-lived queue workers hold the previously booted config in memory and would keep processing ZATCA jobs with the old setting until they restart. Skipping either one leaves the switch half-applied — the most confusing possible state.
+
+### What stops
+
+Everything, at every entry point — the payment listener, `TransactionService`, all five jobs, the scheduled `zatca:report-pending` / `zatca:requeue` / `zatca:repair-generated-documents`, admin retry/regeneration/completion, certificate-renewal resume, and direct calls to `ProductionInvoiceOrchestrator`:
+
+- No ZATCA invoice records are created.
+- No ICV is reserved and no PIH is updated — the fiscal chain does not move.
+- No XML is generated and the SDK is never invoked.
+- No HTTP request reaches ZATCA.
+- Nothing is reported, retried, regenerated, or completed.
+
+### What is left untouched
+
+- **Payments, transactions and course enrollment** — entirely unaffected.
+- **Local application invoices** built by the host's `InvoiceBuilder`, including their invoice numbers.
+- **Invoice emails** — still generated, still attached, still sent.
+- **Invoice statuses and `attempt_count`** — a disabled system writes nothing to them, so no invoice is left looking half-processed.
+- **Queued jobs** — jobs already on the queue exit quietly instead of failing. They are never marked failed and never retried, so nothing lands in `failed_jobs`. Jobs that carry a claim (`RegenerateZatcaInvoiceJob`, `CompleteZatcaInvoiceGenerationJob`) release it on the way out, leaving the document exactly as workable as it was before.
+
+Flipping the switch on a running system with work in flight is therefore safe.
+
+### What keeps working on purpose
+
+Onboarding and diagnostics are **not** gated, so an EGS can still be prepared or repaired while invoicing is off — which is exactly when you are most likely to need to:
+
+- `zatca:onboard`, `zatca:generate-credentials`, `zatca:certificate:renew`
+- `zatca:status`, `zatca:health-check`, `zatca:inspect`, `zatca:certificate:check`
+- `zatca:prune-submission-attempts`, `zatca:prune-sdk-files`
+- Every read-only admin screen, including invoice PDF and XML download
+
+Certificate renewal itself still runs; only its follow-up "resume pending invoices" dispatch is suppressed.
+
+### Effect on invoice documents
+
+Invoices issued while ZATCA is disabled have no ZATCA document behind them, so their PDFs make no tax claims at all:
+
+| | With a signed ZATCA document | Without one |
+|---|---|---|
+| Heading / title | فاتورة ضريبية مبسطة | فاتورة |
+| Item columns | سعر الوحدة **قبل الضريبة** / الإجمالي **قبل الضريبة**, net figures | سعر الوحدة / الإجمالي, gross figures |
+| Totals | before-VAT + VAT + الإجمالي النهائي **شامل الضريبة** | الإجمالي النهائي only |
+| QR code | shown | omitted |
+| Footer | "…وتخضع للائحة الفوترة الإلكترونية…" / "complies with ZATCA E-Invoicing Regulations" | "هذه الفاتورة صادرة إلكترونياً" / "This invoice was issued electronically" |
+
+This is deliberate: without a signed document the tax split would be a local estimate (`amount / 1.15`) that nothing backs, so the document states one total — what the customer actually paid — and does not call itself a tax invoice or claim compliance it cannot demonstrate.
+
+Invoices signed *before* the switch was thrown are unaffected: re-downloading one still shows its real, signed VAT figures and its QR. Re-enabling ZATCA never retroactively adds a tax claim to a document issued without one.
+
+### In the admin dashboard
+
+Every ZATCA write action (retry, regenerate, complete signing, edit XML) is disabled and returns a clear "الفوترة الإلكترونية معطّلة" result rather than failing obscurely. The settings endpoint exposes the flag as `integration.enabled` so the dashboard can explain why. Read-only screens are unaffected.
+
+### In code
+
+Never read the flag directly. `Zatca\Support\ZatcaGate` is the one interpreter of the setting:
+
+```php
+use Zatca\Support\ZatcaGate;
+
+public function __construct(private readonly ZatcaGate $gate = new ZatcaGate) {}
+
+if ($this->gate->disabled()) {
+    $this->gate->skip('what you are not doing');
+
+    return;
+}
+```
+
+Only a recognisable false (`false`, `"false"`, `0`, `"0"`, `"off"`, `"no"`) disables ZATCA. A missing, empty, or unparseable value means **enabled** — a malformed setting must never silently stop a live system.
+
+> **Guard placement matters.** In the host application, put the guard around the ZATCA dispatch only, never at the top of a method that also does non-ZATCA work. An early `return` in `GenerateZatcaInvoiceForPaymentListener::handle()` or `TransactionService::dispatchZatcaInvoice()` would also skip the local `InvoiceBuilder` invoice and the customer's invoice email. Likewise, put admin guards *above* the claim/status UPDATE, not inside the job it dispatches — otherwise the row is mutated and then abandoned.
 
 ---
 
@@ -427,6 +526,8 @@ public function register(): void
 php artisan zatca:generate-credentials
 php artisan zatca:onboard compliance --otp=123456
 php artisan zatca:onboard test-invoice
+php artisan zatca:onboard test-credit-note
+php artisan zatca:onboard test-debit-note
 php artisan zatca:onboard production
 ```
 
@@ -509,7 +610,7 @@ php artisan zatca:onboard {step} {--egs=default} {--otp=}
 **Parameters/Options:**
 | Name | Required | Description |
 |---|---|---|
-| `step` | Yes | One of: `compliance`, `test-invoice`, `production`. |
+| `step` | Yes | One of: `compliance`, `test-invoice`, `test-credit-note`, `test-debit-note`, `production`. |
 | `--egs` | No | EGS identifier. Default: `default`. |
 | `--otp` | Only for `compliance` | The OTP code from the ZATCA Fatoora portal. |
 
@@ -557,6 +658,23 @@ Status: PASS
 **Common errors:**
 - `Status: ERROR` with error lines printed — read the message, it tells you exactly what ZATCA rejected.
 
+#### `zatca:onboard test-credit-note` / `zatca:onboard test-debit-note`
+
+**Purpose:** Same as `test-invoice`, but for the simplified credit note / debit note document types. ZATCA's Compliance Invoice Check tracks these separately, and the Production CSID request is refused until all three have a compliant submission on record. Each note is signed billed against (`cac:BillingReference`) the invoice `test-invoice` already submitted — **run `test-invoice` first**.
+
+**Example:**
+```bash
+php artisan zatca:onboard test-credit-note
+php artisan zatca:onboard test-debit-note
+```
+
+**Expected output:** same shape as `test-invoice` (`Status: PASS`/`WARNING`/`ERROR`).
+
+**ZATCA API used:** `POST /compliance/invoices`
+
+**Common errors:**
+- `No compliant simplified invoice on record for EGS [...]` — run `zatca:onboard test-invoice` first.
+
 #### `zatca:onboard production`
 
 **Purpose:** Requests the Production CSID (the certificate used for real customer invoices).
@@ -576,6 +694,7 @@ Production Token, Secret and Certificate saved. Reporting is now live for this E
 
 **Common errors:**
 - `No compliance request ID on record for EGS [...]` — run `zatca:onboard compliance` first.
+- `Production CSID request failed: The compliance certificate is not done with the following compliance steps yet [simplified-credit-note-compliant,simplified-debit-note-compliant]` — run `zatca:onboard test-credit-note` and `zatca:onboard test-debit-note` (in that order, after `test-invoice`), then retry.
 
 ---
 
@@ -1158,7 +1277,9 @@ This is the only invoice type v1 supports. It is a **Simplified Tax Invoice**, u
 
 ### Standard Invoice, Credit Note, Debit Note — not in v1
 
-These are **not implemented yet**. See [Roadmap](#roadmap).
+Issuing these for a **real sale** is **not implemented yet**. See [Roadmap](#roadmap).
+
+The one exception is onboarding: ZATCA's Compliance Invoice Check tracks simplified credit/debit note compliance separately from the plain invoice and refuses to issue a Production CSID until both are proven, so `zatca:onboard test-credit-note`/`test-debit-note` submit compliant *sample* documents of those two types (see [Onboarding](#onboarding)). That is onboarding-only plumbing — there is still no way to generate a credit/debit note for a real order.
 
 ### How generation works, step by step
 
@@ -1180,7 +1301,9 @@ Onboarding is a **one-time setup per EGS per environment** (sandbox, then again 
 | 1. Generate credentials | The SDK generates a private key + CSR locally | None | Your organization data in `.env` | CSR + private key stored (encrypted) | SDK path misconfigured |
 | 2. Compliance CSID | The CSR is submitted with an OTP to get a test certificate | `POST /compliance` | OTP from the Fatoora portal | Compliance token, secret, certificate, request ID stored | Invalid/expired OTP, invalid CSR |
 | 3. Compliance Invoice | A test invoice is generated, signed, and validated automatically | `POST /compliance/invoices` | None (uses a built-in sample invoice) | `PASS` or `WARNING` | `ERROR` — read the returned message |
-| 4. Production CSID | The real production certificate is requested | `POST /production/csids` | The compliance request ID from step 2 | Production token, secret, certificate stored | Compliance step not completed |
+| 4. Compliance Credit Note | A test credit note is generated, signed, and validated — billed against step 3's invoice | `POST /compliance/invoices` | Step 3 must have already run | `PASS` or `WARNING` | `ERROR`, or "no compliant invoice on record" if step 3 was skipped |
+| 5. Compliance Debit Note | Same as step 4, for the debit note type | `POST /compliance/invoices` | Step 3 must have already run | `PASS` or `WARNING` | Same as step 4 |
+| 6. Production CSID | The real production certificate is requested | `POST /production/csids` | The compliance request ID from step 2, **and** steps 3–5 all recorded | Production token, secret, certificate stored | "compliance certificate is not done with the following compliance steps yet [...]" if 3, 4, or 5 was skipped |
 
 Run these commands in order:
 
@@ -1188,6 +1311,8 @@ Run these commands in order:
 php artisan zatca:generate-credentials
 php artisan zatca:onboard compliance --otp=123456
 php artisan zatca:onboard test-invoice
+php artisan zatca:onboard test-credit-note
+php artisan zatca:onboard test-debit-note
 php artisan zatca:onboard production
 ```
 
@@ -1509,8 +1634,7 @@ Supported ZATCA API/SDK/UBL version combinations are tracked in `docs/COMPATIBIL
 The following are **intentionally out of scope for v1.0.0** and are not implemented:
 
 - Standard Tax Invoices (B2B)
-- Credit Notes
-- Debit Notes
+- Credit Notes and Debit Notes **for real sales** — onboarding can prove compliance for these types (`zatca:onboard test-credit-note`/`test-debit-note`, required by ZATCA before a Production CSID is issued at all), but there is no `InvoiceSourceContract`-driven way to issue one against an actual order yet
 - Clearance model (only Reporting is supported today)
 - Multiple EGS in production (the architecture supports it, but v1 ships configured for a single EGS)
 

@@ -65,6 +65,23 @@ class CertificateParserTest extends TestCase
         $this->assertSame('2029-01-09', $expiresAt?->format('Y-m-d'));
     }
 
+    public function test_it_normalizes_a_zatca_binary_security_token_for_sdk_signing(): void
+    {
+        $this->assertSame($this->pem(), $this->parser->normalizeForSdk($this->token));
+    }
+
+    public function test_it_normalizes_an_unarmored_base64_body_for_sdk_signing(): void
+    {
+        $body = base64_decode($this->token, true);
+
+        $this->assertSame($this->pem(), $this->parser->normalizeForSdk($body));
+    }
+
+    public function test_it_leaves_a_pem_certificate_ready_for_sdk_signing(): void
+    {
+        $this->assertSame(trim($this->pem()), trim($this->parser->normalizeForSdk($this->pem())));
+    }
+
     public function test_garbage_returns_nulls_rather_than_throwing(): void
     {
         [$issuedAt, $expiresAt] = $this->parser->validity('not a certificate at all');

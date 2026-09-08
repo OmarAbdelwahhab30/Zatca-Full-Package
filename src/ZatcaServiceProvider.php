@@ -38,6 +38,7 @@ use Zatca\State\CompliancePreviousInvoiceHashManager;
 use Zatca\State\EgsRegistry;
 use Zatca\State\ProductionInvoiceCounterManager;
 use Zatca\State\ProductionPreviousInvoiceHashManager;
+use Zatca\Support\ZatcaGate;
 use Illuminate\Support\ServiceProvider;
 
 class ZatcaServiceProvider extends ServiceProvider
@@ -45,6 +46,10 @@ class ZatcaServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/zatca.php', 'zatca');
+
+        // The global kill switch. Resolved by jobs, commands, the orchestrator and the
+        // host's admin service — every ZATCA entry point asks this one object.
+        $this->app->singleton(ZatcaGate::class);
 
         $this->app->singleton(EgsRegistry::class);
 

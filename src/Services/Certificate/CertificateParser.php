@@ -25,6 +25,22 @@ use Illuminate\Support\Facades\Log;
  */
 class CertificateParser
 {
+    public function normalizeForSdk(string $certificate): string
+    {
+        foreach ($this->candidates($certificate) as $candidate) {
+            if (@openssl_x509_parse($candidate) !== false) {
+                return $candidate;
+            }
+        }
+
+        // Don't leave openssl's error queue populated for the next caller.
+        while (openssl_error_string() !== false) {
+            continue;
+        }
+
+        return trim($certificate);
+    }
+
     /**
      * @return array{0: ?DateTimeImmutable, 1: ?DateTimeImmutable} issued-at, expires-at
      */

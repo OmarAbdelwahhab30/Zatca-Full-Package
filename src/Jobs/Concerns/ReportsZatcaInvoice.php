@@ -12,6 +12,7 @@ use Zatca\Models\ZatcaEgsCredential;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Models\ZatcaSubmissionAttempt;
 use Zatca\Services\Connectors\ConnectorFactory;
+use Zatca\Support\ZatcaGate;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -32,6 +33,23 @@ trait ReportsZatcaInvoice
      */
     protected function report(int $zatcaInvoiceId, ConnectorFactory $connectorFactory, ?array $triggeredBy = null): void
     {
+        // Backstop for reporting jobs already on the queue when the switch was turned off.
+        // Resolved from the container rather than injected, because this trait is shared by
+        // two jobs whose handle() signatures are part of their public contract.
+        //
+        // First statement in the method, before the invoice is even loaded: no read, no
+        // status change, no attempt row, and above all no HTTP request to ZATCA. Returning
+        // quietly leaves the invoice in Pending Reporting/Retrying with its attempt_count
+        // untouched, which is exactly where `zatca:report-pending` will find it once
+        // ZATCA is switched back on.
+        $gate = app(ZatcaGate::class);
+
+        if ($gate->disabled()) {
+            $gate->skip("reporting ZATCA document #{$zatcaInvoiceId}");
+
+            return;
+        }
+
         $invoice = ZatcaInvoice::query()->find($zatcaInvoiceId);
 
         if (! $invoice || $invoice->status->isTerminalSuccess()) {
@@ -86,7 +104,9 @@ trait ReportsZatcaInvoice
                 'status' => $status,
                 'reporting_status' => $result->sanitizedResponse['reportingStatus'] ?? $result->status->value,
                 'last_zatca_response' => $result->sanitizedResponse,
-                'last_error' => $result->successful ? null : implode('; ', $result->errors),
+                'last_error' => $status === ZatcaInvoiceStatus::ReportedWithWarnings
+                    ? (!empty($result->warnings) ? implode('; ', $result->warnings) : null)
+                    : ($result->successful ? null : implode('; ', $result->errors)),
                 'attempt_count' => $attemptNumber,
                 'reported_at' => $status->isTerminalSuccess() ? now() : $invoice->reported_at,
             ]);
@@ -99,9 +119,13 @@ trait ReportsZatcaInvoice
                 'triggered_by_type' => $triggeredBy['type'] ?? null,
                 'triggered_by_id' => $triggeredBy['id'] ?? null,
                 'http_status' => $result->httpStatus,
-                'error_code' => $result->successful ? null : ($result->sanitizedResponse['errorCodes'][0] ?? null),
+                'error_code' => $result->successful
+                    ? ($result->sanitizedResponse['warningCodes'][0] ?? null)
+                    : ($result->sanitizedResponse['errorCodes'][0] ?? null),
                 'sanitized_response' => $result->sanitizedResponse,
-                'error_message' => $result->successful ? null : implode('; ', $result->errors),
+                'error_message' => $status === ZatcaInvoiceStatus::ReportedWithWarnings
+                    ? (!empty($result->warnings) ? implode('; ', $result->warnings) : null)
+                    : ($result->successful ? null : implode('; ', $result->errors)),
                 'attempted_at' => now(),
             ]);
 

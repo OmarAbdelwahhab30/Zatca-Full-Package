@@ -53,8 +53,10 @@ HOW AN INVOICE IS PRODUCED:
 HOW THE JAVA SDK IS CALLED:
   - Command: java -jar <ZATCA_SDK_EXECUTABLE> --globalVersion <ZATCA_SDK_VERSION> <args>
   - "java" must be on PATH. Required Java: JRE/JDK 11 to 15.
-  - The package does NOT use the bundled fatoora / fatoora.bat wrappers, does not
-    need jq, and never sets JAVA_HOME, FATOORA_HOME or SDK_CONFIG.
+  - The package does NOT use the bundled fatoora / fatoora.bat wrappers and does
+    not need jq. Each SDK process receives SDK_CONFIG pointing at that call's
+    workspace Configuration/config.json, plus FATOORA_HOME pointing at the
+    workspace Apps directory for Linux SDK compatibility.
   - Every call gets a fresh throwaway workspace at
     storage/app/private/zatca/runtime/{uuid} containing its own Configuration/config.json
     and Data/Certificates. It is deleted right after the call.

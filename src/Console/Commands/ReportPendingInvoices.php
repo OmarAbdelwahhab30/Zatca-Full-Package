@@ -5,6 +5,7 @@ namespace Zatca\Console\Commands;
 use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Jobs\RetryZatcaInvoiceJob;
 use Zatca\Models\ZatcaInvoice;
+use Zatca\Support\ZatcaGate;
 use Illuminate\Console\Command;
 
 /**
@@ -31,8 +32,16 @@ class ReportPendingInvoices extends Command
 
     protected $description = 'Re-dispatch ZATCA reporting for invoices still Pending Reporting/Retrying (never regenerates them, never touches manual_review).';
 
-    public function handle(): int
+    public function handle(ZatcaGate $gate): int
     {
+        // Runs every five minutes on the scheduler. Exits SUCCESS rather than FAILURE so a
+        // deliberately disabled system does not fill the scheduler's log with failures.
+        if ($gate->disabled()) {
+            $this->info('ZATCA invoicing is disabled (zatca.enabled=false). Nothing dispatched.');
+
+            return self::SUCCESS;
+        }
+
         $invoices = ZatcaInvoice::query()
             ->whereIn('status', [
                 ZatcaInvoiceStatus::PendingReporting->value,

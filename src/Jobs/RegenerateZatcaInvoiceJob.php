@@ -5,6 +5,7 @@ namespace Zatca\Jobs;
 use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Services\Execute\ProductionInvoiceOrchestrator;
+use Zatca\Support\ZatcaGate;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -51,8 +52,21 @@ class RegenerateZatcaInvoiceJob implements ShouldQueue
         $this->onQueue(Config::get('zatca.queue.queue'));
     }
 
-    public function handle(ProductionInvoiceOrchestrator $orchestrator): void
+    public function handle(ProductionInvoiceOrchestrator $orchestrator, ZatcaGate $gate): void
     {
+        // Backstop for a regeneration queued before the switch was turned off. The claim is
+        // released rather than simply returning: regeneration_claimed_at was set by the
+        // dispatcher, and this class's own contract is that a document left claimed with no
+        // job coming for it is permanently un-regenerable and un-retryable. Releasing it
+        // leaves the document exactly as workable as it was before the request.
+        if ($gate->disabled()) {
+            $this->releaseClaim();
+
+            $gate->skip("regeneration of ZATCA document #{$this->originalZatcaInvoiceId}");
+
+            return;
+        }
+
         $original = ZatcaInvoice::query()->find($this->originalZatcaInvoiceId);
 
         if (! $original) {
