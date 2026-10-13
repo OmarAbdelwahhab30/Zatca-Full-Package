@@ -1,518 +1,615 @@
-# Zatca Package
+# ZATCA for Laravel
 
-A Laravel package that connects any Laravel app to **ZATCA** (Saudi Arabia's e-invoicing authority, also called **FATOORA**). It handles everything needed to generate, sign, and report electronic invoices — automatically, through Laravel Queue Jobs, with no manual steps.
+A Laravel package that sends your invoices to **ZATCA** (the Saudi tax authority) using the **Fatoora Phase 2** rules.
 
-This is the company-wide standard package for ZATCA integration. If your app needs to send invoices to ZATCA, you use this package.
+You give it your order. It builds the e-invoice, signs it, adds the QR code, sends it to ZATCA, retries when ZATCA is down, and saves everything in your database.
 
-> **Version 1.0.0 — B2C only.** This version supports **Simplified Tax Invoices** for individual customers (B2C), using the **Reporting** model. See [Roadmap](#roadmap) for what is planned next.
-
-> **Production hardening note:** this README reflects the package after a production-readiness audit and hardening pass (see `docs/ZATCA_PRODUCTION_HARDENING_REPORT.md`). Two things changed that existing integrations should know about:
-> - `GenerateZatcaInvoiceJob` now takes `(string $sourceType, string $sourceId, string $egsIdentifier = 'default')` — or use `GenerateZatcaInvoiceJob::forModel($order)` — instead of the model/object itself. See [Quick Start](#quick-start).
-> - Automatic certificate renewal is **disabled by default** (`ZATCA_AUTO_RENEWAL_ENABLED=false`) until ZATCA's real renewal contract is verified. See [Certificate Lifecycle](#certificate-lifecycle).
+> **Status:** B2C (simplified invoices, credit notes and debit notes, sent by **Reporting**) is the main, tested flow.
+> B2B (standard invoices sent by **Clearance**) is built and covered by tests, but it has **not been checked against the real ZATCA sandbox yet**. Run the B2B sandbox checks in [Known limitations](#known-limitations) before you turn B2B on in production.
 
 ---
 
-## Table of Contents
+## Table of contents
 
-- [Package Overview](#package-overview)
-- [Supported Versions](#supported-versions)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Disabling ZATCA](#disabling-zatca) — the `ZATCA_ENABLED` kill switch
-- [Architecture Overview](#architecture-overview)
-- [Quick Start](#quick-start)
-- [Commands](#commands)
-- [Public API](#public-api)
-- [Invoice Generation](#invoice-generation)
-- [Onboarding](#onboarding)
-- [Production Reporting](#production-reporting)
-- [Certificate Lifecycle](#certificate-lifecycle)
-- [Error Handling](#error-handling)
-- [Health Check & Diagnostics](#health-check--diagnostics)
-- [Logging](#logging)
-- [Testing](#testing)
-- [Examples](#examples)
-- [Troubleshooting](#troubleshooting)
-- [FAQ](#faq)
-- [**When Something Breaks**](docs/WHEN_SOMETHING_BREAKS.md) — start here during an incident
-- [Database Guide](docs/DATABASE.md) — the 5 tables, and what each command writes
-- [AI Support Prompt](docs/AI_SUPPORT_PROMPT.md) — copy-paste prompt for debugging with an AI assistant
-- [Operations Runbook](docs/OPERATIONS.md) — deployment, version upgrades, certificate expiry
-- [Changelog / Versioning](#changelog--versioning)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [License](#license)
+1. [What is this package?](#1-what-is-this-package)
+2. [ZATCA basics in 5 minutes](#2-zatca-basics-in-5-minutes)
+3. [Supported features](#3-supported-features)
+4. [Requirements](#4-requirements)
+5. [Installation](#5-installation)
+6. [Configuration](#6-configuration)
+7. [How the package works](#7-how-the-package-works)
+8. [ZATCA onboarding](#8-zatca-onboarding)
+9. [Complete usage examples](#9-complete-usage-examples)
+10. [Invoice fields explained](#10-invoice-fields-explained)
+11. [Understanding ZATCA responses](#11-understanding-zatca-responses)
+12. [More features](#12-more-features)
+13. [Console commands](#13-console-commands)
+14. [Deploy to production](#14-deploy-to-production)
+15. [Troubleshooting](#15-troubleshooting)
+16. [Known limitations](#known-limitations)
+17. [Renamed classes and methods](#17-renamed-classes-and-methods)
+18. [Running the package tests](#18-running-the-package-tests)
 
 ---
 
-## Package Overview
+## 1. What is this package?
 
-### What the package does
+In Saudi Arabia, every VAT-registered business must send its invoices to ZATCA electronically. In Phase 2, each invoice must:
 
-ZATCA requires every business in Saudi Arabia to send electronic invoices in a specific signed XML format. Doing this by hand means dealing with certificates, XML signing, QR codes, and a Java command-line tool. This package removes all of that manual work.
+- be an XML file in a fixed format (UBL 2.1),
+- carry a counter and the hash of the previous invoice, so invoices form a chain,
+- be signed with a certificate that ZATCA gave you,
+- carry a QR code,
+- be sent to ZATCA's API.
 
-Give the package an order (or any "paid" record), and it will:
+Doing this by hand is a lot of work. This package does it for you:
 
-1. Build a ZATCA-compliant invoice (UUID, invoice counter, hash chain).
-2. Generate the invoice XML.
-3. Sign it using the ZATCA SDK (a Java tool — the package runs it for you).
-4. Generate the QR code.
-5. Send it to ZATCA.
-6. Store the result and retry automatically if ZATCA is down.
+- **Onboarding:** creates your private key and CSR, and gets your certificates from ZATCA.
+- **Invoices:** turns your order into a ZATCA invoice, then numbers, chains and signs it, and adds the QR code.
+- **Sending:** sends it to ZATCA from a Laravel queue job, so your checkout never waits for ZATCA.
+- **Retries:** retries safely when ZATCA is down, and never sends the same invoice twice.
+- **Credit and debit notes:** creates them against the original invoice.
+- **Monitoring:** gives you Artisan commands to check health, certificates and stuck invoices.
 
-### Main features
+**What you write:** one small class that turns your order into invoice data. The package does the rest.
 
-- **Fully automatic** — no manual PowerShell, Postman, or command-line steps in production.
-- **Queue-based** — invoice signing and reporting always run in background jobs, never during the request/webhook that triggered them.
-- **Safe retries** — a failed report is retried without ever re-signing or regenerating the invoice.
-- **Idempotent** — dispatching invoice generation twice for the same order never creates a duplicate.
-- **Encrypted secrets** — tokens, secrets, and private keys are encrypted at rest and never appear in logs.
-- **Multi-EGS ready** — the package is built so a company can register more than one device/branch (EGS) later, without code changes.
-- **Certificate lifecycle tracking** — the package watches certificate expiry and can renew automatically.
+**What you can build with it:** e-invoicing for an online shop, a POS, a restaurant, a subscription service, a services company, or a wholesale business selling to other companies. It also handles refunds, returns and extra charges.
 
-### Supported ZATCA phases and workflows
+**What it does not do:** it does not make PDF invoices. It gives you the signed XML, the QR code and an event, and you render your own PDF or receipt.
 
-| Phase | Supported in v1.0.0? |
+---
+
+## 2. ZATCA basics in 5 minutes
+
+### B2C vs B2B
+
+| | B2C | B2B |
+|---|---|---|
+| Who buys? | A normal person | Another company |
+| Example | A shop sells headphones to Sara | A furniture company sells 20 chairs to an office company |
+| ZATCA name | **Simplified** tax invoice | **Standard** tax invoice |
+| Buyer details needed | None (name is optional) | Company legal name, VAT number (or another ID such as a CR number), full address |
+| How it reaches ZATCA | **Reporting** | **Clearance** |
+
+### Reporting vs Clearance
+
+- **Reporting:** you give the invoice to the customer right away, then send it to ZATCA. ZATCA's rule is "within 24 hours". This package sends it a few seconds after the sale, from the queue. Used for **simplified (B2C)** documents.
+- **Clearance:** you send the invoice to ZATCA **first**. ZATCA checks it, stamps it and sends it back. Only the cleared invoice is the legal invoice you give to the buyer. Used for **standard (B2B)** documents.
+
+B2B/B2C and Clearance/Reporting are related, but they are not two names for the same thing. B2B/B2C is about **who buys**, and that decides the **document type** (standard or simplified). The document type then decides **how it is sent** (Clearance or Reporting). In this package, the document type you choose decides the route, and you never pick the endpoint yourself.
+
+### Credit notes vs Debit notes
+
+- **Credit note:** lowers the amount of an invoice that ZATCA already accepted. Examples: a customer returns a product, you refund part of an order, or you charged too much.
+- **Debit note:** raises the amount of an invoice that ZATCA already accepted. Examples: you forgot to charge for gift wrapping, a price was too low, or VAT was under-charged.
+
+You never edit an accepted invoice. You issue a note that points to it. A note always follows the flow of its original invoice: a note against a B2C invoice is reported, and a note against a B2B invoice is cleared.
+
+### The six documents
+
+| # | Document | When to use it | ZATCA code | Sent by | Package enum (`ZatcaComplianceDocumentType`) |
+|---|---|---|---|---|---|
+| 1 | B2C invoice | A person buys something | 388 / 02 | Reporting | `Invoice` |
+| 2 | B2C credit note | A person returns or is refunded | 381 / 02 | Reporting | `CreditNote` |
+| 3 | B2C debit note | A person must pay more | 383 / 02 | Reporting | `DebitNote` |
+| 4 | B2B invoice | A company buys something | 388 / 01 | Clearance | `StandardInvoice` |
+| 5 | B2B credit note | A company returns or is refunded | 381 / 01 | Clearance | `StandardCreditNote` |
+| 6 | B2B debit note | A company must pay more | 383 / 01 | Clearance | `StandardDebitNote` |
+
+### Words you will see
+
+| Word | Meaning |
 |---|---|
-| Onboarding (Compliance CSID, Compliance Invoice check, Production CSID) | ✅ Yes |
-| Simplified Tax Invoice (B2C) | ✅ Yes |
-| Reporting model (`POST /invoices/reporting/single`) | ✅ Yes |
-| Standard Tax Invoice (B2B) | ❌ Not in v1 |
-| Credit Note / Debit Note | ❌ Not in v1 |
-| Clearance model | ❌ Not in v1 |
+| **EGS** | "E-invoice Generation Solution", the "device" (your app) registered with ZATCA. Each EGS has its own certificate, counter and hash chain. This package uses one EGS for B2C and an optional second one for B2B. |
+| **CSR** | A certificate request. You send it to ZATCA to get a certificate. |
+| **Private key** | The secret key used to sign invoices. It never leaves your server. |
+| **OTP** | A one-time code from the Fatoora portal. You need it once to start onboarding. |
+| **Compliance CSID** | A test certificate. Used only to prove to ZATCA that your invoices are correct. |
+| **Production CSID** | The real certificate used to sign live invoices. |
+| **ICV** | Invoice counter. 1, 2, 3… per EGS. Never reused. |
+| **PIH** | Previous invoice hash. Links each invoice to the one before it. |
+| **UUID** | A unique id for each document. |
+| **Sandbox / Simulation / Production** | ZATCA's three environments. See [Environments](#environments). |
 
 ---
 
-## Supported Versions
+## 3. Supported features
 
-| Component | Supported version(s) |
+**Invoicing**
+- B2C simplified invoice, credit note and debit note, sent by Reporting.
+- B2B standard invoice, credit note and debit note, sent by Clearance (verify in the ZATCA sandbox first, see [Known limitations](#known-limitations)).
+- Several lines per invoice, several VAT rates per invoice, and document-level discounts.
+- Standard-rated (`S`), zero-rated (`Z`) and exempt (`E`) items, with ZATCA exemption reason codes.
+- Full or partial credit notes. Credit notes for part of a line's value (price adjustments). Debit notes for added items, price corrections and VAT corrections.
+- Automatic UUID, counter (ICV), hash chain (PIH), XML, signature and QR code.
+- An invoice-data check before any counter number is used. It refuses totals that don't match the lines, line math that is wrong (`quantity × unit price`, `net × VAT rate`), bad VAT categories, a non-SAR currency and incomplete B2B buyer data.
+- Each invoice's business data is frozen when it is built, so notes and re-issues never re-read changed prices.
+
+**Sending**
+- Queued generation and submission, with retries.
+- Safe retries: a retry always resends the same signed XML and never signs again.
+- A scheduler sweep for invoices still waiting (`zatca:report-pending`).
+- Manual and scheduled requeue for stuck B2C invoices (`zatca:requeue`).
+- Duplicate protection: one document per sale. A sale is never sent on two EGS.
+- Re-issuing a rejected invoice as a new, corrected document (regeneration).
+
+**Onboarding and security**
+- Onboarding through Artisan commands: CSR, compliance CSID, compliance checks, production CSID.
+- Credentials stored encrypted (Laravel `APP_KEY` by default, and you can swap in your own encrypter).
+- Certificate expiry tracking: an event when a certificate enters "expiring soon" (60 days before) and when it expires.
+- SDK fingerprint check, to detect a changed ZATCA SDK jar.
+
+**Operations**
+- A global on/off switch (`ZATCA_ENABLED`) and a separate B2B switch (`ZATCA_B2B_ENABLED`).
+- 13 Artisan commands for health checks, status, inspection, requeue, cleanup and more.
+- Events for "invoice generated", "needs attention", "note accepted" and "certificate expiring".
+
+---
+
+## 4. Requirements
+
+| What | Version / note |
 |---|---|
 | PHP | 8.1 or newer |
-| Laravel | 9.x or 10.x |
-| ZATCA API version | `V2` |
-| ZATCA SDK (Java) | `3.4.8` |
-| UBL version | `2.1` |
-| Package version | `1.0.0` |
+| Laravel | **9 or 10** (`illuminate/*` `^9.0 \| ^10.0`). Laravel 11 and 12 are not supported yet. |
+| PHP extensions | `openssl`, `dom`, `mbstring`, `ctype`, `json`, plus your database's PDO driver |
+| Java | Java 11 (the ZATCA SDK supports Java 11 to 15). `java` must be on the `PATH` of the user that runs PHP and your queue workers. |
+| ZATCA Java SDK | Version **3.4.8**, downloaded from ZATCA's developer portal |
+| Database | Any database Laravel supports (MySQL, PostgreSQL, SQLite in tests) |
+| Queue | Any real Laravel queue driver (`database`, `redis`…). `sync` works for quick tests only. |
+| Scheduler | Laravel scheduler (cron) for the retry sweep and certificate checks |
 
-These are pinned on purpose. See `docs/COMPATIBILITY.md` inside the package for the full compatibility table and the process for adding a new version combination.
-
-For what to do when any of these versions change — plus deployment steps (staging and production) and certificate expiry handling — see [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+Composer dependencies are installed for you: `guzzlehttp/guzzle`, `doctrine/dbal`, `symfony/process`, `nesbot/carbon`.
 
 ---
 
-## Installation
+## 5. Installation
 
-### 1. Require the package with Composer
+### Step 1: Install Java and the ZATCA SDK
 
-If the package is hosted on GitHub (private or public repo), add it as a path or VCS repository in your app's root `composer.json`, then require it:
+The package signs invoices with ZATCA's official Java SDK, so it must be on the server.
+
+```bash
+sudo apt-get install -y openjdk-11-jre-headless
+```
+
+```bash
+java -version
+```
+
+Download the ZATCA SDK (v3.4.8) from the ZATCA developer portal and unzip it somewhere outside `public/`, for example `/var/www/zatca-sdk`. The folder must contain `Apps/`, `Configuration/` and `Data/`. The jar file is in `Apps/`.
+
+### Step 2: Install the package
+
+The package name is `zatca/zatca`. It is a private package. If it is not on your Composer registry, add its Git repository to your app's `composer.json` first:
+
+```json
+"repositories": [
+    { "type": "vcs", "url": "git@github.com:your-company/zatca-package.git" }
+]
+```
+
+Then run:
 
 ```bash
 composer require zatca/zatca
 ```
 
-*(If you're pulling this package directly from this monorepo, it is already wired up via a Composer path repository — you only need to run `composer install`.)*
+Laravel finds the service provider (`Zatca\ZatcaServiceProvider`) automatically. You don't need to register it.
 
-### 2. Let Laravel discover the package
-
-```bash
-php artisan package:discover
-```
-
-`Zatca\ZatcaServiceProvider` registers itself automatically — you do not need to add it to `config/app.php`.
-
-### 3. Publish the config file (optional)
-
-The package works with sane defaults out of the box. If you want to see/edit every option:
+### Step 3: Publish the config file
 
 ```bash
 php artisan vendor:publish --tag=zatca-config
 ```
 
-This creates `config/zatca.php` in your app.
+This creates `config/zatca.php`. You normally don't edit it, because every value comes from `.env`.
 
-### 4. Run migrations
+### Step 4: Run the migrations
+
+The migrations load automatically. You don't need to publish them.
 
 ```bash
 php artisan migrate
 ```
 
-This creates 5 tables: `zatca_egs_credentials`, `zatca_egs_states`, `zatca_compliance_documents`, `zatca_invoices`, `zatca_submission_attempts`.
+This creates these tables:
 
-### 5. Java / SDK prerequisites
+| Table | What it stores |
+|---|---|
+| `zatca_egs_credentials` | Your keys, CSRs and certificates (encrypted) per EGS and environment |
+| `zatca_egs_states` | The current counter (ICV) and last hash (PIH) per EGS and environment |
+| `zatca_invoices` | Every ZATCA document: invoices **and** notes, with XML, QR code and status |
+| `zatca_submission_attempts` | One row per send attempt, with the HTTP status and ZATCA response |
+| `zatca_compliance_documents` | The test documents sent during onboarding |
+| `zatca_credit_notes`, `zatca_credit_note_lines`, `zatca_credit_note_events` | Credit notes (the business record, its lines and an audit log) |
+| `zatca_debit_notes`, `zatca_debit_note_lines`, `zatca_debit_note_events` | Debit notes (same structure) |
 
-The package drives the official ZATCA Java SDK. You must install this **on the server**, separately from Composer:
+### Step 5: Add your `.env` values
 
-- **Java**: JRE or JDK version **11 to 15**. Check with `java -version`.
-- **ZATCA SDK folder**: download the SDK zip from ZATCA and unzip it somewhere on the server (e.g. `/opt/zatca-sdk`). You need the whole folder — `Apps/`, `Configuration/`, `Data/`.
+Copy the block from [Configuration](#6-configuration) and fill in your business details.
 
-You do **not** need `jq`, and you do **not** need to run the SDK's own `install.sh`/`install.bat` — the package calls the Java `.jar` file directly.
+### Step 6: Make sure storage is writable
 
-### 6. Filesystem / storage requirements
+The package writes short-lived signing files to `storage/app/private/zatca`.
 
-The package writes files under `storage/app/private/zatca/`:
+```bash
+mkdir -p storage/app/private/zatca
+```
 
-- `storage/app/private/zatca/runtime/{uuid}/` — one isolated SDK workspace per call, created and deleted automatically.
-- `storage/app/private/zatca/tmp/` — temporary certificate/key files handed to the SDK, deleted in a `finally` block right after use.
-- `storage/app/private/zatca/sdk-output/` — files copied out of a workspace before it is destroyed. CSR and key files are deleted after being read; signed-XML copies stay until pruned.
-- `storage/app/private/zatca/csr-config-{uuid}.properties` — the CSR config handed to the SDK, deleted right after use.
-- `storage/app/private/zatca/smoke-test/` — only used by `zatca:sdk-smoke-test`; its files are deleted after each run.
+```bash
+sudo chown -R www-data:www-data storage
+```
 
-Directories are created with mode `0700` and files with `0600`.
+### Step 7: Check the installation
 
-Make sure the **queue worker process** (not just the web server) can write to `storage/app/private/`.
+```bash
+php artisan config:clear
+```
 
-Run `zatca:prune-sdk-files` on a schedule to clear leftovers from this directory — none of it is needed once a call finishes, and orphaned workspaces can contain key material. See [`docs/OPERATIONS.md`](docs/OPERATIONS.md) §1.
+```bash
+php artisan zatca:health-check
+```
 
-### 7. Required environment variables
+```bash
+php artisan zatca:sdk-smoke-test
+```
 
-Add these to your `.env`:
+- `zatca:health-check` checks the SDK path, your seller data and onboarding state. Before onboarding, `[PENDING] ... credentials not yet onboarded` is expected.
+- `zatca:sdk-smoke-test` runs Java and the SDK locally: CSR, hash, signing and QR. It does not call ZATCA. Every line should say `PASS`.
 
-```env
-# --- Global kill switch (see "Disabling ZATCA" below) ---
-# Omit it entirely to keep ZATCA on. Set it to false to stop all ZATCA invoicing.
-ZATCA_ENABLED=true
+---
 
-# --- Version pins (do not change unless upgrading intentionally) ---
-ZATCA_API_VERSION=V2
-ZATCA_UBL_VERSION=2.1
-ZATCA_XML_PROFILE_VERSION=V2
+## 6. Configuration
 
-# --- ZATCA SDK ---
-ZATCA_SDK_EXECUTABLE=/absolute/path/to/zatca-einvoicing-sdk-238-R3.4.8.jar
-ZATCA_SDK_ROOT=/absolute/path/to/zatca-sdk-folder
+### Your business (B2C EGS)
+
+These values go into your CSR and into every invoice. Get them from your company documents and the Fatoora portal.
+
+```dotenv
+# ---- On/off ----
+ZATCA_ENABLED=true                     # false = stop all ZATCA work (see "Kill switch")
+
+# ---- ZATCA SDK ----
+ZATCA_SDK_EXECUTABLE=/var/www/zatca-sdk/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar
+ZATCA_SDK_ROOT=/var/www/zatca-sdk
 ZATCA_SDK_VERSION=3.4.8
-ZATCA_SDK_FINGERPRINT=
+ZATCA_SDK_FINGERPRINT=                 # fill after running zatca:generate-credentials
 ZATCA_SDK_PROCESS_TIMEOUT=60
 
-# --- Environment: sandbox | simulation | production ---
+# ---- Environment: sandbox | simulation | production ----
 ZATCA_ENVIRONMENT=sandbox
 
-# --- Your business / device (EGS) data ---
-ZATCA_EGS_IDENTIFIER=default
-ZATCA_VAT_NUMBER=399999999900003
-ZATCA_ORG_NAME="Your Legal Org Name"
-ZATCA_ORG_UNIT_NAME="Your Unit Name"
-ZATCA_CSR_COMMON_NAME=TST-YOURORG-EGS-01
-ZATCA_CSR_SERIAL_NUMBER="1-YOURORG|2-EGS01|3-<uuid>"
-ZATCA_ORG_IDENTIFIER=399999999900003
+# ---- Your EGS (B2C) ----
+ZATCA_EGS_IDENTIFIER=default           # any short name; you pass it to jobs and commands
+ZATCA_INVOICE_TYPE=0100                # 0100 = this device issues simplified (B2C) documents
+
+# ---- Seller identity ----
+ZATCA_VAT_NUMBER=399999999900003       # 15 digits, starts and ends with 3
+ZATCA_ORG_IDENTIFIER=399999999900003   # must be the SAME as ZATCA_VAT_NUMBER
+ZATCA_ORG_NAME="Al Noor Trading Co."   # English legal name (used in the CSR)
+ZATCA_COMPANY_NAME_AR="شركة النور للتجارة"  # Arabic legal name (used on invoices)
+ZATCA_ORG_UNIT_NAME="Riyadh Branch"    # branch name
+ZATCA_CRN=1010010000                   # commercial registration, 10 digits
+ZATCA_BUSINESS_CATEGORY="Retail"
 ZATCA_COUNTRY_CODE=SA
-ZATCA_INVOICE_TYPE=0100
-ZATCA_LOCATION_ADDRESS="Your street address"
-ZATCA_BUSINESS_CATEGORY="Education"
-ZATCA_CRN=1010010000
 
-# --- HTTP ---
-ZATCA_TIMEOUT=30
-ZATCA_ACCEPT_LANGUAGE=ar
+# ---- CSR device fields ----
+ZATCA_CSR_COMMON_NAME="AlNoor-POS-1"   # a name for this device
+ZATCA_CSR_SERIAL_NUMBER="1-AlNoor|2-WebShop|3-6f4d20e0-6bfe-4a80-9389-7dabe6620f12"  # ZATCA format: 1-solution|2-model|3-serial
 
-# --- Retries (generation and reporting are separate policies) ---
-ZATCA_GENERATION_RETRY_TRIES=5
-ZATCA_REPORTING_RETRY_ATTEMPTS=12   # x every-5-minutes ≈ 1 hour of ZATCA downtime survived
+# ---- Seller national address ----
+ZATCA_STREET="King Fahd Road"
+ZATCA_DISTRICT="Al Olaya"
+ZATCA_BUILDING_NUMBER=1234             # exactly 4 digits
+ZATCA_ADDITIONAL_NUMBER=5678           # exactly 4 digits
+ZATCA_CITY=Riyadh
+ZATCA_POSTAL_CODE=12211                # exactly 5 digits
+ZATCA_LOCATION_ADDRESS=                # old single-line address, only used if the fields above are empty
 
-# --- Certificate renewal — leave false until the real ZATCA renewal contract is verified ---
-ZATCA_AUTO_RENEWAL_ENABLED=false
-
-# --- Queue ---
-ZATCA_QUEUE_CONNECTION=database
+# ---- Queue ----
+ZATCA_QUEUE_CONNECTION=database        # defaults to QUEUE_CONNECTION
 ZATCA_QUEUE_NAME=zatca
-
-# --- Housekeeping ---
-ZATCA_PRUNE_ATTEMPTS_AFTER_DAYS=180
-ZATCA_PRUNE_SDK_FILES_AFTER_DAYS=7
 ```
 
-> **Never** put real ZATCA tokens, secrets, or private keys in `.env`. Those are created by the onboarding commands and stored **encrypted** in the database.
+The example values above are fake. `399999999900003` is ZATCA's sample VAT number. Use your own real values.
 
----
+### Optional: a second EGS for B2B
 
-## Configuration
+B2B documents need their **own EGS**, with its own CSR, certificate, counter and hash chain. Seller details are copied from the B2C EGS automatically. Only these values differ:
 
-All options live in `config/zatca.php`. Here is what every key does.
-
-### Top-level
-
-| Key | Env variable | Default | What it does | When to change it |
-|---|---|---|---|---|
-| `enabled` | `ZATCA_ENABLED` | `true` | Global kill switch. `false` stops every ZATCA side effect. See [Disabling ZATCA](#disabling-zatca). | When you need to suspend e-invoicing without touching payments or enrollment. |
-| `api_version` | `ZATCA_API_VERSION` | `V2` | Which ZATCA API version the connector uses. | Only when ZATCA releases a new API version **and** the package has added support for it. |
-| `ubl_version` | `ZATCA_UBL_VERSION` | `2.1` | The UBL (invoice XML standard) version. | Only when ZATCA changes the UBL standard. |
-| `xml_profile_version` | `ZATCA_XML_PROFILE_VERSION` | `V2` | Which internal XML generator to use. Independent from `api_version` on purpose — the invoice XML format and the transport API can change on different schedules. | Only when a new XML generator version is added to the package. |
-
-### `sdk`
-
-| Key | Env variable | Default | What it does | When to change it |
-|---|---|---|---|---|
-| `sdk.executable` | `ZATCA_SDK_EXECUTABLE` | *(none)* | Absolute path to the ZATCA SDK `.jar` file. | Set once per server, during install. |
-| `sdk.root` | `ZATCA_SDK_ROOT` | *(none)* | Absolute path to the SDK's root folder (containing `Apps/`, `Configuration/`, `Data/`). | Set once per server, during install. |
-| `sdk.version` | `ZATCA_SDK_VERSION` | `3.4.8` | The SDK version the package is pinned to. Controls which output parser is used. | Only when upgrading the SDK jar itself. |
-| `sdk.expected_fingerprint` | `ZATCA_SDK_FINGERPRINT` | *(none)* | SHA-256 checksum of the SDK jar, used by `zatca:health-check` to detect if the jar file changed unexpectedly. | Set after running `zatca:generate-credentials` for the first time (it prints the fingerprint). |
-| `sdk.process_timeout` | `ZATCA_SDK_PROCESS_TIMEOUT` | `60` | Seconds before an SDK process call is killed. | Increase if the server is slow or under heavy load. |
-
-### `http`
-
-| Key | Env variable | Default | What it does | When to change it |
-|---|---|---|---|---|
-| `http.base_urls.sandbox` | `ZATCA_API_BASE_URL_SANDBOX` | ZATCA sandbox URL | Base URL used when `ZATCA_ENVIRONMENT=sandbox`. | Only if ZATCA changes their sandbox host. |
-| `http.base_urls.simulation` | `ZATCA_API_BASE_URL_SIMULATION` | ZATCA simulation URL | Base URL used when `ZATCA_ENVIRONMENT=simulation`. | Only if ZATCA changes their simulation host. |
-| `http.base_urls.production` | `ZATCA_API_BASE_URL_PRODUCTION` | ZATCA production URL | Base URL used when `ZATCA_ENVIRONMENT=production`. | Only if ZATCA changes their production host. |
-| `http.timeout` | `ZATCA_TIMEOUT` | `30` | Seconds before an HTTP call to ZATCA times out. | Increase on a slow network. |
-| `http.accept_language` | `ZATCA_ACCEPT_LANGUAGE` | `ar` | Language ZATCA uses in its response messages. `en` or `ar`. | Change if your admin team prefers English error messages. |
-
-### `retries` — two distinct policies, never confuse them
-
-| Key | Env variable | Default | What it does | When to change it |
-|---|---|---|---|---|
-| `retries.generation.tries` | `ZATCA_GENERATION_RETRY_TRIES` | `5` | How many times Laravel retries `GenerateZatcaInvoiceJob` itself (signing/creation) if it throws. | Rarely. |
-| `retries.generation.backoff_seconds` | *(array in config file)* | `[5, 30, 120, 600]` | Delay before each `GenerateZatcaInvoiceJob` retry. | Adjust pacing if needed. |
-| `retries.reporting.max_attempts` | `ZATCA_REPORTING_RETRY_ATTEMPTS` | `12` | How many times a **signed** invoice may be re-submitted to ZATCA before moving to `manual_review`. Reporting never regenerates the invoice — only re-sends the same stored hash/UUID/XML. | Attempts are consumed at the pace `zatca:report-pending` runs, so this is really a downtime budget: `12 × every-5-minutes ≈ 1 hour`. Raise it to sleep through a longer ZATCA maintenance window. |
-
-### `certificate`
-
-| Key | Env variable | Default | What it does | When to change it |
-|---|---|---|---|---|
-| `certificate.alert_days` | *(array in config file)* | `[60, 30, 7]` | Days before certificate expiry when the certificate is flagged `ExpiringSoon`. | Adjust to fit your renewal process. |
-| `certificate.auto_renewal_enabled` | `ZATCA_AUTO_RENEWAL_ENABLED` | `false` | Whether `zatca:certificate:renew` (and any future scheduled renewal) is allowed to actually call ZATCA. **Off by default** because ZATCA's real renewal contract (endpoint, whether a new OTP is required, response shape) has not been verified against an official document in this repository — see [Certificate Lifecycle](#certificate-lifecycle). | Only turn this on after you've verified the real renewal contract and confirmed `HttpConnector::renewProductionCsid()` implements it correctly. |
-
-### `credential_encrypter`
-
-| Key | Env variable | Default | What it does | When to change it |
-|---|---|---|---|---|
-| `credential_encrypter` | `ZATCA_CREDENTIAL_ENCRYPTER` | `laravel` | Which secret-encryption backend to use. The package ships with Laravel's own encrypter (`APP_KEY`-based). | Only if you build and bind your own `CredentialEncrypterInterface` implementation (e.g. for Vault/KMS). |
-
-### `queue`
-
-| Key | Env variable | Default | What it does | When to change it |
-|---|---|---|---|---|
-| `queue.connection` | `ZATCA_QUEUE_CONNECTION` | Your app's `QUEUE_CONNECTION` | Which queue connection ZATCA jobs use. | Set to match your production queue driver (e.g. `redis`, `sqs`). |
-| `queue.queue` | `ZATCA_QUEUE_NAME` | `zatca` | Which named queue ZATCA jobs run on. | Change if you want ZATCA jobs isolated on their own queue/worker. |
-
-### `submission_attempts`
-
-| Key | Env variable | Default | What it does | When to change it |
-|---|---|---|---|---|
-| `submission_attempts.prune_after_days` | `ZATCA_PRUNE_ATTEMPTS_AFTER_DAYS` | `180` | How long to keep old attempt-history rows for successfully reported invoices. | Lower it to save database space; raise it if you need a longer audit trail. |
-
-### `sdk_files`
-
-| Key | Env variable | Default | What it does | When to change it |
-|---|---|---|---|---|
-| `sdk_files.prune_after_days` | `ZATCA_PRUNE_SDK_FILES_AFTER_DAYS` | `7` | How long `zatca:prune-sdk-files` keeps leftover files under `storage/app/private/zatca/`. Nothing reads them after a call finishes — the signed invoice itself lives in the database and is never pruned. | Lower it if disk is tight. The command additionally refuses to delete anything younger than one hour, whatever this is set to. |
-
-### `egs`
-
-An array keyed by EGS identifier (device/branch). Each entry holds:
-
-| Key | Env variable | Default | What it does |
-|---|---|---|---|
-| `environment` | `ZATCA_ENVIRONMENT` | `sandbox` | `sandbox`, `simulation`, or `production`. |
-| `vat_number` | `ZATCA_VAT_NUMBER` | *(none)* | Your company's VAT registration number. |
-| `organization_name` | `ZATCA_ORG_NAME` | *(none)* | Legal organization name (used in the invoice XML). |
-| `organization_unit_name` | `ZATCA_ORG_UNIT_NAME` | *(none)* | Organization unit name (used in the CSR). |
-| `common_name` | `ZATCA_CSR_COMMON_NAME` | *(none)* | CSR common name. |
-| `serial_number` | `ZATCA_CSR_SERIAL_NUMBER` | *(none)* | CSR serial number (a specific ZATCA-defined format). |
-| `organization_identifier` | `ZATCA_ORG_IDENTIFIER` | *(none)* | Organization identifier for the CSR (usually same as VAT number). |
-| `country_code` | `ZATCA_COUNTRY_CODE` | `SA` | Country code. |
-| `invoice_type` | `ZATCA_INVOICE_TYPE` | `0100` | 4-digit invoice type flag used in the CSR. |
-| `location_address` | `ZATCA_LOCATION_ADDRESS` | *(none)* | Business address. |
-| `business_category` | `ZATCA_BUSINESS_CATEGORY` | *(none)* | Industry/business category. |
-| `commercial_registration_number` | `ZATCA_CRN` | *(none)* | Commercial Registration Number, shown in the invoice XML. |
-
-Change these only when your business details change, or when adding a second EGS.
-
-### `compatibility`
-
-A read-only array documenting which `api_version` + `sdk_version` + `ubl_version` combinations are supported. Do not edit this by hand — see `docs/COMPATIBILITY.md`.
-
----
-
-## Disabling ZATCA
-
-One switch stops all ZATCA e-invoicing, without touching payments, enrollment, local invoices or invoice emails.
-
-```env
-ZATCA_ENABLED=false
+```dotenv
+ZATCA_B2B_ENABLED=false                # turn on only when B2B is fully onboarded and verified
+ZATCA_B2B_EGS_IDENTIFIER=b2b           # must be different from ZATCA_EGS_IDENTIFIER
+ZATCA_B2B_CSR_COMMON_NAME="AlNoor-B2B-1"
+ZATCA_B2B_CSR_SERIAL_NUMBER="1-AlNoor|2-B2B|3-1c9b1f3e-0f2e-4a47-9a25-1b2c3d4e5f60"
+ZATCA_B2B_INVOICE_TYPE=1000            # see the note below
+ZATCA_B2B_ORG_UNIT_NAME=               # optional, defaults to ZATCA_ORG_UNIT_NAME
+ZATCA_B2B_ENVIRONMENT=                 # optional, defaults to ZATCA_ENVIRONMENT
 ```
 
-**Then always run both:**
+`ZATCA_B2B_INVOICE_TYPE` is the CSR's 4-digit "invoice type". The first digit means "standard" and the second means "simplified". So `1000` means standard only, and `1100` means both. Which value ZATCA accepts for a separate B2B device is **not confirmed yet** in this project's sandbox tests, so check it during sandbox onboarding.
 
-```bash
-php artisan optimize:clear
-```
+### All other options
 
-```bash
-php artisan queue:restart
-```
-
-`optimize:clear` is required because `config('zatca.enabled')` is read through the config cache, so a cached config keeps the old value. `queue:restart` is required because long-lived queue workers hold the previously booted config in memory and would keep processing ZATCA jobs with the old setting until they restart. Skipping either one leaves the switch half-applied — the most confusing possible state.
-
-### What stops
-
-Everything, at every entry point — the payment listener, `TransactionService`, all five jobs, the scheduled `zatca:report-pending` / `zatca:requeue` / `zatca:repair-generated-documents`, admin retry/regeneration/completion, certificate-renewal resume, and direct calls to `ProductionInvoiceOrchestrator`:
-
-- No ZATCA invoice records are created.
-- No ICV is reserved and no PIH is updated — the fiscal chain does not move.
-- No XML is generated and the SDK is never invoked.
-- No HTTP request reaches ZATCA.
-- Nothing is reported, retried, regenerated, or completed.
-
-### What is left untouched
-
-- **Payments, transactions and course enrollment** — entirely unaffected.
-- **Local application invoices** built by the host's `InvoiceBuilder`, including their invoice numbers.
-- **Invoice emails** — still generated, still attached, still sent.
-- **Invoice statuses and `attempt_count`** — a disabled system writes nothing to them, so no invoice is left looking half-processed.
-- **Queued jobs** — jobs already on the queue exit quietly instead of failing. They are never marked failed and never retried, so nothing lands in `failed_jobs`. Jobs that carry a claim (`RegenerateZatcaInvoiceJob`, `CompleteZatcaInvoiceGenerationJob`) release it on the way out, leaving the document exactly as workable as it was before.
-
-Flipping the switch on a running system with work in flight is therefore safe.
-
-### What keeps working on purpose
-
-Onboarding and diagnostics are **not** gated, so an EGS can still be prepared or repaired while invoicing is off — which is exactly when you are most likely to need to:
-
-- `zatca:onboard`, `zatca:generate-credentials`, `zatca:certificate:renew`
-- `zatca:status`, `zatca:health-check`, `zatca:inspect`, `zatca:certificate:check`
-- `zatca:prune-submission-attempts`, `zatca:prune-sdk-files`
-- Every read-only admin screen, including invoice PDF and XML download
-
-Certificate renewal itself still runs; only its follow-up "resume pending invoices" dispatch is suppressed.
-
-### Effect on invoice documents
-
-Invoices issued while ZATCA is disabled have no ZATCA document behind them, so their PDFs make no tax claims at all:
-
-| | With a signed ZATCA document | Without one |
+| `.env` key | Default | What it does |
 |---|---|---|
-| Heading / title | فاتورة ضريبية مبسطة | فاتورة |
-| Item columns | سعر الوحدة **قبل الضريبة** / الإجمالي **قبل الضريبة**, net figures | سعر الوحدة / الإجمالي, gross figures |
-| Totals | before-VAT + VAT + الإجمالي النهائي **شامل الضريبة** | الإجمالي النهائي only |
-| QR code | shown | omitted |
-| Footer | "…وتخضع للائحة الفوترة الإلكترونية…" / "complies with ZATCA E-Invoicing Regulations" | "هذه الفاتورة صادرة إلكترونياً" / "This invoice was issued electronically" |
+| `ZATCA_API_VERSION` | `V2` | ZATCA API version. Don't change it. |
+| `ZATCA_UBL_VERSION` | `2.1` | UBL version. Don't change it. |
+| `ZATCA_XML_PROFILE_VERSION` | `V2` | XML profile. Don't change it. |
+| `ZATCA_API_BASE_URL_SANDBOX` | ZATCA developer-portal URL | Only change it if ZATCA moves the host. |
+| `ZATCA_API_BASE_URL_SIMULATION` | ZATCA simulation URL | Same. |
+| `ZATCA_API_BASE_URL_PRODUCTION` | ZATCA core URL | Same. |
+| `ZATCA_TIMEOUT` | `30` | HTTP timeout in seconds. |
+| `ZATCA_ACCEPT_LANGUAGE` | `ar` | Language of ZATCA's messages (`ar` or `en`). |
+| `ZATCA_GENERATION_RETRY_TRIES` | `5` | How many times a generation job may retry (back-off: 5s, 30s, 2m, 10m). |
+| `ZATCA_REPORTING_RETRY_ATTEMPTS` | `12` | How many sends before an invoice stops and waits for a human. With a 5-minute sweep, that's about 1 hour of ZATCA downtime. |
+| `ZATCA_AUTO_RENEWAL_ENABLED` | `false` | Lets `zatca:certificate:renew` call ZATCA. Leave it `false` (see [Certificates](#certificates)). |
+| `ZATCA_CREDENTIAL_ENCRYPTER` | `laravel` | Label only. To use Vault or KMS, bind your own encrypter (see [Custom bindings](#custom-bindings)). |
+| `ZATCA_PRUNE_ATTEMPTS_AFTER_DAYS` | `180` | Age after which old attempt rows of accepted invoices are deleted. |
+| `ZATCA_PRUNE_SDK_FILES_AFTER_DAYS` | `7` | Age after which leftover SDK temp files are deleted. |
+| `ZATCA_VAT_PERCENTAGE` | `15` | **Shown by `zatca:health-check` only.** It is **not** used to build invoices. VAT comes from each invoice line. |
 
-This is deliberate: without a signed document the tax split would be a local estimate (`amount / 1.15`) that nothing backs, so the document states one total — what the customer actually paid — and does not call itself a tax invoice or claim compliance it cannot demonstrate.
+In `config/zatca.php` only (no `.env` key): `certificate.alert_days` (`[60, 30, 7]`; only the largest value is used, as the "expiring soon" threshold) and `retries.generation.backoff_seconds`.
 
-Invoices signed *before* the switch was thrown are unaffected: re-downloading one still shows its real, signed VAT figures and its QR. Re-enabling ZATCA never retroactively adds a tax claim to a document issued without one.
+After any `.env` change in production, run `php artisan config:cache` and `php artisan queue:restart`.
 
-### In the admin dashboard
+<a id="environments"></a>
+### Environments
 
-Every ZATCA write action (retry, regenerate, complete signing, edit XML) is disabled and returns a clear "الفوترة الإلكترونية معطّلة" result rather than failing obscurely. The settings endpoint exposes the flag as `integration.enabled` so the dashboard can explain why. Read-only screens are unaffected.
+| `ZATCA_ENVIRONMENT` | ZATCA name | Use it for | Legal invoices? |
+|---|---|---|---|
+| `sandbox` | Developer portal | Building and testing your code. ZATCA's docs give a fixed test OTP for it. | No |
+| `simulation` | Simulation portal | A full rehearsal with your real company data and a real OTP from the simulation portal. | No |
+| `production` | Core | Real invoices. | **Yes** |
 
-### In code
+Credentials, counters and hash chains are stored **per environment**. When you switch environments, you onboard again, and nothing from the old environment is reused.
 
-Never read the flag directly. `Zatca\Support\ZatcaGate` is the one interpreter of the setting:
+---
+
+## 7. How the package works
+
+```text
+Your app                          Package (queue: "zatca")                        ZATCA
+────────                          ────────────────────────                        ─────
+Order paid
+  └─ dispatch GenerateZatcaInvoiceJob
+                                  1. load your order (fresh from DB)
+                                  2. call YOUR toInvoiceData()
+                                  3. check totals add up
+                                  4. reserve counter (ICV), UUID, previous hash
+                                  5. build XML  → save as "draft"
+                                  6. sign with SDK, make QR → "pending_reporting" (B2C) / "pending_clearance" (B2B)
+                                     fire ZatcaInvoiceGenerated
+                                  7. simplified → ReportZatcaInvoiceJob ───────────►  /invoices/reporting/single
+                                     standard   → ClearZatcaInvoiceJob  ───────────►  /invoices/clearance/single
+                                  8. save result: reported / cleared / retrying / manual_review …
+```
+
+**Done once per EGS and environment:** CSR, compliance CSID, compliance checks, production CSID (see [Onboarding](#8-zatca-onboarding)).
+
+**Done for every invoice:** steps 1 to 8 above. All of them are automatic once you dispatch the job.
+
+**You write only:**
+1. A class that implements `Zatca\Contracts\InvoiceSourceContract` (turns your order into `ZatcaInvoiceData`).
+2. One line binding it in a service provider.
+3. A `dispatch()` call after a sale.
+
+---
+
+## 8. ZATCA onboarding
+
+Onboarding gives your EGS its certificate. You do it **once per EGS, per environment**. Do it in `sandbox` first, then `simulation`, then `production`.
+
+### What you need from the business
+
+- VAT number, CR number, English and Arabic legal names, branch name, business category, national address. Put them in `.env`.
+- Access to the **Fatoora portal** (simulation or production) to create an **OTP**. An OTP expires quickly, usually within 1 hour, so create it right before step 2.
+
+### The order of steps
+
+```bash
+# 1. Create the private key + CSR (stored encrypted in the database). No ZATCA call.
+php artisan zatca:generate-credentials --egs=default
+```
+
+It prints the SDK fingerprint. Put that value in `.env` as `ZATCA_SDK_FINGERPRINT`, then run `php artisan config:clear`.
+
+```bash
+# 2. Get the compliance (test) certificate. Needs the OTP.
+php artisan zatca:onboard compliance --egs=default --otp=123456
+```
+
+```bash
+# 3. Prove your documents are valid. Run all three, in this order.
+php artisan zatca:onboard test-invoice --egs=default
+```
+
+```bash
+php artisan zatca:onboard test-credit-note --egs=default
+```
+
+```bash
+php artisan zatca:onboard test-debit-note --egs=default
+```
+
+Each one builds a sample document, signs it with the compliance certificate and sends it to ZATCA. You should see `Status: PASS` (or `WARNING`). `ERROR` means fix the problem and run that step again. The credit and debit note checks reference the last test invoice, so run `test-invoice` first.
+
+```bash
+# 4. Get the production certificate. Invoices can be signed from now on.
+php artisan zatca:onboard production --egs=default
+```
+
+```bash
+# 5. Confirm.
+php artisan zatca:health-check
+```
+
+```bash
+php artisan zatca:inspect credentials --egs=default
+```
+
+Success looks like this: `[OK] [default] compliance credentials present` and `[OK] [default] production credentials present — certificate state: valid`.
+
+### Onboarding the B2B EGS
+
+Set the `ZATCA_B2B_*` values, then run the same five steps with `--egs=b2b`. Because `b2b` is not your primary EGS, the package automatically sends **standard** test documents for it (standard invoice, credit note and debit note).
+
+### Doing the same from PHP
+
+The commands call `Zatca\Services\OnBoarding\ComplianceOnboardingOrchestrator`. You can call it from your own admin screen:
 
 ```php
-use Zatca\Support\ZatcaGate;
+use Zatca\Services\OnBoarding\ComplianceOnboardingOrchestrator;
 
-public function __construct(private readonly ZatcaGate $gate = new ZatcaGate) {}
+$onboarding = app(ComplianceOnboardingOrchestrator::class);
 
-if ($this->gate->disabled()) {
-    $this->gate->skip('what you are not doing');
-
-    return;
-}
+$onboarding->generateCredentials('default');            // ['csr' => ..., 'privateKeyGenerated' => true, 'sdkFingerprint' => ...]
+$onboarding->compliance('default', $otpFromAdmin);      // ['requestId' => ..., 'dispositionMessage' => ...]
+$onboarding->testInvoice('default');                    // ['status' => 'pass'|'warning'|'error', 'warnings' => [...], 'errors' => [...]]
+$onboarding->testCreditNote('default');
+$onboarding->testDebitNote('default');
+$onboarding->production('default');                     // ['binarySecurityToken' => true]
 ```
 
-Only a recognisable false (`false`, `"false"`, `0`, `"0"`, `"off"`, `"no"`) disables ZATCA. A missing, empty, or unparseable value means **enabled** — a malformed setting must never silently stop a live system.
+### Moving from testing to production
 
-> **Guard placement matters.** In the host application, put the guard around the ZATCA dispatch only, never at the top of a method that also does non-ZATCA work. An early `return` in `GenerateZatcaInvoiceForPaymentListener::handle()` or `TransactionService::dispatchZatcaInvoice()` would also skip the local `InvoiceBuilder` invoice and the customer's invoice email. Likewise, put admin guards *above* the claim/status UPDATE, not inside the job it dispatches — otherwise the row is mutated and then abandoned.
+1. Finish all steps in `sandbox` and test your real code there. Sandbox invoices are not legal.
+2. Set `ZATCA_ENVIRONMENT=simulation`, run `config:clear`, and onboard again with an OTP from the **simulation** portal. Send a few real-looking invoices.
+3. Set `ZATCA_ENVIRONMENT=production`, run `config:cache`, and onboard again with an OTP from the **production** Fatoora portal.
+4. From now on every invoice is real. Never switch a live server back to `sandbox`.
+
+Onboarding never touches invoices. It only adds credentials for the current environment.
 
 ---
 
-## Architecture Overview
+## 9. Complete usage examples
 
-The package is organized so that each concern lives in exactly one place:
+All names, numbers and responses in this section are **fake example data**.
 
-```
-Console/Commands/     Artisan commands (onboarding, health checks, certificate management)
-Contracts/            Interfaces — the seams where you (or the package) can swap implementations
-DTOs/                 Plain data objects passed between layers (no behavior, just data)
-Enums/                Fixed sets of values (environment, status, credential type...)
-Events/               Laravel events fired by the package
-Exceptions/           Typed exceptions for specific failure cases
-Jobs/                 Queueable jobs — invoice generation and reporting always run here
-Models/                Eloquent models for the 5 database tables
-Services/
-  Certificate/        Certificate state machine (expiry, renewal)
-  Connectors/          HTTP calls to ZATCA, versioned by API version (V2 today)
-  Diagnostics/         Read-only inspection tool
-  Execute/             Turns an order into a signed, stored invoice
-  Invoice/             XML generation
-  OnBoarding/          Drives the 3 onboarding API calls
-  SDK/                 Wraps the Java SDK — the only place that runs external processes
-  Security/            Credential encryption/storage, CSR generation
-State/                 ICV (invoice counter) and PIH (previous invoice hash) managers
+The examples use one fake business: **Al Noor Trading Co.**, a shop in Riyadh that sells electronics to people (B2C) and office furniture to companies (B2B).
+
+### 9.1 Shared setup (do this once)
+
+#### A. Your own tables
+
+The package doesn't care what your tables look like. These examples assume:
+
+```php
+// orders:       id, customer_name, buyer_type ('person'|'company'), company_id (nullable), paid_at
+// order_items:  id, order_id, name, quantity (int), unit_price (decimal, excl. VAT), vat_rate (e.g. 15)
+// companies:    id, legal_name, vat_number (nullable), cr_number (nullable),
+//               street, building_number, district, city, postal_code, additional_number, country_code
 ```
 
-### Key ideas
+#### B. The mapper: turn an order into invoice data
 
-- **Everything EGS-specific goes through `EgsRegistry`.** No code reads `config('zatca.egs.*')` directly — it always asks `EgsRegistry::for($egsIdentifier)`. This means adding a second business/branch later is a config change, not a code change.
-- **Compliance and Production are always kept separate.** Different database rows, different ICV/PIH sequences, different certificates. They can never mix by accident.
-- **The SDK is only ever called through `ZatcaSdkAdapter`.** Every call gets its own temporary, isolated folder. Nothing is shared between invoices, even if two invoices are being signed at the same time.
-- **Signing happens once. Reporting can happen many times.** Once an invoice is signed, its UUID/hash/XML never change — even if reporting is retried 10 times.
-
----
-
-## Quick Start
-
-This is the smallest path from installation to your first invoice.
-
-### 1. Install and configure (see [Installation](#installation) above)
-
-### 2. Implement `InvoiceSourceContract` in your app
-
-The package doesn't know what your "Order" model looks like. You tell it, once:
+This is the only real code you write. It works for **both** B2C and B2B.
 
 ```php
 <?php
 
 namespace App\Zatca;
 
+use App\Models\Order;
+use DateTimeImmutable;
+use DateTimeZone;
 use Zatca\Contracts\InvoiceSourceContract;
+use Zatca\DTOs\BuyerAddress;
+use Zatca\DTOs\BuyerOtherId;
+use Zatca\DTOs\BuyerParty;
 use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\DTOs\ZatcaInvoiceLine;
-use App\Models\Order;
+use Zatca\Enums\ZatcaComplianceDocumentType;
 
 class OrderInvoiceSource implements InvoiceSourceContract
 {
-    public function toInvoiceData(mixed $source, string $egsIdentifier): ZatcaInvoiceData
+    /**
+     * Unique per sale. The package uses it to stop duplicates, and it is printed
+     * in the XML as the invoice number.
+     */
+    public function sourceReference(mixed $source): string
     {
-        /** @var Order $source */
-        $line = new ZatcaInvoiceLine(
-            description: $source->course->title,
-            quantity: 1,
-            unitPrice: $source->price_excl_vat,
-            vatRate: 15.0,
-            lineTotalExclVat: $source->price_excl_vat,
-            vatAmount: $source->vat_amount,
-        );
+        return 'INV-'.$source->id;
+    }
+
+    /** @param  Order  $order */
+    public function toInvoiceData(mixed $order, string $egsIdentifier): ZatcaInvoiceData
+    {
+        $lines = [];
+
+        foreach ($order->items as $item) {
+            $net = round($item->quantity * $item->unit_price, 2);
+            $vat = round($net * $item->vat_rate / 100, 2);
+
+            $lines[] = new ZatcaInvoiceLine(
+                description: $item->name,
+                quantity: (int) $item->quantity,
+                unitPrice: (float) $item->unit_price,
+                vatRate: (float) $item->vat_rate,
+                lineTotalExclVat: $net,
+                vatAmount: $vat,
+            );
+        }
+
+        // Totals MUST equal the sum of the lines, or the package refuses the invoice.
+        $totalExclVat = round(array_sum(array_map(fn ($l) => $l->lineTotalExclVat, $lines)), 2);
+        $totalVat = round(array_sum(array_map(fn ($l) => $l->vatAmount, $lines)), 2);
+
+        // Saudi local time. Use the moment of the sale, not "now", so retries keep the same date.
+        $issuedAt = DateTimeImmutable::createFromInterface($order->paid_at)
+            ->setTimezone(new DateTimeZone('Asia/Riyadh'));
+
+        $isCompany = $order->buyer_type === 'company';
 
         return new ZatcaInvoiceData(
             egsIdentifier: $egsIdentifier,
-            sourceReference: $this->sourceReference($source),
-            buyerName: $source->student->name,
-            buyerVatNumber: null,
-            issueDateTime: new \DateTimeImmutable(),
+            sourceReference: $this->sourceReference($order),
+            buyerName: $isCompany ? $order->company->legal_name : $order->customer_name,
+            buyerVatNumber: $isCompany ? $order->company->vat_number : null,
+            issueDateTime: $issuedAt,
             currency: 'SAR',
-            lines: [$line],
-            totalExclVat: $source->price_excl_vat,
-            totalVat: $source->vat_amount,
-            totalInclVat: $source->total_amount,
+            lines: $lines,
+            totalExclVat: $totalExclVat,
+            totalVat: $totalVat,
+            totalInclVat: round($totalExclVat + $totalVat, 2),
+            documentType: $isCompany
+                ? ZatcaComplianceDocumentType::StandardInvoice   // B2B → Clearance
+                : ZatcaComplianceDocumentType::Invoice,          // B2C → Reporting
+            buyer: $isCompany ? $this->buyerParty($order) : null,
+            supplyDate: $isCompany ? $issuedAt : null,           // required for B2B: the delivery date
         );
     }
 
-    public function sourceReference(mixed $source): string
+    private function buyerParty(Order $order): BuyerParty
     {
-        return 'order:' . $source->id;
+        $c = $order->company;
+
+        return new BuyerParty(
+            registrationName: $c->legal_name,
+            // Exactly ONE of these two: a VAT number, or another ID such as a CR number.
+            vatNumber: $c->vat_number,
+            otherId: $c->vat_number ? null : BuyerOtherId::commercialRegistration($c->cr_number),
+            address: new BuyerAddress(
+                street: $c->street,
+                buildingNumber: $c->building_number,
+                district: $c->district,
+                city: $c->city,
+                postalCode: $c->postal_code,
+                countryCode: $c->country_code ?? 'SA',
+                additionalNumber: $c->additional_number,
+            ),
+        );
     }
 }
 ```
 
-### 3. Bind it in your app's service provider
+#### C. Bind it
 
 ```php
 // app/Providers/AppServiceProvider.php
-use Zatca\Contracts\InvoiceSourceContract;
 use App\Zatca\OrderInvoiceSource;
+use Zatca\Contracts\InvoiceSourceContract;
 
 public function register(): void
 {
@@ -520,1150 +617,1151 @@ public function register(): void
 }
 ```
 
-### 4. Onboard your EGS once (sandbox first — see [Onboarding](#onboarding))
+The package loads your order again inside the queue with `Model::find()` (`EloquentInvoiceSourceResolver`). If your source is not an Eloquent model, see [Custom bindings](#custom-bindings).
 
-```bash
-php artisan zatca:generate-credentials
-php artisan zatca:onboard compliance --otp=123456
-php artisan zatca:onboard test-invoice
-php artisan zatca:onboard test-credit-note
-php artisan zatca:onboard test-debit-note
-php artisan zatca:onboard production
-```
-
-### 5. Dispatch invoice generation after a successful payment
-
-`GenerateZatcaInvoiceJob` only ever carries scalar reference data (`source_type`/`source_id`/`egs_identifier`) — never your model object — so the queued payload can never go stale or fail to serialize. The record is reloaded fresh when the job actually runs, via `InvoiceSourceResolverContract` (a default binding already handles plain Eloquent models — see [Public API](#public-api) if you need something else):
-
-```php
-use Zatca\Jobs\GenerateZatcaInvoiceJob;
-
-// Inside your "payment confirmed" flow — never inside the payment webhook itself:
-dispatch(GenerateZatcaInvoiceJob::forModel($order, egsIdentifier: 'default'));
-
-// Equivalent, if you prefer to be explicit:
-GenerateZatcaInvoiceJob::dispatch(Order::class, (string) $order->id, 'default');
-```
-
-### 6. Run the queue worker and check the result
+#### D. Run a queue worker
 
 ```bash
 php artisan queue:work --queue=zatca
-php artisan zatca:inspect invoice --id=1
 ```
 
-That's it — the invoice is signed, reported to ZATCA, and stored.
+Every ZATCA job runs on the `zatca` queue (`ZATCA_QUEUE_NAME`). Keep this worker running in production (see [Deploy](#14-deploy-to-production)).
 
----
+#### E. Pick the right EGS
 
-## Commands
-
-Every command below is registered automatically once the package is installed. Run `php artisan list zatca` to see them all.
-
-### `zatca:generate-credentials`
-
-**Purpose:** Generates the private key and CSR (Certificate Signing Request) for an EGS, using the real ZATCA SDK. No API call is made.
-
-**Syntax:**
-```bash
-php artisan zatca:generate-credentials {--egs=default}
+```php
+$b2cEgs = config('zatca.primary_egs');           // e.g. "default"
+$b2bEgs = config('zatca.b2b.egs_identifier');    // e.g. "b2b" (null if not configured)
 ```
 
-**Options:**
-| Option | Default | Description |
-|---|---|---|
-| `--egs` | `default` | The EGS identifier to generate credentials for. |
+### 9.2 Scenario 1: B2C invoice (Reporting)
 
-**Example:**
-```bash
-php artisan zatca:generate-credentials
-```
+**Situation:** Sara buys 2 headphones at 150.00 SAR and 1 charger at 50.00 SAR (all prices excl. VAT, 15% VAT).
 
-**Expected output:**
-```
-Generating private key + CSR for EGS [default] via the ZATCA SDK...
-Private key and CSR generated and stored (encrypted) successfully.
-SDK fingerprint: 48abeb828d453ef6fafba792fddbbb2701da5c7018c24bde918853e80ff5d530
-Set this as ZATCA_SDK_FINGERPRINT in .env so `zatca:health-check` can detect unexpected SDK changes.
+| Line | Item | Qty | Unit | Net | VAT | Total |
+|---|---|---|---|---|---|---|
+| 0 | Wireless headphones | 2 | 150.00 | 300.00 | 45.00 | 345.00 |
+| 1 | USB-C charger | 1 | 50.00 | 50.00 | 7.50 | 57.50 |
+| | **Totals** | | | **350.00** | **52.50** | **402.50** |
 
-CSR (submit via `zatca:onboard compliance --otp=XXXXXX`):
-LS0tLS1CRUdJTiBDRVJUSUZJQ0FURSBSRVFVRVNULS0t...
-```
-
-**ZATCA API used:** None — this only runs the local SDK.
-
-**Common errors:**
-- `Configured ZATCA_SDK_EXECUTABLE [...] does not point to an existing SDK jar file.` — check `ZATCA_SDK_EXECUTABLE` in `.env`.
-- `Configured ZATCA_SDK_ROOT [...] does not point to an existing directory.` — check `ZATCA_SDK_ROOT` in `.env`.
-
----
-
-### `zatca:onboard {step}`
-
-**Purpose:** Runs one step of the 3-step ZATCA onboarding process.
-
-**Syntax:**
-```bash
-php artisan zatca:onboard {step} {--egs=default} {--otp=}
-```
-
-**Parameters/Options:**
-| Name | Required | Description |
-|---|---|---|
-| `step` | Yes | One of: `compliance`, `test-invoice`, `test-credit-note`, `test-debit-note`, `production`. |
-| `--egs` | No | EGS identifier. Default: `default`. |
-| `--otp` | Only for `compliance` | The OTP code from the ZATCA Fatoora portal. |
-
-#### `zatca:onboard compliance --otp=XXXXXX`
-
-**Purpose:** Requests the Compliance CSID (certificate) using the OTP from the Fatoora portal.
-
-**Example:**
-```bash
-php artisan zatca:onboard compliance --otp=123456
-```
-
-**Expected output:**
-```
-Requesting Compliance CSID for EGS [default]...
-Compliance Token, Secret, Certificate and Request ID saved.
-Request ID: 1234567890123
-```
-
-**ZATCA API used:** `POST /compliance`
-
-**Common errors:**
-- `The provided OTP is invalid` — get a fresh OTP from the Fatoora portal (they expire quickly).
-- `No CSR on record for EGS [...]` — run `zatca:generate-credentials` first.
-
-#### `zatca:onboard test-invoice`
-
-**Purpose:** Builds a canned test invoice, signs it, validates it, and submits it to ZATCA's Compliance Invoice check — fully automatically.
-
-**Example:**
-```bash
-php artisan zatca:onboard test-invoice
-```
-
-**Expected output:**
-```
-Generating, signing, validating and submitting the compliance test invoice for EGS [default]...
-Status: PASS
-```
-
-(If ZATCA finds a non-blocking issue, `Status: WARNING` is shown along with each warning line.)
-
-**ZATCA API used:** `POST /compliance/invoices`
-
-**Common errors:**
-- `Status: ERROR` with error lines printed — read the message, it tells you exactly what ZATCA rejected.
-
-#### `zatca:onboard test-credit-note` / `zatca:onboard test-debit-note`
-
-**Purpose:** Same as `test-invoice`, but for the simplified credit note / debit note document types. ZATCA's Compliance Invoice Check tracks these separately, and the Production CSID request is refused until all three have a compliant submission on record. Each note is signed billed against (`cac:BillingReference`) the invoice `test-invoice` already submitted — **run `test-invoice` first**.
-
-**Example:**
-```bash
-php artisan zatca:onboard test-credit-note
-php artisan zatca:onboard test-debit-note
-```
-
-**Expected output:** same shape as `test-invoice` (`Status: PASS`/`WARNING`/`ERROR`).
-
-**ZATCA API used:** `POST /compliance/invoices`
-
-**Common errors:**
-- `No compliant simplified invoice on record for EGS [...]` — run `zatca:onboard test-invoice` first.
-
-#### `zatca:onboard production`
-
-**Purpose:** Requests the Production CSID (the certificate used for real customer invoices).
-
-**Example:**
-```bash
-php artisan zatca:onboard production
-```
-
-**Expected output:**
-```
-Requesting Production CSID for EGS [default]...
-Production Token, Secret and Certificate saved. Reporting is now live for this EGS.
-```
-
-**ZATCA API used:** `POST /production/csids`
-
-**Common errors:**
-- `No compliance request ID on record for EGS [...]` — run `zatca:onboard compliance` first.
-- `Production CSID request failed: The compliance certificate is not done with the following compliance steps yet [simplified-credit-note-compliant,simplified-debit-note-compliant]` — run `zatca:onboard test-credit-note` and `zatca:onboard test-debit-note` (in that order, after `test-invoice`), then retry.
-
----
-
-### `zatca:report-pending`
-
-**Purpose:** Re-dispatches reporting for every invoice still `pending_reporting`, `retrying`, or `failed` — **without regenerating them**. Meant to run on a schedule.
-
-**Syntax:**
-```bash
-php artisan zatca:report-pending
-```
-
-**Example:**
-```bash
-php artisan zatca:report-pending
-```
-
-**Expected output:**
-```
-Dispatched 3 pending invoice(s) for reporting.
-```
-
-**ZATCA API used:** Indirectly, `POST /invoices/reporting/single` (through the jobs it dispatches).
-
-**Common errors:** None specific — this command only dispatches jobs; failures show up on the individual invoices (`zatca:inspect invoice`).
-
----
-
-### `zatca:inspect {resource}`
-
-**Purpose:** Read-only inspection of credentials, EGS state, or one invoice. Never prints secrets, private keys, or raw XML.
-
-**Syntax:**
-```bash
-php artisan zatca:inspect {resource} {--egs=default} {--id=}
-```
-
-**Parameters/Options:**
-| Name | Required | Description |
-|---|---|---|
-| `resource` | Yes | One of: `credentials`, `state`, `invoice`. |
-| `--egs` | No | EGS identifier. Default: `default`. |
-| `--id` | Only for `invoice` | Invoice ID or UUID. |
-
-**Examples:**
-```bash
-php artisan zatca:inspect credentials
-php artisan zatca:inspect state
-php artisan zatca:inspect invoice --id=42
-```
-
-**Expected output (credentials):**
-```json
-[
-    {
-        "credential_type": "compliance",
-        "has_token": true,
-        "has_certificate": true,
-        "has_private_key": true,
-        "certificate_state": "valid",
-        "certificate_expires_at": "2029-01-09 09:19:30",
-        "sdk_fingerprint": null
-    }
-]
-```
-
-**ZATCA API used:** None — reads only from your local database.
-
-**Common errors:**
-- `--id is required for the invoice resource.` — pass `--id=<invoice id or uuid>`.
-
----
-
-### `zatca:health-check`
-
-**Purpose:** Verifies the SDK is reachable, the SDK binary hasn't changed unexpectedly, and every EGS's credentials/certificate state look healthy.
-
-**Syntax:**
-```bash
-php artisan zatca:health-check
-```
-
-**Example:**
-```bash
-php artisan zatca:health-check
-```
-
-**Expected output:**
-```
-[OK] SDK executable found: /opt/zatca-sdk/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar
-[OK] SDK fingerprint matches recorded value.
-[OK] [default] compliance credentials present — certificate state: valid.
-[OK] [default] production credentials present — certificate state: valid.
-```
-
-Exit code is non-zero if anything is missing, expired, or failed — safe to use in deployment health checks.
-
-**ZATCA API used:** None — this is a local check only.
-
-**Common errors:**
-- `[FAIL] ZATCA SDK binary fingerprint mismatch...` — the jar file on disk changed since `ZATCA_SDK_FINGERPRINT` was recorded. Investigate before trusting signing results.
-- `[PENDING] [...] credentials not yet onboarded.` — run the onboarding steps.
-
----
-
-### `zatca:certificate:check`
-
-**Purpose:** Evaluates certificate expiry state (`valid` → `expiring_soon` → `expired`) for one or all EGS. Meant to run daily via the scheduler.
-
-**Syntax:**
-```bash
-php artisan zatca:certificate:check {--egs=}
-```
-
-**Options:**
-| Option | Default | Description |
-|---|---|---|
-| `--egs` | *(all configured EGS)* | Check only this EGS. |
-
-**Example:**
-```bash
-php artisan zatca:certificate:check
-```
-
-**Expected output:**
-```
-[default] compliance: valid
-[default] production: valid
-```
-
-**ZATCA API used:** None — reads the expiry date already stored from onboarding.
-
-**Common errors:** None specific.
-
----
-
-### `zatca:certificate:renew`
-
-**Purpose:** Renews a certificate that is `expiring_soon`, `expired`, or `failed`, and automatically resumes any invoices left `pending_reporting`.
-
-**Syntax:**
-```bash
-php artisan zatca:certificate:renew {--egs=default} {--type=production}
-```
-
-**Options:**
-| Option | Default | Description |
-|---|---|---|
-| `--egs` | `default` | EGS identifier. |
-| `--type` | `production` | `compliance` or `production`. |
-
-**Example:**
-```bash
-php artisan zatca:certificate:renew --egs=default --type=production
-```
-
-**Expected output:**
-```
-Renewing production certificate for EGS [default]...
-Resulting state: active
-```
-
-**ZATCA API used:** `POST /production/csids` (re-requests the Production CSID using the existing CSR/private key).
-
-**Common errors:**
-- Renewing a `compliance` certificate always fails — compliance certificates cannot be renewed. Re-run `zatca:onboard compliance` with a new OTP instead.
-- `Resulting state: failed` — check the logs for the underlying ZATCA error.
-
----
-
-### `zatca:prune-submission-attempts`
-
-**Purpose:** Deletes old `zatca_submission_attempts` rows for invoices that were already successfully reported, based on `ZATCA_PRUNE_ATTEMPTS_AFTER_DAYS`.
-
-**Syntax:**
-```bash
-php artisan zatca:prune-submission-attempts
-```
-
-**Example:**
-```bash
-php artisan zatca:prune-submission-attempts
-```
-
-**Expected output:**
-```
-Pruned 12 submission attempt(s) older than 180 days.
-```
-
-**ZATCA API used:** None — a local database cleanup only.
-
-**Common errors:** None specific.
-
----
-
-### `zatca:status`
-
-**Purpose:** Answers one question — *is there anything a human needs to do right now?* Checks invoices in `manual_review`, invoices unreported for too long, certificate expiry per EGS, and failed jobs on the `zatca` queue. Built to be wired into a monitor or a cron that mails on failure.
-
-**Syntax:**
-```bash
-php artisan zatca:status [--stale-minutes=60] [--strict] [--json]
-```
-
-**Example:**
-```bash
-php artisan zatca:status
-```
-
-**Expected output:**
-```
-+----------------------------------+-------+-----------------------------------------------------+
-| Check                            | Level | Detail                                              |
-+----------------------------------+-------+-----------------------------------------------------+
-| Manual review                    | OK    | No invoices waiting for a human.                    |
-| Reporting queue                  | OK    | No invoice has been waiting longer than 60 minutes. |
-| Certificate [default/production] | OK    | Valid for 887 days (state: valid).                  |
-| Failed jobs                      | OK    | No failed jobs on the "zatca" queue.                 |
-+----------------------------------+-------+-----------------------------------------------------+
-Nothing needs attention.
-```
-
-**Exit codes:** `0` when nothing is broken, `1` when something needs a human. Warnings print but do not fail unless you pass `--strict` — a certificate 45 days out should not page anyone daily for six weeks, while at 30 days it becomes a failure because renewal needs a portal OTP and someone's calendar.
-
-**How this differs from `zatca:health-check`:** health-check asks *"is the installation wired up correctly"* (SDK jar, fingerprint, credentials present) — run it after deploying. Status asks *"is anything wrong right now"* — run it continuously.
-
-**ZATCA API used:** None — reads local state only.
-
----
-
-### `zatca:requeue`
-
-**Purpose:** Puts stuck invoices back into the reporting queue. `zatca:report-pending` deliberately never touches `manual_review`; this is the way to restart those once the cause is fixed — or automatically, for the subset that only failed because ZATCA was unreachable.
-
-**Syntax:**
-```bash
-php artisan zatca:requeue [--status=manual_review] [--only-transient] [--max-total-attempts=50]
-                          [--egs=] [--id=*] [--limit=0] [--keep-attempts] [--dry-run]
-```
-
-**Example — scheduled, safe:**
-```bash
-php artisan zatca:requeue --only-transient
-```
-
-Requeues only invoices whose last attempt failed with HTTP `0` or `5xx` (a ZATCA outage or network failure). Invoices ZATCA actively **rejected** (`4xx`) are left alone, because retrying identical data fails identically. Safe to run hourly.
-
-**Example — manual, after fixing a rejection:**
-```bash
-php artisan zatca:requeue --id=41 --dry-run
-php artisan zatca:requeue --id=41
-```
-
-**Expected output:**
-```
-+----+---------------+----------+-----------+--------------------------+
-| ID | Status        | Attempts | Last HTTP | Last error               |
-+----+---------------+----------+-----------+--------------------------+
-| 41 | manual_review | 12       | 503       | Service Unavailable      |
-+----+---------------+----------+-----------+--------------------------+
-Requeued 1 invoice(s) with attempt counters reset.
-```
-
-**Safety:** never re-signs (the stored signed XML, UUID, ICV and PIH are re-sent unchanged), never touches an invoice ZATCA already accepted even if you pass its ID, skips invoices with no attempt history under `--only-transient`, and gives up on anything already attempted more than `--max-total-attempts` times.
-
-**ZATCA API used:** None directly — it dispatches `RetryZatcaInvoiceJob`, which calls the reporting endpoint.
-
----
-
-### `zatca:prune-sdk-files`
-
-**Purpose:** Deletes leftover files under `storage/app/private/zatca/`. Nothing reads them once a call finishes — the authoritative signed invoice lives in the database and is never pruned. Orphaned `runtime/` and `tmp/` entries can contain key material, so this is a security cleanup as much as a disk-space one.
-
-**Syntax:**
-```bash
-php artisan zatca:prune-sdk-files [--days=] [--dry-run]
-```
-
-**Example:**
-```bash
-php artisan zatca:prune-sdk-files --dry-run
-```
-
-**Expected output:**
-```
-+-------------------------------+---------+---------+
-| Location                      | Deleted | Size    |
-+-------------------------------+---------+---------+
-| sdk-output                    | 2       | 21.8 KB |
-| tmp                           | 0       | 0 B     |
-| smoke-test                    | 0       | 0 B     |
-| runtime (orphaned workspaces) | 0       | 0 B     |
-| csr-config-*.properties       | 0       | 0 B     |
-+-------------------------------+---------+---------+
-Freed 21.8 KB across 2 entr(ies) older than 7 day(s).
-```
-
-**Safety:** never deletes anything younger than one hour, even with `--days=0`, so an SDK call in flight can never lose its workspace.
-
-**ZATCA API used:** None — a local filesystem cleanup only.
-
----
-
-## Public API
-
-Everything below is a class you can inject (via Laravel's container) or resolve with `app(...)`.
-
-### `InvoiceSourceContract` (interface — you implement this)
-
-| Method | Signature | Purpose |
-|---|---|---|
-| `toInvoiceData` | `toInvoiceData(mixed $source, string $egsIdentifier): ZatcaInvoiceData` | Maps your own Order/model into the package's neutral invoice data. |
-| `sourceReference` | `sourceReference(mixed $source): string` | Returns a unique idempotency key for the source (e.g. `"order:{$id}"`). |
-
-**Example:** see [Quick Start](#quick-start) step 2.
-
----
-
-### `GenerateZatcaInvoiceJob` (queued job — your entry point)
+**Send it** right after the payment is saved:
 
 ```php
 use Zatca\Jobs\GenerateZatcaInvoiceJob;
 
-dispatch(GenerateZatcaInvoiceJob::forModel($order, egsIdentifier: 'default'));
-// or explicitly:
-GenerateZatcaInvoiceJob::dispatch(Order::class, (string) $order->id, 'default');
+// Inside your checkout, after the order is saved and paid:
+dispatch(
+    GenerateZatcaInvoiceJob::forModel($order, config('zatca.primary_egs'))->afterCommit()
+);
 ```
 
-| Constructor parameter | Type | Default | Description |
-|---|---|---|---|
-| `$sourceType` | `string` | — | Usually your model's class name (e.g. `Order::class`). Passed to `InvoiceSourceResolverContract` to reload the record at execution time. |
-| `$sourceId` | `string` | — | The record's primary key. |
-| `$egsIdentifier` | `string` | `'default'` | Which EGS to generate the invoice for. |
+`afterCommit()` makes sure the job only runs after your order is really saved. Your checkout returns immediately. ZATCA never slows it down.
 
-The job carries **only these three scalar strings** — never the model/object itself — so it can never fail to serialize and never goes stale between dispatch and execution. `forModel(Model $model, string $egsIdentifier = 'default')` is a convenience constructor that fills in `$sourceType`/`$sourceId` from an Eloquent model.
+**What happens next (automatic):** the worker builds, signs and saves the invoice (`pending_reporting`), then `ReportZatcaInvoiceJob` sends it. A few seconds later the status is `reported`.
 
-**What it does:** Reloads the source via `InvoiceSourceResolverContract`, signs and stores the invoice (via `ProductionInvoiceOrchestrator`), then automatically dispatches `ReportZatcaInvoiceJob`. Safe to dispatch twice for the same order — it is idempotent. If the resolved source is `null` (deleted, or an unrecognized `source_type`), the job fails without retrying — retrying can't fix a record that no longer exists.
-
----
-
-### `InvoiceSourceResolverContract` (interface — default binding provided)
+**Read the result:**
 
 ```php
-use Zatca\Contracts\InvoiceSourceResolverContract;
-use Zatca\DTOs\InvoiceSourceReference;
+use Zatca\Models\ZatcaInvoice;
+
+$invoice = ZatcaInvoice::where('source_reference', 'INV-1001')->first()?->authoritative();
+
+$invoice->status;                          // ZatcaInvoiceStatus::Reported
+$invoice->status->isTerminalSuccess();     // true → accepted by ZATCA, never sent again
+$invoice->uuid;                            // "8d2b4c1e-...": package-generated
+$invoice->icv;                             // 57: package-generated counter
+$invoice->qr_code;                         // base64 TLV QR: print this on the receipt
+$invoice->signed_xml_base64;               // the legal signed XML
+$invoice->acceptedAt();                    // when ZATCA accepted it
+$invoice->last_error;                      // null, or ZATCA's warnings/errors
 ```
 
-| Method | Signature | Purpose |
-|---|---|---|
-| `resolve` | `resolve(InvoiceSourceReference $reference): mixed` | Reloads the host record from `$reference->sourceType` / `$reference->sourceId`. Return `null` if it no longer exists. |
+`authoritative()` returns the current document, even if this one was later replaced by a re-issue.
 
-The package ships a default binding, `EloquentInvoiceSourceResolver`, that handles the common case (`source_type` is an Eloquent model class, `source_id` is its primary key) automatically — you don't need to implement this yourself unless your source isn't a plain Eloquent model. To override it:
+**Expected response (fake example, stored in `last_zatca_response`):**
 
-```php
-$this->app->bind(InvoiceSourceResolverContract::class, MyCustomResolver::class);
+```json
+{
+  "status": "PASS",
+  "reportingStatus": "REPORTED",
+  "alreadyReported": false,
+  "errorCodes": [],
+  "warningCodes": [],
+  "warningMessages": [],
+  "validationErrors": [],
+  "validationWarnings": []
+}
 ```
 
----
-
-### `ProductionInvoiceOrchestrator`
-
-```php
-use Zatca\Services\Execute\ProductionInvoiceOrchestrator;
-
-$invoice = app(ProductionInvoiceOrchestrator::class)
-    ->generate($invoiceSource, $order, 'default');
-```
-
-| Method | Signature | Returns | Description |
-|---|---|---|---|
-| `generate` | `generate(InvoiceSourceContract $source, mixed $sourceRecord, string $egsIdentifier): ZatcaInvoice` | `ZatcaInvoice` model | Signs and stores one invoice. Returns the existing invoice untouched if one already exists for this source — never regenerates. |
-
-You normally don't call this directly — `GenerateZatcaInvoiceJob` does it for you.
-
----
-
-### `ComplianceOnboardingOrchestrator`
-
-```php
-use Zatca\Services\OnBoarding\ComplianceOnboardingOrchestrator;
-
-$orchestrator = app(ComplianceOnboardingOrchestrator::class);
-```
-
-| Method | Signature | Returns | Description |
-|---|---|---|---|
-| `generateCredentials` | `generateCredentials(string $egsIdentifier): array` | `['csr' => string, 'privateKeyGenerated' => bool, 'sdkFingerprint' => string]` | Generates the CSR/private key. |
-| `compliance` | `compliance(string $egsIdentifier, string $otp): array` | `['requestId' => string, 'dispositionMessage' => ?string]` | Calls `POST /compliance`. |
-| `testInvoice` | `testInvoice(string $egsIdentifier): array` | `['status' => string, 'warnings' => array, 'errors' => array]` | Calls `POST /compliance/invoices`. |
-| `production` | `production(string $egsIdentifier): array` | `['binarySecurityToken' => bool]` | Calls `POST /production/csids`. |
-
-This is what the `zatca:onboard` and `zatca:generate-credentials` commands call internally. Use it directly if you need onboarding from a web UI instead of the console.
-
----
-
-### `ZatcaCredentialStore`
-
-```php
-use Zatca\Services\Security\ZatcaCredentialStore;
-use Zatca\Enums\ZatcaEnvironment;
-use Zatca\Enums\ZatcaCredentialType;
-
-$store = app(ZatcaCredentialStore::class);
-```
-
-| Method | Signature | Returns | Description |
-|---|---|---|---|
-| `has` | `has(string $egsIdentifier, ZatcaEnvironment $environment, ZatcaCredentialType $type): bool` | `bool` | Whether credentials exist for this EGS/environment/type. |
-| `get` | `get(string $egsIdentifier, ZatcaEnvironment $environment, ZatcaCredentialType $type): ZatcaCredentialSet` | `ZatcaCredentialSet` | Decrypted credential bundle. Throws `ZatcaCredentialsMissingException` if not found. |
-| `store` | `store(string $egsIdentifier, ZatcaEnvironment $environment, ZatcaCredentialType $type, array $data): void` | `void` | Creates/updates a credential row. Encrypts `secret` and `private_key` automatically. |
-| `getCsr` | `getCsr(string $egsIdentifier, ZatcaEnvironment $environment, ZatcaCredentialType $type): ?string` | `?string` | Reads the stored CSR (not encrypted — it's not a secret). |
-
-You rarely need to call this directly — onboarding and invoice generation use it internally. Note: there is deliberately **no** general-purpose "give me the raw private key" method here — that access is narrowed to `ZatcaSigningKeyProvider` below.
-
----
-
-### `ZatcaSigningKeyProvider`
-
-```php
-use Zatca\Services\Security\ZatcaSigningKeyProvider;
-
-$provider = app(ZatcaSigningKeyProvider::class);
-```
-
-| Method | Signature | Returns | Description |
-|---|---|---|---|
-| `hasProductionCredentials` | `hasProductionCredentials(string $egsIdentifier, ZatcaEnvironment $environment): bool` | `bool` | |
-| `hasComplianceCredentials` | `hasComplianceCredentials(string $egsIdentifier, ZatcaEnvironment $environment): bool` | `bool` | |
-| `prepareSigningWorkspace` | `prepareSigningWorkspace(string $egsIdentifier, ZatcaEnvironment $environment, ZatcaCredentialType $credentialType, string $unsignedXml): array` | `[certPath, keyPath, xmlPath, cleanup]` | Writes cert/key/XML to a private, `0600`-permissioned, per-call temp workspace. **You must call the returned `cleanup` closure in a `finally` block.** |
-
-This is the **only** place in the package that ever writes decrypted private-key material to disk, and the only place application code needs to go through to sign something. There is no general-purpose method anywhere in the package that hands back a raw private key string to arbitrary calling code — the key only ever exists as file content inside a `prepareSigningWorkspace()` call, for the duration of that call.
-
----
-
-### `EgsRegistry`
-
-```php
-use Zatca\State\EgsRegistry;
-
-$egsConfig = app(EgsRegistry::class)->for('default');
-```
-
-| Method | Signature | Returns | Description |
-|---|---|---|---|
-| `for` | `for(string $egsIdentifier): EgsConfig` | `EgsConfig` | Resolves all config for one EGS. Throws if the identifier isn't configured. |
-| `identifiers` | `identifiers(): array` | `string[]` | All configured EGS identifiers. |
-| `default` | `default(): EgsConfig` | `EgsConfig` | The first configured EGS. |
-
----
-
-### `ZatcaInspector`
-
-```php
-use Zatca\Services\Diagnostics\ZatcaInspector;
-
-$inspector = app(ZatcaInspector::class);
-```
-
-| Method | Signature | Returns | Description |
-|---|---|---|---|
-| `credentials` | `credentials(string $egsIdentifier): array` | array of masked credential rows | Never includes secrets/keys. |
-| `state` | `state(string $egsIdentifier): array` | ICV + truncated PIH preview | Read-only. |
-| `invoice` | `invoice(string $identifier): ?array` | Invoice summary, or `null` | Accepts an invoice ID or UUID. |
-
-This powers the `zatca:inspect` command — use it directly if you're building an admin dashboard.
-
----
-
-### `CertificateLifecycleManager`
-
-```php
-use Zatca\Services\Certificate\CertificateLifecycleManager;
-use Zatca\Enums\ZatcaCredentialType;
-
-$manager = app(CertificateLifecycleManager::class);
-```
-
-| Method | Signature | Returns | Description |
-|---|---|---|---|
-| `check` | `check(string $egsIdentifier, ZatcaCredentialType $type): ZatcaCertificateState` | `ZatcaCertificateState` | Evaluates and updates expiry state. |
-| `renew` | `renew(string $egsIdentifier, ZatcaCredentialType $type): ZatcaCertificateState` | `ZatcaCertificateState` | Renews and resumes any paused invoices. |
-
----
-
-### `ZatcaSdkInterface`
-
-```php
-use Zatca\Contracts\ZatcaSdkInterface;
-
-$sdk = app(ZatcaSdkInterface::class);
-```
-
-| Method | Signature | Returns | Description |
-|---|---|---|---|
-| `generateCsr` | `generateCsr(string $csrConfigPath, ZatcaEnvironment $environment): array` | `['csr' => string, 'privateKey' => string]` (file paths) | Runs the SDK's CSR generation. |
-| `signInvoice` | `signInvoice(string $unsignedXmlPath, string $certificatePath, string $privateKeyPath): array` | `['signedXmlPath' => string, 'signedXmlBase64' => string, 'invoiceHash' => string, 'qrCode' => string]` | Signs an invoice. |
-| `generateHash` | `generateHash(string $xmlPath): string` | invoice hash | Computes only the hash. |
-| `validateInvoice` | `validateInvoice(string $signedXmlPath, string $certificatePath): array` | `['valid' => bool, 'errors' => array, 'warnings' => array]` | Runs the SDK's full validation. |
-| `version` | `version(): string` | SDK version string | |
-| `executablePath` | `executablePath(): string` | Absolute path to the jar | |
-
-You will rarely call this directly — it's an advanced/low-level API. Most apps only need `GenerateZatcaInvoiceJob`.
-
----
-
-### `ZatcaSanitizer`
-
-```php
-use Zatca\Services\Security\ZatcaSanitizer;
-
-$sanitizer = app(ZatcaSanitizer::class);
-```
-
-| Method | Signature | Returns | Description |
-|---|---|---|---|
-| `sanitizeSdkOutput` | `sanitizeSdkOutput(string $output, int $maxLength = 500): string` | `string` | Redacts PEM-armored blocks, long base64 blobs, and `Authorization` header values, then truncates. |
-| `sanitizeResponseBody` | `sanitizeResponseBody(array $body): array` | `array` | Recursively redacts keys like `secret`, `token`, `privateKey`, `certificate`, `csr`. |
-| `sanitizeCommandArgs` | `sanitizeCommandArgs(array $args): array` | `array` | Reduces filesystem-path arguments to their basename (flags are left as-is). |
-
-Every place the package turns raw SDK output or an HTTP body into an exception message or a log line routes through this class first — see [Error Handling](#error-handling) and [Logging](#logging).
-
----
-
-### Key DTOs (plain data objects)
-
-| DTO | Fields |
-|---|---|
-| `ZatcaInvoiceData` | `egsIdentifier`, `sourceReference`, `buyerName`, `buyerVatNumber`, `issueDateTime`, `currency`, `lines` (array of `ZatcaInvoiceLine`), `totalExclVat`, `totalVat`, `totalInclVat` |
-| `ZatcaInvoiceLine` | `description`, `quantity`, `unitPrice`, `vatRate`, `lineTotalExclVat`, `vatAmount` (+ `lineTotalInclVat()` helper method) |
-| `ZatcaCredentialSet` | `binarySecurityToken`, `secret`, `requestId`, `privateKey`, `certificate`, `sdkFingerprint`, `certificateExpiresAt`, `certificateState` — returned only by `ZatcaCredentialStore::get()`, consumed internally by `ZatcaSigningKeyProvider` |
-| `InvoiceSourceReference` | `sourceType`, `sourceId`, `egsIdentifier` — what `GenerateZatcaInvoiceJob` actually queues |
-| `EgsConfig` | All fields listed under [Configuration → `egs`](#configuration) |
-| `ZatcaApiResult` | `successful`, `status` (`ZatcaResponseStatus`), `httpStatus`, `requestId`, `sanitizedResponse`, `warnings`, `errors`, `payload` |
-
-### Key Enums
-
-| Enum | Values |
-|---|---|
-| `ZatcaEnvironment` | `Sandbox`, `Simulation`, `Production` |
-| `ZatcaCredentialType` | `Compliance`, `Production` |
-| `ZatcaInvoiceStatus` | `Draft`, `Generated`, `PendingReporting`, `Reported`, `ReportedWithWarnings`, `Failed`, `Retrying`, `ManualReview` |
-| `ZatcaResponseStatus` | `Pass`, `Warning`, `Error`, `Unknown` |
-| `ZatcaCertificateState` | `Valid`, `ExpiringSoon`, `Expired`, `Renewing`, `Failed` — `Valid` is the one durable "safe to report" state; there is no separate `Active` state (an earlier revision had one, but nothing ever treated it differently from `Valid`, so it was removed) |
-
-### Events
-
-| Event | Fired when | Payload |
-|---|---|---|
-| `ZatcaInvoiceGenerated` | Right after an invoice is signed and stored, before reporting | `$event->invoice` (a `ZatcaInvoice` model) |
-| `ZatcaInvoiceNeedsAttention` | An invoice lands in `manual_review` and will not resolve itself | `$event->invoice`, `$event->reason` (sanitized, safe to put in an alert) |
-| `ZatcaCertificateExpiring` | A certificate first becomes `expiring_soon` or `expired` — **once per transition**, not once per daily check | `$event->egsIdentifier`, `credentialType`, `state`, `expiresAt`, `daysRemaining`, `hasExpired()` |
-
-The last two are the package's alerting seam. Everything is logged as well, but a log line is not an alerting channel — without listeners these fire into the void, by design: the package ships no mail/Slack code of its own.
+**Success or failure:** listen to events instead of polling.
 
 ```php
 // app/Providers/EventServiceProvider.php
+use Zatca\Events\ZatcaInvoiceGenerated;      // signed + QR ready → render your PDF/receipt
+use Zatca\Events\ZatcaInvoiceNeedsAttention; // stuck → alert someone
+
 protected $listen = [
-    \Zatca\Events\ZatcaCertificateExpiring::class => [SendZatcaCertificateAlert::class],
-    \Zatca\Events\ZatcaInvoiceNeedsAttention::class => [SendZatcaInvoiceAlert::class],
+    ZatcaInvoiceGenerated::class => [\App\Listeners\SendInvoicePdf::class],
+    ZatcaInvoiceNeedsAttention::class => [\App\Listeners\AlertAccounting::class],
 ];
 ```
 
-Listen to `ZatcaInvoiceGenerated` to send/render the student-facing PDF invoice — the package deliberately does not generate PDFs itself, so you can use your own branding/template.
+```php
+// app/Listeners/AlertAccounting.php
+public function handle(\Zatca\Events\ZatcaInvoiceNeedsAttention $event): void
+{
+    // $event->invoice (ZatcaInvoice), $event->reason (safe, human-readable text)
+    logger()->error("ZATCA invoice #{$event->invoice->id} needs attention: {$event->reason}");
+}
+```
+
+**Optional: a document-level discount.** Say Sara had a 50.00 SAR coupon. Lines stay at full price, the discount goes in `allowanceCharges`, and the totals are **after** the discount:
 
 ```php
-use Zatca\Events\ZatcaInvoiceGenerated;
+use Zatca\DTOs\ZatcaAllowanceCharge;
 
-Event::listen(ZatcaInvoiceGenerated::class, function (ZatcaInvoiceGenerated $event) {
-    // Render/send your PDF using $event->invoice
-});
+// in toInvoiceData():
+allowanceCharges: [
+    new ZatcaAllowanceCharge(reason: 'Coupon SAVE50', amountExclVat: 50.00, vatRate: 15.0, vatAmount: 7.50),
+],
+totalExclVat: 300.00,   // 350.00 - 50.00
+totalVat: 45.00,        // 52.50 - 7.50
+totalInclVat: 345.00,
 ```
 
----
+### 9.3 Scenario 2: B2C credit note (Reporting)
 
-## Invoice Generation
+**Situation:** Sara returns the charger (line `1` of invoice `INV-1001`). She gets 57.50 SAR back.
 
-### Simplified Invoice (B2C) — supported in v1
+**Rules:**
+- The original must be **accepted** by ZATCA first (`reported` or `cleared`).
+- Only one credit **or** debit note can be in progress per invoice at a time.
+- `issue()` credits **whole lines**. To credit part of a line (for example 1 of 2 headphones), use a price adjustment (see below).
+- Line numbers start at `0`, in the same order as the original invoice's lines.
 
-This is the only invoice type v1 supports. It is a **Simplified Tax Invoice**, used when selling to individual customers.
+```php
+use Illuminate\Support\Str;
+use Zatca\Enums\ZatcaCreditNoteType;
+use Zatca\Models\ZatcaInvoice;
+use Zatca\Services\CreditNote\CreditNoteEligibilityPolicy;
+use Zatca\Services\CreditNote\CreditNoteIssuer;
 
-### Standard Invoice, Credit Note, Debit Note — not in v1
+$original = ZatcaInvoice::where('source_reference', 'INV-1001')->firstOrFail();
 
-Issuing these for a **real sale** is **not implemented yet**. See [Roadmap](#roadmap).
+// Optional: check first (great for showing/hiding a "Refund" button).
+$verdict = app(CreditNoteEligibilityPolicy::class)->verdict($original);
+if (! $verdict->eligible) {
+    return back()->withErrors("Cannot credit: {$verdict->reason}");
+}
 
-The one exception is onboarding: ZATCA's Compliance Invoice Check tracks simplified credit/debit note compliance separately from the plain invoice and refuses to issue a Production CSID until both are proven, so `zatca:onboard test-credit-note`/`test-debit-note` submit compliant *sample* documents of those two types (see [Onboarding](#onboarding)). That is onboarding-only plumbing — there is still no way to generate a credit/debit note for a real order.
+$creditNote = app(CreditNoteIssuer::class)->issue(
+    original: $original,
+    type: ZatcaCreditNoteType::Partial,     // Full = every line still available
+    lineIndexes: [1],                       // the charger
+    reason: 'Customer returned the USB-C charger',   // goes into the signed XML (max 1000 chars)
+    idempotencyKey: $refundRequest->zatca_key ??= (string) Str::uuid(),  // save it, reuse it on retry
+    requestedBy: ['type' => 'user', 'id' => auth()->id()],
+    expectedTotalInclVat: 57.50,            // optional safety check: refuse if the amount differs
+);
 
-### How generation works, step by step
+$creditNote->credit_note_number;   // "CN-000001": package-generated, also the XML invoice number
+$creditNote->total_incl_vat;       // 57.50
+```
 
-1. **XML generation** — `SimplifiedInvoiceXmlGenerator` builds an unsigned UBL 2.1 XML document from your `ZatcaInvoiceData`, the current ICV (invoice counter), and the Previous Invoice Hash.
-2. **Signing** — the XML is handed to the ZATCA SDK (`ZatcaSdkAdapter::signInvoice()`), which signs it with your certificate/private key and returns the signed XML, the invoice hash, and the QR code — all computed by the real SDK, never by hand.
-3. **QR generation** — the QR code is embedded automatically by the SDK during signing. The package extracts it from the signed XML and stores it on the invoice.
-4. **Validation** — during onboarding's `test-invoice` step, the SDK also validates the signed XML against XSD, EN 16931, KSA rules, QR, signature, and PIH — before it's ever submitted.
+**How it references the original:** the package takes the original's invoice number (`INV-1001`) as the billing reference and copies the credited line from the original's **frozen** data. You never pass amounts for whole-line credits.
 
-You never call these steps individually in your app — `GenerateZatcaInvoiceJob` runs all of them for you.
+**What happens next (automatic):** after your DB transaction commits, `GenerateZatcaCreditNoteJob` builds a simplified credit note (381), signs it and reports it.
 
----
+**Read the result:**
 
-## Onboarding
+```php
+use Zatca\Services\CreditNote\CreditNoteStatusResolver;
 
-Onboarding is a **one-time setup per EGS per environment** (sandbox, then again for production).
+$creditNote->refresh();
+$creditNote->isAccepted();                                   // true once ZATCA accepted it
+app(CreditNoteStatusResolver::class)->resolve($creditNote);  // ZatcaCreditNoteDisplayStatus::Accepted
+$creditNote->latestZatcaInvoice;                             // the ZatcaInvoice row (status, qr_code, XML…)
+```
 
-| Step | What happens | ZATCA API | Required input | Expected output | Possible failures |
+Listen to `Zatca\Events\ZatcaCreditNoteAccepted` to refund money, restock items and so on.
+
+**Crediting part of a line (price adjustment):** Sara keeps both headphones but gets 20.00 SAR off because of a scratch:
+
+```php
+use Zatca\Services\CreditNote\CreditSource;
+
+$creditNote = app(CreditNoteIssuer::class)->issuePriceAdjustment(
+    original: $original,
+    sourceKey: CreditSource::invoiceLineKey(0),   // "line:0" = the headphones line
+    netAmount: 20.00,
+    vatAmount: 3.00,                               // at the line's own VAT rate
+    description: 'Discount for scratched headphones',
+    reason: 'Price reduced after delivery: cosmetic damage',
+    idempotencyKey: (string) Str::uuid(),
+);
+```
+
+The adjustment must stay **below** what is left of that line. Reducing a line to zero is a return, so use `issue()` for that. To adjust several lines in one note, use `issuePriceAdjustments()` with an array of `Zatca\Services\CreditNote\PriceAdjustmentInput`.
+
+### 9.4 Scenario 3: B2C debit note (Reporting)
+
+**Situation:** Al Noor forgot to charge Sara for gift wrapping (20.00 SAR + 3.00 VAT).
+
+```php
+use Illuminate\Support\Str;
+use Zatca\Enums\ZatcaDebitNoteReason;
+use Zatca\Models\ZatcaInvoice;
+use Zatca\Services\DebitNote\DebitNoteIssuer;
+use Zatca\Services\DebitNote\DebitNoteLineInput;
+
+$original = ZatcaInvoice::where('source_reference', 'INV-1001')->firstOrFail();
+
+$debitNote = app(DebitNoteIssuer::class)->issue(
+    original: $original,
+    reasonType: ZatcaDebitNoteReason::AdditionalItem,
+    lines: [
+        new DebitNoteLineInput(
+            description: 'Gift wrapping',
+            quantity: 1,
+            unitPrice: 20.00,
+            vatRate: 15.0,
+            lineTotalExclVat: 20.00,
+            vatAmount: 3.00,
+            itemId: 501,              // optional: your own product id, returned to you on acceptance
+        ),
+    ],
+    reason: 'Gift wrapping was not charged on the original invoice',
+    idempotencyKey: (string) Str::uuid(),
+    requestedBy: ['type' => 'user', 'id' => auth()->id()],
+);
+
+$debitNote->debit_note_number;   // "DN-000001"
+$debitNote->total_incl_vat;      // 23.00
+```
+
+**Debit note reasons (`ZatcaDebitNoteReason`):**
+
+| Reason | Use it when | Line rules |
+|---|---|---|
+| `AdditionalItem` | Something was delivered but not invoiced | New line. Set `itemId` if you want it back in your listener. |
+| `PriceAdjustment` | A line on the original was under-priced | Set `originalLineIndex` (or `sourceDebitNoteLineId` for an item added by an earlier debit note) |
+| `VatAdjustment` | VAT was under-charged | Set `originalLineIndex`. `lineTotalExclVat` may be `0.00`. |
+| `Other` | Anything else | Free description |
+
+**What happens next (automatic):** `GenerateZatcaDebitNoteJob` builds a simplified debit note (383), signs it and reports it. Read it the same way as a credit note (`$debitNote->isAccepted()`, `DebitNoteStatusResolver`, `latestZatcaInvoice`). Listen to `Zatca\Events\ZatcaDebitNoteAccepted` to charge the customer.
+
+### 9.5 Scenario 4: B2B invoice (Clearance)
+
+> B2B has not been verified against the real ZATCA sandbox yet. Do the checks in [Known limitations](#known-limitations) first.
+
+**Situation:** Riyadh Office Supplies Co. (VAT `300000000000003`) buys 20 office chairs at 400.00 and 2 desks at 1,500.00.
+
+| Line | Item | Qty | Unit | Net | VAT 15% |
 |---|---|---|---|---|---|
-| 1. Generate credentials | The SDK generates a private key + CSR locally | None | Your organization data in `.env` | CSR + private key stored (encrypted) | SDK path misconfigured |
-| 2. Compliance CSID | The CSR is submitted with an OTP to get a test certificate | `POST /compliance` | OTP from the Fatoora portal | Compliance token, secret, certificate, request ID stored | Invalid/expired OTP, invalid CSR |
-| 3. Compliance Invoice | A test invoice is generated, signed, and validated automatically | `POST /compliance/invoices` | None (uses a built-in sample invoice) | `PASS` or `WARNING` | `ERROR` — read the returned message |
-| 4. Compliance Credit Note | A test credit note is generated, signed, and validated — billed against step 3's invoice | `POST /compliance/invoices` | Step 3 must have already run | `PASS` or `WARNING` | `ERROR`, or "no compliant invoice on record" if step 3 was skipped |
-| 5. Compliance Debit Note | Same as step 4, for the debit note type | `POST /compliance/invoices` | Step 3 must have already run | `PASS` or `WARNING` | Same as step 4 |
-| 6. Production CSID | The real production certificate is requested | `POST /production/csids` | The compliance request ID from step 2, **and** steps 3–5 all recorded | Production token, secret, certificate stored | "compliance certificate is not done with the following compliance steps yet [...]" if 3, 4, or 5 was skipped |
+| 0 | Office chair | 20 | 400.00 | 8,000.00 | 1,200.00 |
+| 1 | Office desk | 2 | 1,500.00 | 3,000.00 | 450.00 |
+| | **Totals** | | | **11,000.00** | **1,650.00** (incl. 12,650.00) |
 
-Run these commands in order:
+**What's different from B2C:**
+- `documentType` is `StandardInvoice`.
+- `buyer` (a `BuyerParty`) is **required**: legal name, a VAT number **or** another ID, and an address. For a Saudi buyer, street, building number, district, city and a 5-digit postal code are all required.
+- `supplyDate` is **required**.
+- It must use the **B2B EGS**.
+- The package does **not** check `ZATCA_B2B_ENABLED` for you, so check readiness yourself.
+
+The mapper from [9.1](#91-shared-setup-do-this-once) already handles all of this when `buyer_type` is `company`. You only dispatch with the B2B EGS:
+
+```php
+use Zatca\Jobs\GenerateZatcaInvoiceJob;
+use Zatca\Support\B2bReadiness;
+
+if (! app(B2bReadiness::class)->ready()) {
+    // B2B switch is off, or the B2B EGS is not onboarded / its certificate is not valid.
+    abort(422, 'Company invoices are not available right now.');
+}
+
+dispatch(
+    GenerateZatcaInvoiceJob::forModel($order, config('zatca.b2b.egs_identifier'))->afterCommit()
+);
+```
+
+**What happens next (automatic):** the invoice is built and signed, then `ClearZatcaInvoiceJob` sends it to the Clearance API. ZATCA checks it, stamps it and returns its own copy.
+
+**Read the result:**
+
+```php
+use Zatca\Models\ZatcaInvoice;
+use Zatca\Services\SDK\SignedInvoiceXmlReader;
+
+$invoice = ZatcaInvoice::where('source_reference', 'INV-2001')->first()?->authoritative();
+
+$invoice->status;               // ZatcaInvoiceStatus::Cleared (or ClearedWithWarnings)
+$invoice->clearance_status;     // "CLEARED"
+$invoice->cleared_at;
+$invoice->cleared_xml_base64;   // ZATCA's stamped copy: this is the legal invoice for the buyer
+
+// The QR for the buyer's PDF comes from ZATCA's cleared copy.
+$qr = app(SignedInvoiceXmlReader::class)->extractQrCode(base64_decode($invoice->cleared_xml_base64));
+```
+
+Which XML and QR ZATCA expects you to give a B2B buyer is still an open item in this project (gate G-06). Taking them from `cleared_xml_base64` follows ZATCA's description of Clearance, but confirm it in the sandbox.
+
+**Expected response (fake example).** The cleaned body goes into `last_zatca_response` with the same keys as Reporting. ZATCA's `clearanceStatus` goes into the `clearance_status` column, and ZATCA's `clearedInvoice` goes into `cleared_xml_base64`:
+
+```json
+{
+  "status": "PASS",
+  "reportingStatus": null,
+  "alreadyReported": false,
+  "errorCodes": [],
+  "warningCodes": [],
+  "warningMessages": [],
+  "validationErrors": [],
+  "validationWarnings": []
+}
+```
+
+**Rejected:** `status = clearance_rejected`, `clearance_status = "NOT_CLEARED"`, and `last_error` holds ZATCA's messages. That document is **never** sent again. Fix the data and re-issue it (see [Regeneration](#re-issuing-a-rejected-invoice-regeneration)).
+
+### 9.6 Scenario 5: B2B credit note (Clearance)
+
+**Situation:** 5 of the 20 chairs arrived damaged. The buyer sends them back.
+
+The credit note code is **the same** as in B2C. The package sees that the original is a standard invoice and makes a **standard credit note** that goes through **Clearance**. Buyer details and supply date are copied from the original automatically.
+
+The original must be `cleared` first.
+
+Because `issue()` credits whole lines and the chairs line has 20 units, credit 5 chairs by amount with a price adjustment:
+
+```php
+use Illuminate\Support\Str;
+use Zatca\Models\ZatcaInvoice;
+use Zatca\Services\CreditNote\CreditNoteIssuer;
+use Zatca\Services\CreditNote\CreditSource;
+
+$original = ZatcaInvoice::where('source_reference', 'INV-2001')->firstOrFail();
+
+$creditNote = app(CreditNoteIssuer::class)->issuePriceAdjustment(
+    original: $original,
+    sourceKey: CreditSource::invoiceLineKey(0),   // the chairs line
+    netAmount: 2000.00,                            // 5 × 400.00
+    vatAmount: 300.00,
+    description: 'Return of 5 damaged office chairs',
+    reason: 'Goods returned: 5 chairs damaged in delivery',
+    idempotencyKey: (string) Str::uuid(),
+    requestedBy: ['type' => 'user', 'id' => auth()->id()],
+);
+// → CN-000002, 2,300.00 SAR, sent by Clearance
+```
+
+If the whole desks line came back, you would use `issue(type: ZatcaCreditNoteType::Partial, lineIndexes: [1], ...)` exactly like Scenario 2.
+
+Read the result like Scenario 2, plus `->latestZatcaInvoice->cleared_xml_base64` for ZATCA's stamped copy.
+
+### 9.7 Scenario 6: B2B debit note (Clearance)
+
+**Situation:** the desks were invoiced at 1,500.00 but the agreed price was 1,600.00. Charge 2 × 100.00 more.
+
+```php
+use Illuminate\Support\Str;
+use Zatca\Enums\ZatcaDebitNoteReason;
+use Zatca\Models\ZatcaInvoice;
+use Zatca\Services\DebitNote\DebitNoteIssuer;
+use Zatca\Services\DebitNote\DebitNoteLineInput;
+
+$original = ZatcaInvoice::where('source_reference', 'INV-2001')->firstOrFail();
+
+$debitNote = app(DebitNoteIssuer::class)->issue(
+    original: $original,
+    reasonType: ZatcaDebitNoteReason::PriceAdjustment,
+    lines: [
+        new DebitNoteLineInput(
+            description: 'Price correction: office desk (2 × 100.00)',
+            quantity: 2,
+            unitPrice: 100.00,
+            vatRate: 15.0,
+            lineTotalExclVat: 200.00,
+            vatAmount: 30.00,
+            originalLineIndex: 1,       // the desks line on INV-2001
+        ),
+    ],
+    reason: 'Agreed price was 1,600.00 per desk',
+    idempotencyKey: (string) Str::uuid(),
+);
+// → DN-000002, 230.00 SAR, standard debit note, sent by Clearance
+```
+
+### 9.8 What to change for your project
+
+| In the examples | Replace with |
+|---|---|
+| `App\Models\Order`, `items`, `company` | Your own models and relations |
+| `'INV-'.$source->id` | Your own unique invoice number |
+| `paid_at` | The moment the sale happened |
+| `vat_rate` per item | Your own VAT logic. For 0% items use a zero-rated or exempt line (see [VAT categories](#vat-categories)). |
+| `buyer_type === 'company'` | However you know the buyer is a company |
+| `auth()->id()` in `requestedBy` | Whoever triggered the note (or leave `null`) |
+| `Str::uuid()` idempotency keys | A UUID you **store** on your refund/charge request, so a retry or double-click reuses it |
+
+---
+
+## 10. Invoice fields explained
+
+**You provide** these in `ZatcaInvoiceData` (through your mapper):
+
+| Field | Meaning | Required? | Notes |
+|---|---|---|---|
+| `egsIdentifier` | Which EGS signs it | Yes | Passed to you. Return it as-is. |
+| `sourceReference` | Your unique invoice number | Yes | Used for duplicate protection and printed as the invoice number. Must match `sourceReference()`. |
+| `buyerName` | Buyer's name | B2C: optional | B2C: printed if set. B2B: use `buyer` instead. |
+| `buyerVatNumber` | Buyer's VAT number | No | Kept for your records. B2B uses `buyer->vatNumber`. |
+| `issueDateTime` | Invoice date and time | Yes | Written exactly as given, so use Saudi time (`Asia/Riyadh`). |
+| `currency` | Currency code | Yes | Must be `SAR`. Anything else is refused. |
+| `lines` | Array of `ZatcaInvoiceLine` | Yes, at least 1 | |
+| `totalExclVat` | Total before VAT | Yes | = sum of line nets − discounts |
+| `totalVat` | Total VAT | Yes | = sum of line VAT − discount VAT |
+| `totalInclVat` | Total with VAT | Yes | = `totalExclVat + totalVat` |
+| `documentType` | `Invoice` (B2C) or `StandardInvoice` (B2B) | Default `Invoice` | Decides Reporting or Clearance |
+| `allowanceCharges` | Document-level discounts | No | Array of `ZatcaAllowanceCharge` |
+| `buyer` | Company buyer (`BuyerParty`) | **B2B: yes** | Ignored for B2C |
+| `supplyDate` | Delivery or supply date | **B2B: yes** | Ignored for B2C |
+| `billingReferenceId`, `adjustmentReason` | Original invoice and reason | Notes only | Filled by the package for credit and debit notes. Don't set them for invoices. |
+
+**Each line (`ZatcaInvoiceLine`):**
+
+| Field | Meaning | Rule |
+|---|---|---|
+| `description` | Item name | Any text (escaped for XML for you) |
+| `quantity` | How many | Whole number, at least 1 |
+| `unitPrice` | Price of one unit, **excl. VAT** | Not negative |
+| `vatRate` | VAT %, e.g. `15.0` | Not negative |
+| `lineTotalExclVat` | Line net | Normally `quantity × unitPrice`, rounded to 2 decimals |
+| `vatAmount` | Line VAT | Normally `lineTotalExclVat × vatRate / 100`, rounded to 2 decimals |
+| `vatCategory` | VAT category | Optional. `ZatcaVatCategory::Standard` (default), `ZeroRated` or `Exempt` |
+| `vatExemptionReasonCode`, `vatExemptionReason` | ZATCA reason code and text | Required for zero-rated and exempt lines |
+
+The package checks your numbers before it uses a counter number. Totals must match the lines. Each line's net must equal `quantity × unitPrice`, and its VAT must equal `net × vatRate / 100`. One fil (0.01) of rounding difference is allowed. A line with net `0.00` and only VAT (a VAT correction) is allowed. The package never changes your numbers. It only refuses wrong ones. Lines are grouped by VAT category and rate in the XML automatically.
+
+<a id="vat-categories"></a>
+#### VAT categories (zero-rated and exempt items)
+
+Most items are standard-rated (15%), and you don't need to do anything for those. For a 0% item, say why it is 0%:
+
+```php
+use Zatca\DTOs\ZatcaInvoiceLine;
+use Zatca\Enums\ZatcaVatCategory;
+
+// Export of goods: zero-rated
+new ZatcaInvoiceLine(
+    description: 'Export shipment',
+    quantity: 1,
+    unitPrice: 200.00,
+    vatRate: 0.0,
+    lineTotalExclVat: 200.00,
+    vatAmount: 0.00,
+    vatCategory: ZatcaVatCategory::ZeroRated,
+    vatExemptionReasonCode: 'VATEX-SA-32',
+    vatExemptionReason: 'Export of goods',
+);
+```
+
+| Category | Rate | Needs a reason? | Example codes |
+|---|---|---|---|
+| `Standard` (`S`) | above 0, e.g. 15 | No | – |
+| `ZeroRated` (`Z`) | 0 | Yes | `VATEX-SA-32` export of goods, `VATEX-SA-33` export of services, `VATEX-SA-35` medicines |
+| `Exempt` (`E`) | 0 | Yes | `VATEX-SA-29` financial services, `VATEX-SA-30` residential rent |
+
+Use ZATCA's official list of reason codes. The package checks the `VATEX-SA-...` format and that the reason text is filled in. A 0% line marked `Standard` is refused. Discounts (`ZatcaAllowanceCharge`) and debit note lines (`DebitNoteLineInput`) accept the same three fields. Credit and debit notes keep the category of the line they adjust.
+
+**The package generates these. Never set them yourself:**
+
+| Field | Where you find it |
+|---|---|
+| UUID | `zatca_invoices.uuid` |
+| Invoice counter (ICV) | `zatca_invoices.icv` |
+| Previous invoice hash (PIH) | `zatca_invoices.previous_invoice_hash` |
+| Invoice hash | `zatca_invoices.invoice_hash` |
+| Unsigned / signed XML | `unsigned_xml`, `signed_xml_base64` |
+| Digital signature | inside `signed_xml_base64` |
+| QR code | `qr_code` (B2C). For B2B see Scenario 4. |
+| Credit / debit note number | `CN-000001` / `DN-000001` on the note record |
+| Original invoice reference and reason in notes | taken from the original and from your `reason` |
+| Seller name, VAT, CR, address | from `.env` |
+
+---
+
+## 11. Understanding ZATCA responses
+
+### HTTP 200 is not the same as "accepted"
+
+A request can succeed while ZATCA still refuses the invoice. Always check the **status** on the `ZatcaInvoice` row, never the HTTP call.
+
+The simple rule is that an invoice is done only when `$invoice->status->isTerminalSuccess()` is `true`.
+
+### All statuses
+
+| Status | Flow | Meaning | What you do |
+|---|---|---|---|
+| `draft` | both | Built, not signed yet | Nothing. It finishes on retry. |
+| `pending_reporting` | B2C | Signed, waiting to be reported | Nothing. The queue or sweep sends it. |
+| `reported` | B2C | **Accepted** | Done |
+| `reported_with_warnings` | B2C | **Accepted**, with warnings | Done. Read `last_error` and fix the data for next time. |
+| `retrying` | B2C | ZATCA down (network or 5xx). Will retry. | Nothing |
+| `manual_review` | B2C | Rejected (4xx) or retries used up | A human reads `last_error` |
+| `cleared` | B2B | **Accepted and stamped** | Give `cleared_xml_base64` to the buyer |
+| `cleared_with_warnings` | B2B | **Accepted**, with warnings | Same |
+| `clearance_retrying` | B2B | ZATCA 5xx, will retry | Nothing |
+| `clearance_in_doubt` | B2B | Network failure: unknown if ZATCA got it | Wait. The sweep retries it. |
+| `clearance_rejected` | B2B | ZATCA said `NOT_CLEARED` | Fix and re-issue. Never resend. |
+| `clearance_manual_review` | B2B | Other failure or retries used up | A human looks |
+| `pending_clearance` | B2B | Signed, waiting to be cleared | Nothing. The queue or sweep sends it. |
+| `failed`, `generated` | – | Defined but not written by the package today | – |
+
+### Error types and where they end up
+
+| Problem | HTTP | Result |
+|---|---|---|
+| Validation errors (bad totals, missing field…) | 400 | `manual_review` / `clearance_rejected`, with ZATCA's codes in `last_zatca_response.validationErrors` |
+| Accepted with warnings | 200/202 | `reported_with_warnings` / `cleared_with_warnings` |
+| Authentication (wrong or expired token) | 401 | `manual_review`. Check credentials and certificate. |
+| Already reported (same invoice sent again) | 409 | Treated as success **only** if ZATCA's body confirms it |
+| ZATCA server error | 5xx | `retrying` / `clearance_retrying`, retried up to `ZATCA_REPORTING_RETRY_ATTEMPTS` |
+| Network failure, timeout, connection refused, DNS failure | 0 | B2C: `retrying`. B2B: `clearance_in_doubt`. An attempt row is saved with HTTP status 0. |
+| Bad invoice data (your mapper): totals, line math, VAT category, currency, B2B buyer | – | Refused **before** a counter number is used. `ZatcaException` with a clear message, and the job retries then fails. |
+| Certificate or signing problem (SDK) | – | `ZatcaSdkProcessException`. The invoice stays `draft` and the retry resumes it. |
+| Expired production certificate | – | Sending is paused. Invoices wait in `pending_reporting`. |
+
+### Fake example of a rejected B2C invoice (`last_zatca_response`)
+
+```json
+{
+  "status": "ERROR",
+  "reportingStatus": "NOT_REPORTED",
+  "alreadyReported": false,
+  "errorCodes": ["BR-KSA-EN16931-11"],
+  "validationErrors": [
+    { "code": "BR-KSA-EN16931-11", "message": "Invoice line net amount must equal quantity × price." }
+  ],
+  "validationWarnings": []
+}
+```
+
+### What is saved for you
+
+Everything you need is already in your database. You don't need to copy it anywhere:
+
+- `zatca_invoices`: status, UUID, ICV, hashes, signed XML, QR, `last_zatca_response`, `last_error`, `reported_at` / `cleared_at`, `cleared_xml_base64`, and a frozen copy of the invoice data.
+- `zatca_submission_attempts`: every attempt, with HTTP status, error code and the cleaned response. Secrets are removed before saving.
+
+On **your** order, saving `source_reference` (for example `INV-1001`) is enough to find the document later.
+
+### Retries and duplicates
+
+- A retry **never** signs again. It sends the exact same signed XML, UUID and counter.
+- Generating twice for the same `sourceReference` returns the existing document instead of making a new one.
+- Accepted documents (`isTerminalSuccess()`) are never sent again.
+- Use the same `idempotencyKey` when retrying a credit or debit note request, and you get the same note back.
+- A rejected document is fixed by **re-issuing** (a new document with a new UUID and counter), not by resending.
+
+### Exceptions you may catch
+
+All extend `Zatca\Exceptions\ZatcaException`:
+
+| Exception | When |
+|---|---|
+| `ZatcaException` | Invalid invoice data, missing CSR, a ZATCA onboarding call failed, bad config |
+| `ZatcaCredentialsMissingException` | The EGS has no production certificate yet (onboarding not finished) |
+| `ZatcaDisabledException` | You called the orchestrator directly while `ZATCA_ENABLED=false` |
+| `CrossEgsDuplicateException` | This sale already has a document on another EGS (for example B2C and B2B) |
+| `CreditNoteException` | Credit note refused (not eligible, nothing selected, amount changed, zero value…) |
+| `DebitNoteException` | Debit note refused (not eligible, no lines, bad line reference…) |
+| `ZatcaSdkProcessException` | Java or SDK failed, timed out, or produced no output |
+| `ZatcaSdkOutputChangedException` | The SDK printed something the package can't read (different SDK version) |
+| `ZatcaSdkFingerprintMismatchException` | The SDK jar changed |
+| `ZatcaContractChangedException` | ZATCA returned an unexpected response shape |
+
+---
+
+## 12. More features
+
+### Events
+
+| Event | Fired when | Properties |
+|---|---|---|
+| `Zatca\Events\ZatcaInvoiceGenerated` | A document was signed (QR ready) | `invoice` |
+| `Zatca\Events\ZatcaInvoiceNeedsAttention` | A document needs a human (`manual_review`, `clearance_*` problems) | `invoice`, `reason` |
+| `Zatca\Events\ZatcaCreditNoteAccepted` | ZATCA accepted a credit note | `creditNote` |
+| `Zatca\Events\ZatcaDebitNoteAccepted` | ZATCA accepted a debit note | `debitNote` |
+| `Zatca\Events\ZatcaCertificateExpiring` | A certificate moved to "expiring soon" or "expired" | `egsIdentifier`, `credentialType`, `state`, `expiresAt`, `daysRemaining`, `hasExpired()` |
+
+Acceptance means "ZATCA accepted the document". It does not mean money moved. Never mark anything paid from these events.
+
+Helpers on the note reasons let your listener decide what to do:
+
+```php
+$event->creditNote->creditReason()->cancelsItems();   // true = items were returned/cancelled
+$event->debitNote->reason_type->addsItems();          // true = a new item was added
+$event->debitNote->lines->pluck('item_id');           // your own ids from DebitNoteLineInput::itemId
+```
+
+<a id="kill-switch"></a>
+### Kill switch (`ZATCA_ENABLED`)
+
+Set `ZATCA_ENABLED=false` to stop **all** ZATCA work without losing anything. That means no new invoices, no counters used, no SDK calls and no requests to ZATCA. Jobs already in the queue exit quietly, and statuses stay as they are. Onboarding and read-only commands still work. Only `false`, `0`, `off` or `no` turns it off. An empty value keeps it on.
 
 ```bash
-php artisan zatca:generate-credentials
-php artisan zatca:onboard compliance --otp=123456
-php artisan zatca:onboard test-invoice
-php artisan zatca:onboard test-credit-note
-php artisan zatca:onboard test-debit-note
-php artisan zatca:onboard production
+php artisan config:cache
 ```
 
-After onboarding, verify with:
+```bash
+php artisan queue:restart
+```
+
+In code, ask the gate (never read the config directly):
+
+```php
+use Zatca\Support\ZatcaGate;
+
+app(ZatcaGate::class)->enabled();      // global switch
+app(ZatcaGate::class)->b2bEnabled();   // global switch AND ZATCA_B2B_ENABLED
+```
+
+Sales made while ZATCA is off are **not** invoiced automatically later. Dispatch their jobs again when you turn it back on.
+
+### B2B switch and readiness
+
+`ZATCA_B2B_ENABLED` is **off unless set** to `true`, `1`, `on` or `yes`. `Zatca\Support\B2bReadiness::ready()` returns `true` only when the switch is on **and** the B2B EGS is configured, passed compliance, and has a valid production certificate. Use it to show or hide a "Buy as a company" option. Turning B2B off stops new company sales only, and B2B documents already signed still get cleared.
+
+### Eligibility checks for notes
+
+```php
+app(\Zatca\Services\CreditNote\CreditNoteEligibilityPolicy::class)->allows($invoice);  // bool
+app(\Zatca\Services\DebitNote\DebitNoteEligibilityPolicy::class)->allows($invoice);    // bool
+```
+
+`verdict($invoice)` gives you the reason, one of: ZATCA disabled, no document, not an invoice, not accepted yet, no snapshot, certificate expired, another note in progress, fully credited.
+
+To see which lines can still be credited:
+
+```php
+$ledger = app(\Zatca\Services\CreditNote\CreditNoteLedger::class)->forOriginal($invoice);
+$ledger->availableIndexes;   // e.g. [0] after the charger was returned
+```
+
+### Cancelling a note that never reached ZATCA
+
+A note stuck before ZATCA accepted it (for example its generation failed) can be cancelled. That frees its lines for a new note:
+
+```php
+use Zatca\Services\CreditNote\CreditNoteCanceller;
+
+$canceller = app(CreditNoteCanceller::class);
+if ($canceller->isCancellable($creditNote)) {
+    $canceller->cancel($creditNote, ['type' => 'user', 'id' => auth()->id()]);
+}
+```
+
+`Zatca\Services\DebitNote\DebitNoteCanceller` works the same way. A note that might already be at ZATCA (in flight) cannot be cancelled.
+
+### Note display status
+
+`CreditNoteStatusResolver::resolve()` and `DebitNoteStatusResolver::resolve()` return one simple status for your admin screen: `pending`, `processing`, `accepted`, `rejected`, `failed`, `generation_failed` or `cancelled`.
+
+<a id="re-issuing-a-rejected-invoice-regeneration"></a>
+### Re-issuing a rejected invoice (regeneration)
+
+If ZATCA **rejected** a document (`manual_review` with a 4xx, `clearance_rejected`, `clearance_manual_review`), fix the cause (config or code), then re-issue it. You get a **new** document (new UUID and counter) built from the original's frozen data. The old one is marked as replaced.
+
+```php
+use Zatca\Jobs\RegenerateZatcaInvoiceJob;
+use Zatca\Services\Regeneration\RegenerationPolicy;
+
+if (app(RegenerationPolicy::class)->allows($invoice)) {
+    dispatch(new RegenerateZatcaInvoiceJob($invoice->id, ['type' => 'user', 'id' => auth()->id()]));
+}
+```
+
+The replacement's `source_reference` gets a suffix (`INV-1001#r1`), and `$original->authoritative()` returns it. Transient failures (5xx or network) are **not** regenerable. Those are retried instead.
+
+### Finishing a stuck draft
+
+If signing failed (for example Java was missing), the document stays `draft` with its counter reserved. The next generation retry resumes it automatically. To resume it by hand:
+
+```php
+use Zatca\Jobs\CompleteZatcaInvoiceGenerationJob;
+use Zatca\Services\Generation\DraftCompletionPolicy;
+
+if (app(DraftCompletionPolicy::class)->allows($draft)) {
+    dispatch(new CompleteZatcaInvoiceGenerationJob($draft->id, ['type' => 'user', 'id' => auth()->id()]));
+}
+```
+
+<a id="certificates"></a>
+### Certificates
+
+- `zatca:certificate:check` (daily) updates each certificate's state (`valid`, `expiring_soon` from 60 days before expiry, or `expired`) and fires `ZatcaCertificateExpiring` once per change (so once at "expiring soon" and once at "expired").
+- When the **production** certificate is expired, sending stops for that EGS, and invoices wait safely.
+- **Renewal is turned off.** ZATCA's renewal API has not been verified in this package, so `zatca:certificate:renew` refuses to call ZATCA while `ZATCA_AUTO_RENEWAL_ENABLED=false`. Until then, renew by onboarding again with a new OTP (steps 1 to 4 of [Onboarding](#8-zatca-onboarding)) before the certificate expires. **Test this in simulation first.**
+
+<a id="custom-bindings"></a>
+### Custom bindings
+
+| Interface | Default | Bind your own when… |
+|---|---|---|
+| `Zatca\Contracts\InvoiceSourceContract` | **none, you must bind it** | Always (your mapper) |
+| `Zatca\Contracts\InvoiceSourceResolverContract` | `EloquentInvoiceSourceResolver` (`Model::find`) | Your source isn't a plain Eloquent model |
+| `Zatca\Contracts\CredentialEncrypterInterface` | `LaravelCredentialEncrypter` (`APP_KEY`) | You want Vault/KMS |
+| `Zatca\Contracts\OwnerResolverInterface` | `NullOwnerResolver` (returns `null`) | Multi-tenant: fill `zatca_invoices.owner_id` per EGS |
+
+```php
+$this->app->bind(\Zatca\Contracts\CredentialEncrypterInterface::class, \App\Zatca\KmsEncrypter::class);
+```
+
+### Reading state in code
+
+```php
+use Zatca\Services\Diagnostics\ZatcaInspector;
+use Zatca\State\EgsRegistry;
+
+app(ZatcaInspector::class)->credentials('default'); // credential types, cert state, expiry (no secrets)
+app(ZatcaInspector::class)->state('default');       // current ICV and a hash preview
+app(ZatcaInspector::class)->invoice('42');          // by id or UUID (no XML)
+
+app(EgsRegistry::class)->identifiers();             // ['default', 'b2b']
+app(EgsRegistry::class)->primary();                 // EgsConfig of the B2C EGS
+```
+
+`Zatca\Services\Security\ZatcaSanitizer` is used internally to remove tokens, secrets and keys from logs and stored responses. You can use it for your own logs.
+
+---
+
+## 13. Console commands
+
+| Command | What it does | When |
+|---|---|---|
+| `zatca:generate-credentials` | Creates private key + CSR | Once per EGS/environment |
+| `zatca:onboard {step}` | Runs one onboarding step | Once per EGS/environment |
+| `zatca:health-check` | Checks SDK, config, credentials | After install, after each deploy |
+| `zatca:sdk-smoke-test` | Tests Java + SDK locally | After install / SDK change |
+| `zatca:report-pending` | Re-sends waiting documents | Scheduler, every 5 minutes |
+| `zatca:requeue` | Restarts stuck B2C invoices | By hand, or hourly with `--only-transient` |
+| `zatca:status` | Shows anything needing attention | Scheduler hourly, or monitoring |
+| `zatca:inspect {resource}` | Shows credentials/state/invoice (no secrets) | When debugging |
+| `zatca:certificate:check` | Updates certificate states | Scheduler, daily |
+| `zatca:certificate:renew` | Renews a certificate (disabled by default) | Only after the renewal API is verified |
+| `zatca:prune-submission-attempts` | Deletes old attempt rows | Scheduler, weekly |
+| `zatca:prune-sdk-files` | Deletes leftover SDK temp files | Scheduler, daily |
+| `zatca:check-source-uniqueness` | Finds sales with documents on two EGS | Before upgrading an existing install |
+
+### `zatca:generate-credentials`
+
+```bash
+php artisan zatca:generate-credentials --egs=default
+```
+
+- `--egs` (optional, default `default`): the EGS identifier.
+- Uses the SDK to create the private key and CSR from your `.env` seller data, and stores both encrypted. It does not call ZATCA.
+- Prints the SDK fingerprint (put it in `ZATCA_SDK_FINGERPRINT`) and the CSR.
+- Running it again **replaces** the stored key and CSR for that EGS and environment. Only do that before the compliance step, or when you deliberately start onboarding over.
+
+### `zatca:onboard {step}`
+
+```bash
+php artisan zatca:onboard compliance --egs=default --otp=123456
+```
+
+| Argument / option | Required | Values |
+|---|---|---|
+| `step` | Yes | `compliance`, `test-invoice`, `test-credit-note`, `test-debit-note`, `production` |
+| `--egs` | No (default `default`) | EGS identifier |
+| `--otp` | Only for `compliance` | OTP from the Fatoora portal |
+
+Run the steps in the order shown in [Onboarding](#8-zatca-onboarding). Test steps print `Status: PASS/WARNING/ERROR` and exit with code 1 on `ERROR`. Each test step uses up a compliance counter number, which is normal.
+
+### `zatca:health-check`
 
 ```bash
 php artisan zatca:health-check
 ```
 
----
+It takes no options. It checks:
 
-## Production Reporting
+- the SDK jar and fingerprint,
+- the EGS setup (including B2B config),
+- that `ZATCA_ORG_IDENTIFIER` equals `ZATCA_VAT_NUMBER`,
+- the formats of the VAT number, CR number, building number, additional number and postal code,
+- the address,
+- the credentials and certificate state of every EGS.
 
-### Reporting invoices
+It prints `[OK]`, `[PENDING]`, `[WARN]` or `[FAIL]` lines and exits with code 1 if anything fails. Run it after every deployment.
 
-Every real invoice uses the **Reporting model** — `POST /invoices/reporting/single`. This is the only model v1 supports (see [Clearance](#clearance) below).
-
-### Clearance
-
-The **Clearance model** is not implemented in v1. Only Reporting is supported.
-
-### Retry behavior
-
-If ZATCA is unreachable, or returns a temporary (5xx) error, the invoice is marked `retrying` and picked up again by `zatca:report-pending` (run this on a schedule). If ZATCA returns a real validation error, the invoice moves to `manual_review` — it is **not** retried automatically, because retrying the same broken data would just fail again.
-
-**How long an outage survives itself.** Attempts are consumed at the pace `zatca:report-pending` runs, so `ZATCA_REPORTING_RETRY_ATTEMPTS` is really a downtime budget: `12 × every-5-minutes ≈ 1 hour`. Past that, the invoice waits in `manual_review`. Nothing is lost — the signed invoice, hash chain, UUID and ICV are all untouched.
-
-**`manual_review` covers two different situations**, and only one of them can be fixed by retrying:
-
-| Cause | Last HTTP status | Retrying helps? |
-|---|---|---|
-| ZATCA outage — server down, network failure | `0` or `5xx` | ✅ Yes — the invoice is fine, ZATCA simply wasn't reachable |
-| ZATCA rejected it — validation error, bad data | `4xx` | ❌ No — it will fail identically until a human fixes the cause |
-
-Schedule `zatca:requeue --only-transient` (hourly is plenty) to restart the first kind automatically while leaving the second alone. A ZATCA outage that outlasts the retry budget then repairs itself, and only genuine rejections wait for a human — surfaced through `ZatcaInvoiceNeedsAttention` and `zatca:status`.
-
-### Idempotency
-
-- `GenerateZatcaInvoiceJob` will never create two invoices for the same source (checked by `sourceReference()`).
-- Reporting reuses the exact same `invoice_hash` / `uuid` / signed XML on every attempt — nothing is ever recomputed.
-- HTTP 409 is treated as success **only when the response body itself confirms** the invoice was already reported (its error message matches "already ... report"). A 409 for any other reason is treated as a real failure (`manual_review`), never silently accepted.
-
-### State transitions
-
-```
-pending_reporting → reported                  (ZATCA returned PASS)
-pending_reporting → reported_with_warnings     (ZATCA returned WARNING)
-pending_reporting → retrying → reported        (temporary failure, then success)
-pending_reporting → retrying → manual_review   (retries exhausted)
-pending_reporting → manual_review              (non-retryable error, e.g. validation failure or expired cert)
-```
-
----
-
-## Certificate Lifecycle
-
-| Step | What happens | ZATCA API |
-|---|---|---|
-| CSR | Generated locally by the SDK | None |
-| Compliance CSID | A test certificate is issued | `POST /compliance` |
-| Production CSID | The real certificate is issued | `POST /production/csids` |
-| Renewal | Calls `ZatcaConnectorInterface::renewProductionCsid()` — a **separate** method from onboarding's `requestProductionCsid()`, with its own request mapper/response normalizer. **Disabled by default** — see below. | `POST /production/csids` (today — see note) |
-| Expiration | Tracked locally by `certificate_expires_at`; checked by `zatca:certificate:check` | None |
-| Rotation | Not automatic — run `zatca:certificate:renew` manually (only takes effect if enabled — see below) | `POST /production/csids` |
-
-**State machine:** `Valid → ExpiringSoon → Expired → Renewing → Valid` (or `Failed`).
-
-### ⚠️ Automatic renewal is disabled by default
-
-ZATCA's dedicated certificate-renewal contract — whether it uses the same `/production/csids` endpoint, whether it requires a **new OTP**, and whether the response shape differs — **has not been verified against an official ZATCA document in this codebase**. `HttpConnector::renewProductionCsid()` currently calls the same endpoint as initial onboarding purely because that's the only production-cert-issuing endpoint this package has verified documentation for.
-
-Because of that, `config('zatca.certificate.auto_renewal_enabled')` defaults to **`false`**. With it disabled:
-
-- `zatca:certificate:renew` / `CertificateLifecycleManager::renew()` **never calls the ZATCA API**.
-- The certificate stays exactly as it was (`expired`/`expiring_soon`).
-- An administrator is alerted via `Log::error`.
-- Affected invoices stay `pending_reporting` — never sent with an expired certificate, and never lost.
-
-**Do not enable `ZATCA_AUTO_RENEWAL_ENABLED=true`** until someone has verified the real renewal contract against an official ZATCA document and confirmed `HttpConnector::renewProductionCsid()` implements it correctly. Once enabled and a renewal succeeds, every invoice left `pending_reporting`/`retrying` for that EGS is automatically re-dispatched — without any XML/UUID/ICV/PIH/Hash being regenerated.
-
-> Compliance certificates cannot be renewed — they are single-use during onboarding. If you need a new one, run `zatca:onboard compliance` again with a fresh OTP.
-
----
-
-## Error Handling
-
-### Exceptions
-
-| Exception | Thrown when |
-|---|---|
-| `ZatcaException` | Base exception — generic package errors. |
-| `ZatcaCredentialsMissingException` | Credentials for an EGS/environment/type don't exist yet. |
-| `ZatcaContractChangedException` | A ZATCA API response no longer matches the expected shape — usually means ZATCA changed something. |
-| `ZatcaSdkOutputChangedException` | The SDK's console output no longer matches the expected format — usually means the SDK version changed. |
-| `ZatcaSdkFingerprintMismatchException` | The SDK jar file on disk doesn't match the recorded fingerprint. |
-| `ZatcaSdkProcessException` | The SDK process failed, timed out, or didn't produce its expected output file. |
-
-### Validation errors (from ZATCA)
-
-Reported through `ZatcaApiResult::$errors` / `$warnings` — human-readable messages taken directly from ZATCA's response.
-
-### SDK errors
-
-Caught and wrapped as `ZatcaSdkProcessException`. The SDK's raw console output is included in the exception message for debugging.
-
-### API errors
-
-Network failures and HTTP errors are caught inside the connector and turned into a `ZatcaApiResult` with `successful: false` — code calling the connector never has to catch a Guzzle exception directly.
-
-### Retryable vs. non-retryable errors
-
-| Type | Retried automatically? |
-|---|---|
-| Network failure / timeout | ✅ Yes |
-| HTTP 5xx from ZATCA | ✅ Yes |
-| HTTP 409 "already reported" | Treated as success, not an error |
-| HTTP 401 (bad credentials) | ❌ No — needs a human to fix credentials |
-| Validation `ERROR` (bad invoice data) | ❌ No — needs a human to fix the data |
-| Expired certificate | ❌ No — needs `zatca:certificate:renew`, then resumes automatically |
-
----
-
-## Health Check & Diagnostics
-
-| Command | What it verifies | ZATCA API used |
-|---|---|---|
-| `zatca:status` | **Whether anything needs a human right now** — stuck invoices, certificate expiry, failed jobs. Exit code `1` when it does. | None |
-| `zatca:health-check` | SDK jar exists, SDK fingerprint matches, credentials exist per EGS, certificate state is healthy | None |
-| `zatca:inspect credentials` | Which credentials exist, certificate state/expiry — never raw secrets | None |
-| `zatca:inspect state` | Current ICV and a truncated PIH preview | None |
-| `zatca:inspect invoice --id=` | One invoice's status, attempt count, last error | None |
-| `zatca:certificate:check` | Certificate expiry state transitions | None |
-| `zatca:requeue --dry-run` | Which stuck invoices would be restarted, and why | None |
-| `zatca:prune-sdk-files --dry-run` | Which leftover files would be deleted | None |
-
-All of these are **read-only** and safe to run at any time, including in production — the two `--dry-run` forms change nothing.
-
-Use `zatca:health-check` after a deploy ("is the install wired up correctly?") and `zatca:status` continuously ("is anything wrong right now?"). `zatca:certificate:check` is the one exception to read-only: it repairs a missing `certificate_expires_at` by re-reading the stored certificate, because a null expiry means the certificate cannot be monitored at all.
-
----
-
-## Logging
-
-- The package logs through Laravel's normal logging system (`Log::warning`, `Log::error`) — no separate log file.
-- **What gets logged:** high-level status messages (e.g. "invoice generation skipped", "certificate expired", "renewal failed") and sanitized error summaries.
-- **What never gets logged:** Authorization headers, tokens, secrets, private keys, certificates, CSR content, or raw/signed XML. `ZatcaApiResult::$sanitizedResponse` is hand-built per endpoint to only keep non-sensitive fields, and `ZatcaSanitizer` (see [Public API](#public-api)) redacts PEM blocks/long base64 blobs/Authorization headers before any SDK output or command argument reaches an exception message or log line.
-- **Log levels used:** `warning` for expected/recoverable situations (certificate expiring, invoice generation skipped because onboarding isn't done), `error` for failures that need attention (certificate expired, renewal failed).
-
----
-
-## Testing
-
-### Standalone package test suite (Orchestra Testbench)
-
-All tests live inside the package, under `packages/zatca/tests/`. They boot a throwaway Laravel app via [Orchestra Testbench](https://packages.tools/testbench) with an in-memory SQLite database and **no dependency on any host application** — so they can never touch a real database.
-
-```bash
-cd packages/zatca
-composer install   # first time only — installs its own isolated vendor/
-composer test      # runs vendor/bin/phpunit
-```
-
-It covers: the sanitizer, response normalizer, XML generator and certificate parser (unit); service-provider bindings, migrations, registered commands, credential encryption, ICV/PIH isolation and chaining, ICV safety across a signing failure, certificate lifecycle and alerting events, queue job payload safety, and the status/requeue/prune commands (feature); plus golden-file SDK output parsing and SDK workspace isolation.
-
-Two tests are **skipped by default** — they drive the real Java SDK. Run them before releasing any change to signing:
-
-```bash
-ZATCA_SDK_EXECUTABLE=/path/to.jar ZATCA_SDK_ROOT=/path/to/sdk vendor/bin/phpunit
-```
-
-### Golden XML fixtures (Simplified documents)
-
-`tests/Unit/Golden/SimplifiedXmlGoldenTest.php` compares the unsigned XML of the three Simplified generators (invoice, credit note, debit note) byte for byte with the files in `tests/Fixtures/Golden/V2/simplified/`. It exists so that B2B work on shared DTOs and generators cannot silently change what B2C customers receive. The fixtures record current output; they do not prove ZATCA compliance. The only normalisation is CRLF to LF, because a Windows checkout turns the signature heredoc into CRLF while the servers emit LF.
-
-When a change to Simplified output is intended, rewrite the fixtures and review every changed line before committing. Never run this in CI:
-
-```bash
-composer golden:update   # rewrites the fixtures; each case is reported as incomplete
-composer test            # must be green again against the new fixtures
-```
-
-### Continuous integration
-
-`.github/workflows/zatca_tests.yml` runs the whole suite on PHP 8.1, 8.2 and 8.3 for every push or PR touching `packages/zatca/**`. It needs no database, no credentials and no secrets. The SDK-backed tests skip there, which is why you should run them locally before a signing change.
-
-### Host-application tests
-
-The host app used to carry duplicated copies of these tests; they have been consolidated into the package. Anything host-specific — your own `InvoiceSourceContract` mapping and the payment trigger that dispatches `GenerateZatcaInvoiceJob` — belongs in the host suite once implemented.
-
-### Sandbox testing
-
-Set `ZATCA_ENVIRONMENT=sandbox` and go through the full [Onboarding](#onboarding) sequence against ZATCA's public sandbox. This is safe — sandbox has no real legal effect. The normal test suites above **never** call the live ZATCA sandbox — only the SDK smoke suite below does anything real, and only the local SDK, not the network.
-
-### Real SDK smoke suite (explicitly opt-in)
+### `zatca:sdk-smoke-test`
 
 ```bash
 php artisan zatca:sdk-smoke-test
 ```
 
-Verifies, against the **real** local SDK (Java, the jar, the SDK's own bundled sample certificate) — never the ZATCA network: Java availability, the SDK executable/root, fingerprint computation, CSR generation, hash generation, signing, QR extraction, and that validation runs. It **skips safely** (exit 0, clearly labeled `SKIPPED`) when the SDK isn't configured on the current machine — but the Production Readiness Checklist in `docs/ZATCA_ACTIVATION_GUIDE.md` requires it to actually pass, not just skip, before go-live. This command is never invoked by the normal unit/feature test suites.
+It takes no options. It checks Java, the SDK files and the fingerprint. Then, using the SDK's own sample certificate, it tests CSR generation, hashing, signing, QR extraction and validation. It never calls ZATCA. If the SDK paths are not set, it prints `SKIPPED`.
 
----
-
-## Examples
-
-### Example: Generate an invoice after a payment webhook
-
-```php
-// In your payment confirmation handler — NOT inside the webhook's raw request handling:
-use Zatca\Jobs\GenerateZatcaInvoiceJob;
-
-public function markOrderAsPaid(Order $order): void
-{
-    $order->update(['status' => 'paid']);
-
-    // Activate the course immediately — never wait on ZATCA:
-    $this->enrollmentService->activate($order);
-
-    // ZATCA invoice happens in the background:
-    dispatch(GenerateZatcaInvoiceJob::forModel($order));
-}
-```
-
-### Example: Check if an EGS is fully onboarded before allowing checkout
-
-```php
-use Zatca\Services\Security\ZatcaCredentialStore;
-use Zatca\Enums\ZatcaEnvironment;
-use Zatca\Enums\ZatcaCredentialType;
-
-$ready = app(ZatcaCredentialStore::class)
-    ->has('default', ZatcaEnvironment::Production, ZatcaCredentialType::Production);
-```
-
-### Example: Show an admin the status of a specific invoice
-
-```php
-use Zatca\Services\Diagnostics\ZatcaInspector;
-
-$invoice = app(ZatcaInspector::class)->invoice('42');
-// or by UUID:
-$invoice = app(ZatcaInspector::class)->invoice('8e6000cf-1a98-4174-b3e7-b5d5954bc10d');
-```
-
-### Example: Manually resend all stuck invoices
+### `zatca:report-pending`
 
 ```bash
 php artisan zatca:report-pending
 ```
 
-### Example: Renew a production certificate before it expires
+It takes no options. It re-dispatches every document in `pending_reporting`, `retrying`, `pending_clearance`, `clearance_retrying` or `clearance_in_doubt`. It never touches `manual_review` or rejected documents, and it never signs again. Schedule it every 5 minutes. When ZATCA is disabled, it does nothing.
+
+### `zatca:requeue`
+
+```bash
+php artisan zatca:requeue --dry-run
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--status=` | `manual_review` | B2C: `manual_review`, `failed`, `retrying`, `pending_reporting`. B2B: `clearance_manual_review`, `clearance_retrying`, `pending_clearance`, `clearance_in_doubt`. |
+| `--only-transient` | off | Only invoices whose last failure was a ZATCA outage (HTTP 0 or 5xx). Safe to schedule. |
+| `--max-total-attempts=` | `50` | With `--only-transient`, give up on invoices tried this many times |
+| `--egs=` | all | Limit to one EGS |
+| `--id=*` | – | Specific invoice ids (repeat the option) |
+| `--limit=` | `0` (no limit) | Max invoices |
+| `--keep-attempts` | off | Don't reset `attempt_count` |
+| `--dry-run` | off | Show what would happen, change nothing |
+
+It sends stuck documents again with the same signed XML. B2C documents go to Reporting and B2B documents go to Clearance. The package picks the route from the document itself. Accepted documents (`reported`, `cleared`…) and `clearance_rejected` are never resent, even with `--id`. Read `last_error` before requeueing a validation failure, because a rejected document will just be rejected again (use [regeneration](#re-issuing-a-rejected-invoice-regeneration) for those).
+
+```bash
+php artisan zatca:requeue --only-transient
+```
+
+### `zatca:status`
+
+```bash
+php artisan zatca:status --json
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--stale-minutes=` | `60` | An unreported document older than this counts as stuck |
+| `--strict` | off | Exit with code 1 on warnings too |
+| `--json` | off | Machine-readable output for monitoring |
+
+It checks for documents waiting for a human (`manual_review`, `clearance_manual_review`, `clearance_rejected`), documents stuck on their way to ZATCA, certificate expiry and failed jobs. It exits with code 1 only on failures (or on warnings with `--strict`).
+
+### `zatca:inspect {resource}`
+
+```bash
+php artisan zatca:inspect invoice --id=42
+```
+
+| Argument / option | Required | Values |
+|---|---|---|
+| `resource` | Yes | `credentials`, `state`, `invoice` |
+| `--egs` | No (default `default`) | For `credentials` and `state` |
+| `--id` | For `invoice` | Invoice id or UUID |
+
+It is read-only and prints JSON. It never shows secrets, keys or XML.
+
+### `zatca:certificate:check`
 
 ```bash
 php artisan zatca:certificate:check
-# if it prints "expiring_soon" AND you have verified the real renewal contract:
-ZATCA_AUTO_RENEWAL_ENABLED=true php artisan zatca:certificate:renew --type=production
 ```
 
+- `--egs=` (optional): one EGS. Without it, it checks all EGS.
+- It updates the `valid`, `expiring_soon` and `expired` states and fires `ZatcaCertificateExpiring` on a change. Schedule it daily.
+
+### `zatca:certificate:renew`
+
+```bash
+php artisan zatca:certificate:renew --egs=default --type=production
+```
+
+- `--egs` (default `default`), `--type` (`compliance` or `production`, default `production`).
+- It only acts on certificates that are `expiring_soon`, `expired` or `failed`.
+- While `ZATCA_AUTO_RENEWAL_ENABLED=false` (the default), it prints a warning and calls nothing. Don't enable it until ZATCA's renewal API is verified.
+
+### `zatca:prune-submission-attempts`
+
+```bash
+php artisan zatca:prune-submission-attempts
+```
+
+It takes no options. It deletes attempt rows older than `ZATCA_PRUNE_ATTEMPTS_AFTER_DAYS` (180) **for accepted B2C invoices only**. Invoices themselves are never deleted. Schedule it weekly.
+
+### `zatca:prune-sdk-files`
+
+```bash
+php artisan zatca:prune-sdk-files --dry-run
+```
+
+- `--days=` (default `ZATCA_PRUNE_SDK_FILES_AFTER_DAYS`, 7), `--dry-run`.
+- It deletes leftover SDK files under `storage/app/private/zatca`. It never touches anything younger than 1 hour or anything in the database. Schedule it daily.
+
+### `zatca:check-source-uniqueness`
+
+```bash
+php artisan zatca:check-source-uniqueness
+```
+
+It takes no options and is read-only. It lists sales that have documents on more than one EGS in the same environment. The migration `2026_09_28_000002_add_env_source_unique_to_zatca_invoices_table` adds a unique index that fails if any exist. **When upgrading an existing install, run this before `php artisan migrate`.** It must print `[OK]`.
+
 ---
 
-## Troubleshooting
+## 14. Deploy to production
 
-| Problem | Likely cause | Fix |
+### First-time setup (once per server)
+
+1. **Server:** PHP 8.1+ with `openssl`, `dom`, `mbstring`, `ctype`, `json` and your PDO driver, Java 11, the ZATCA SDK folder, Supervisor (or similar), and cron.
+2. **Network:** the server must reach `https://gw-fatoora.zatca.gov.sa` on port 443. Allow it in your firewall or proxy.
+3. **Install:**
+
+   ```bash
+   composer install --no-dev --optimize-autoloader
+   ```
+
+   ```bash
+   php artisan vendor:publish --tag=zatca-config
+   ```
+
+   ```bash
+   php artisan migrate --force
+   ```
+
+4. **`.env`:** set `ZATCA_ENVIRONMENT=production` and all seller values (see [Configuration](#6-configuration)). Keep `APP_KEY` safe (see below).
+5. **Storage:**
+
+   ```bash
+   mkdir -p storage/app/private/zatca
+   ```
+
+   ```bash
+   sudo chown -R www-data:www-data storage
+   ```
+
+6. **Queue worker** (`/etc/supervisor/conf.d/zatca-worker.conf`):
+
+   ```ini
+   [program:zatca-worker]
+   command=php /var/www/my-shop/artisan queue:work --queue=zatca --sleep=3 --max-time=3600
+   user=www-data
+   numprocs=1
+   autostart=true
+   autorestart=true
+   stopwaitsecs=3600
+   ```
+
+   Start with **one** worker process. The package handles concurrency safely, but one process keeps documents in order and is enough for most shops.
+
+7. **Scheduler:** add the cron entry, and these lines to your schedule (`app/Console/Kernel.php`):
+
+   ```bash
+   * * * * * cd /var/www/my-shop && php artisan schedule:run >> /dev/null 2>&1
+   ```
+
+   ```php
+   $schedule->command('zatca:report-pending')->everyFiveMinutes()->withoutOverlapping();
+   $schedule->command('zatca:requeue --only-transient')->hourly()->withoutOverlapping();
+   $schedule->command('zatca:certificate:check')->daily();
+   $schedule->command('zatca:status')->hourly();
+   $schedule->command('zatca:prune-submission-attempts')->weekly();
+   $schedule->command('zatca:prune-sdk-files')->daily();
+   ```
+
+8. **Onboard in production** with a production OTP (see [Onboarding](#8-zatca-onboarding)), then run `zatca:health-check`.
+9. **Safe first check:** make one small, real sale (it **is** a legal invoice), then confirm `zatca:inspect invoice --id=…` shows `reported`. Never send fake test invoices to production.
+
+### Every deployment
+
+```bash
+php artisan down
+```
+
+```bash
+composer install --no-dev --optimize-autoloader
+```
+
+```bash
+php artisan migrate --force
+```
+
+```bash
+php artisan config:cache
+```
+
+```bash
+php artisan queue:restart
+```
+
+```bash
+php artisan up
+```
+
+```bash
+php artisan zatca:health-check
+```
+
+`queue:restart` is required, because workers keep old code and config in memory.
+
+### Keep your data safe
+
+- **Never lose `APP_KEY`.** Credentials are encrypted with it. A new `APP_KEY` makes the stored keys unreadable, and you would have to onboard again.
+- **Never delete or edit** rows in `zatca_egs_credentials`, `zatca_egs_states` or `zatca_invoices`. The counter and hash chain must continue forever. Resetting them breaks your chain with ZATCA.
+- **Never run `migrate:fresh` / `migrate:refresh`** on a production database.
+- **Back up** the database often, especially these tables. Restoring an old backup rewinds the counter and the chain. If you ever must restore, contact ZATCA support before sending new invoices.
+- **Never** put the private key, tokens or certificates in Git, logs or `.env` files. The package keeps them encrypted in the database only.
+- Keep the SDK folder and `storage/app/private` out of `public/`.
+
+### Logging and monitoring
+
+- The package logs to your normal Laravel log with a `[ZATCA]` prefix. Secrets are removed.
+- Hook `zatca:status --json` into your monitoring, or alert from `ZatcaInvoiceNeedsAttention` and `ZatcaCertificateExpiring` listeners.
+
+### Updating the package later
+
+```bash
+composer update zatca/zatca
+```
+
+Read the changelog. If a release adds migrations, run `zatca:check-source-uniqueness`, then use the "every deployment" steps. If you replace the ZATCA SDK jar, run `zatca:sdk-smoke-test` and update `ZATCA_SDK_FINGERPRINT`.
+
+### Go-live checklist
+
+- [ ] `ZATCA_ENVIRONMENT=production`, and the seller data matches the Fatoora portal
+- [ ] `ZATCA_VAT_NUMBER` = `ZATCA_ORG_IDENTIFIER`
+- [ ] Java works for the web and worker user (`sudo -u www-data java -version`)
+- [ ] `zatca:sdk-smoke-test` all PASS, and `ZATCA_SDK_FINGERPRINT` is set
+- [ ] Onboarded in production: `zatca:health-check` shows production credentials `valid`
+- [ ] The `zatca` queue worker is running under Supervisor
+- [ ] The scheduler cron is installed, with the schedule above
+- [ ] `APP_KEY` is backed up somewhere safe, and database backups are on
+- [ ] Alerts are wired for `ZatcaInvoiceNeedsAttention` / `zatca:status`
+- [ ] A calendar reminder to re-onboard before the certificate expires
+- [ ] `ZATCA_B2B_ENABLED=false` unless B2B has passed the sandbox checks in [Known limitations](#known-limitations)
+- [ ] One real sale reported successfully
+
+---
+
+## 15. Troubleshooting
+
+| Problem | Reason | Fix |
 |---|---|---|
-| `Configured ZATCA_SDK_EXECUTABLE [...] does not point to an existing SDK jar file.` | Wrong or missing path in `.env` | Check the path exists on the server, use an absolute path. |
-| `Configured ZATCA_SDK_ROOT [...] does not point to an existing directory.` | Wrong `ZATCA_SDK_ROOT` | Point it at the SDK's root folder (containing `Apps/`, `Data/`, `Configuration/`). |
-| Java-related errors when signing | Java not installed, or wrong version | Install Java 11–15. Check with `java -version`. |
-| `The provided OTP is invalid` | OTP expired or wrong | Get a new OTP from the Fatoora portal — they expire fast. |
-| Invoice stuck in `pending_reporting` forever | Queue worker not running, or scheduler not running | Confirm `php artisan queue:work --queue=zatca` is running, and the scheduler cron is set up. |
-| Invoice in `manual_review` | A non-retryable error occurred | Run `zatca:inspect invoice --id=...` to see `last_error`, fix the underlying issue. |
-| `[FAIL] ZATCA SDK binary fingerprint mismatch` | The jar file changed on disk | Confirm it wasn't replaced unexpectedly. If the change is intentional (SDK upgrade), regenerate and update `ZATCA_SDK_FINGERPRINT`. |
-| `Unknown ZATCA EGS identifier [...]` | Using an EGS identifier that isn't in `config('zatca.egs')` | Check `ZATCA_EGS_IDENTIFIER` matches what you pass to jobs/commands. |
-| `zatca:certificate:renew` does nothing / certificate stays `expired` | `ZATCA_AUTO_RENEWAL_ENABLED` is `false` (the default) | This is intentional — see [Certificate Lifecycle](#certificate-lifecycle). Don't enable it without verifying the real ZATCA renewal contract first. |
-| A 409 response was expected to succeed but didn't | The response body didn't confirm "already reported" | Check `last_zatca_response`/`last_error` on the invoice — this is by design (see [Error Handling](#error-handling)), not a bug. |
-| `Unable to resolve invoice source [...]` | `InvoiceSourceResolverContract` returned `null` — the record was deleted, or `source_type` isn't a recognized Eloquent model | If your source isn't a plain Eloquent model, bind your own `InvoiceSourceResolverContract` implementation. |
-| Migration fails with a MySQL "identifier too long" error | Should not happen — already fixed in the package's migrations | If you see this, you're on an outdated copy of the package; update it. |
-| `Changing columns ... requires Doctrine DBAL` when running the package's own tests | `doctrine/dbal` not installed in the package's own `packages/zatca/vendor/` | Run `composer install` inside `packages/zatca/` — it's declared as a real dependency in that `composer.json`. |
-| Invoices stuck in `manual_review` after a ZATCA outage | The retry budget ran out while ZATCA was unreachable | Schedule `zatca:requeue --only-transient` so this repairs itself. See [Production Reporting](#production-reporting). |
-| `certificate_expires_at` is `null` and expiry warnings never fire | Onboarding ran before the certificate parser was fixed | Run `zatca:certificate:check` — it recovers the date from the stored certificate. Confirm with `zatca:status`. |
+| `composer require` fails on Laravel 11/12 | The package supports Laravel 9 and 10 only | Use Laravel 9 or 10 |
+| `Call to undefined function openssl_x509_parse` (or similar) | Missing PHP extension | Install or enable `openssl` / `dom` / `mbstring` |
+| `ZATCA_SDK_EXECUTABLE [...] does not point to an existing SDK jar file` | Wrong path | Use the absolute path to the jar in `Apps/` |
+| `ZATCA_SDK_ROOT [...] does not point to an existing directory` | Wrong path | Point to the folder with `Apps/`, `Configuration/`, `Data/` |
+| `java: not found` or SDK errors when signing | Java is missing, or not on the worker user's PATH | Install Java 11 and test with `sudo -u www-data java -version` |
+| `[FAIL] ... fingerprint` | The SDK jar changed | If you upgraded on purpose, update `ZATCA_SDK_FINGERPRINT` |
+| `Unknown ZATCA EGS identifier` | The EGS name doesn't match `.env` | Use `config('zatca.primary_egs')` / `config('zatca.b2b.egs_identifier')` |
+| `No CSR on record ... Run zatca:generate-credentials first` | Step 1 skipped | Run `zatca:generate-credentials` |
+| CSR generation fails | Bad or empty CSR fields, or non-English characters in `ZATCA_ORG_NAME` | Fill every CSR field, and keep the English name in `ZATCA_ORG_NAME` |
+| `Compliance CSID request failed` / invalid OTP | The OTP expired, is from the wrong portal, or was already used | Create a new OTP in the portal for the **same** environment |
+| Compliance test shows `ERROR` | Seller data or address is wrong | Read the printed errors, fix `.env`, run `zatca:health-check`, retry the step |
+| Production CSID fails | Compliance steps incomplete | Run all three `test-*` steps with PASS first |
+| `ZatcaCredentialsMissingException` / job fails at once | No production certificate for this EGS and environment | Finish onboarding in the current environment |
+| `does not reconcile — BR-CO-10/14/15` | Totals don't equal the sum of the lines | Compute totals from the rounded line values (see the mapper) |
+| `quantity × unit price does not equal the line net amount` | `lineTotalExclVat` was not computed from quantity and unit price | Compute `round(quantity × unitPrice, 2)` |
+| `VAT amount does not equal the line net × 15%` | VAT computed on the wrong base or rate | Compute `round(net × vatRate / 100, 2)` per line |
+| `standard-rated (S) with a 0% rate` | A 0% item without a VAT category | Mark it `ZeroRated` or `Exempt` with a `VATEX-SA-...` code and reason |
+| `needs a ZATCA exemption reason code` / `reason text` | A `Z`/`E` line without its reason | Fill `vatExemptionReasonCode` and `vatExemptionReason` |
+| `only SAR is supported` | `currency` is not `SAR` | Invoice in SAR |
+| `has no lines` / `negative` | Empty or negative invoice data | Don't invoice zero-line orders. Use credit notes for refunds. |
+| Invoice in `manual_review` with BR-KSA codes | ZATCA rejected the content (for example line math, VAT number) | Fix the mapper or data, then [regenerate](#re-issuing-a-rejected-invoice-regeneration) |
+| `buyer VAT number must be 15 digits...` | Invalid buyer VAT | Ask the buyer for the correct VAT, or use `BuyerOtherId` (CR number) |
+| `Standard document ... has no buyer / no supply date` | B2B data missing | Set `buyer` and `supplyDate` in the mapper |
+| Credit note: `not eligible` | Original not accepted yet, another note is in progress, or the original is fully credited | Check `CreditNoteEligibilityPolicy::verdict()->reason` |
+| Missing original invoice reference | Not possible from this API | Notes always take the reference from `$original`, so pass the right `ZatcaInvoice` |
+| Wrong previous hash / counter problems | The database was restored or edited, or two environments are mixed | Never edit `zatca_egs_states`. Check `zatca:inspect state`. Contact ZATCA if the chain broke. |
+| Stuck in `pending_reporting` | No queue worker, or no scheduler | Run `queue:work --queue=zatca` and the cron |
+| Many `manual_review` after a ZATCA outage | Retry budget used up | `zatca:requeue --only-transient` (schedule it hourly) |
+| Signing works in sandbox, fails in production | Production not onboarded, a different OTP or portal, or wrong environment value | Onboard again in production. Credentials are per environment. |
+| Permission denied in `storage/app/private/zatca` | Wrong owner | `chown -R www-data:www-data storage` |
+| `.env` change has no effect | Config cache or old workers | `php artisan config:cache` and `php artisan queue:restart` |
 
 ---
 
-## FAQ
+<a id="known-limitations"></a>
+## 16. Known limitations
 
-**Does this package generate the PDF invoice for students?**
-No. It generates the signed XML and QR code, and fires `ZatcaInvoiceGenerated` so your app can render/send its own branded PDF.
+These come from the current code. They are not documentation mistakes.
 
-**Can I use this for B2B invoices?**
-Not yet — v1.0.0 only supports Simplified Invoices (B2C). See [Roadmap](#roadmap).
+**B2B Clearance: verify in the ZATCA sandbox before going live**
 
-**What happens if ZATCA is down when a student pays?**
-The student's course access is never blocked. The invoice is signed and saved as `pending_reporting`, and reporting is retried automatically once ZATCA is back.
+The B2B code and its routing are tested, but these points have not been confirmed against the real ZATCA sandbox yet (project gates G-02 to G-07):
+1. Which CSR invoice type (`ZATCA_B2B_INVOICE_TYPE`, `1000` or `1100`) ZATCA accepts for a separate B2B device.
+2. Clearance request headers (`Accept-Version`) and real response bodies, including warnings and `NOT_CLEARED`.
+3. Which hash continues the chain after a cleared invoice.
+4. Which XML and QR to give the buyer (the package stores ZATCA's `cleared_xml_base64`).
+5. What ZATCA returns when a timed-out (`clearance_in_doubt`) document is sent again.
 
-**Do I need Postman or PowerShell to onboard?**
-No. Everything is done through the `php artisan zatca:...` commands (see [Commands](#commands)).
+Onboard the B2B EGS in the sandbox, clear a few invoices, credit notes and debit notes, and check each point before you set `ZATCA_B2B_ENABLED=true` in production.
 
-**Why doesn't `zatca:certificate:renew` do anything?**
-Automatic renewal is disabled by default (`ZATCA_AUTO_RENEWAL_ENABLED=false`) because ZATCA's real renewal contract hasn't been verified in this codebase yet. See [Certificate Lifecycle](#certificate-lifecycle) before enabling it.
+**Tax and amounts**
+- `Z` and `E` are supported. Out-of-scope (`O`) is not, because ZATCA limits how it can be mixed with other categories on one document.
+- Every amount is in **SAR**. Other currencies are refused.
+- `quantity` is a whole number. Fractions (1.5 kg) are not supported.
+- No line-level discounts. Only document-level discounts (`ZatcaAllowanceCharge`).
+- `ZATCA_VAT_PERCENTAGE` is display-only. Each line's `vatRate` is what counts.
+- Payment means is always code `10` (cash).
 
-**Can I pass any object to `GenerateZatcaInvoiceJob`?**
-No — as of the production hardening pass, it only takes `source_type`/`source_id` (or use `::forModel($order)`), never the object itself. This keeps the queued payload safe to serialize and always fresh at execution time.
+**Notes**
+- `CreditNoteIssuer::issue()` credits whole lines. Use price adjustments to credit part of a line.
+- One credit or debit note in progress per invoice at a time.
 
-**Can I add a second business/branch (EGS) later?**
-Yes — the package is built for it (`EgsRegistry`). Add a new entry to `config('zatca.egs')` and onboard it separately; no code changes needed.
-
-**Where are my ZATCA secrets stored?**
-Encrypted, in the `zatca_egs_credentials` table, using Laravel's own encryption (your app's `APP_KEY`).
-
-**What if the SDK jar gets accidentally replaced or corrupted?**
-`zatca:health-check` will fail loudly with a fingerprint mismatch — it will not silently sign invoices with a different jar.
-
----
-
-## Changelog / Versioning
-
-This package follows [Semantic Versioning](https://semver.org/):
-
-- **Major** (`x.0.0`) — breaking changes, or scope changes (e.g. adding B2B support would likely bump to `2.0.0`).
-- **Minor** (`1.x.0`) — new features that don't break existing usage.
-- **Patch** (`1.0.x`) — bug fixes only.
-
-**Current version: `1.0.0`** — first release. B2C Simplified Invoices, Reporting model only.
-
-Supported ZATCA API/SDK/UBL version combinations are tracked in `docs/COMPATIBILITY.md` inside the package. Never mix versions outside that table.
+**Other**
+- Laravel 9 and 10 only.
+- Certificate renewal through the API is turned off. Renew by onboarding again.
+- No PDF generation.
 
 ---
 
-## Roadmap
+## 17. Renamed classes and methods
 
-The following are **intentionally out of scope for v1.0.0** and are not implemented:
+Some names used to be specific to one kind of business. They now have generic names. The old **PHP** names still work as deprecated aliases.
 
-- Standard Tax Invoices (B2B)
-- Credit Notes and Debit Notes **for real sales** — onboarding can prove compliance for these types (`zatca:onboard test-credit-note`/`test-debit-note`, required by ZATCA before a Production CSID is issued at all), but there is no `InvoiceSourceContract`-driven way to issue one against an actual order yet
-- Clearance model (only Reporting is supported today)
-- Multiple EGS in production (the architecture supports it, but v1 ships configured for a single EGS)
+| Old name (deprecated) | New name |
+|---|---|
+| `ZatcaCreditNoteReason::CourseCancellation` | `ZatcaCreditNoteReason::ItemCancellation` |
+| `ZatcaCreditNoteReason::revokesCourseAccess()` | `ZatcaCreditNoteReason::cancelsItems()` |
+| `ZatcaDebitNoteReason::AdditionalCourse` | `ZatcaDebitNoteReason::AdditionalItem` |
+| `ZatcaDebitNoteReason::grantsCourseAccess()` | `ZatcaDebitNoteReason::addsItems()` |
+| `DebitNoteLineInput` `courseId:` argument and `->courseId` | `itemId:` argument and `->itemId` |
+| `CreditSource` `courseId` | `itemId` |
+| `$line->course_id` on note lines (read-only) | `$line->item_id` |
 
-These are candidates for future versions. Do not assume any of the above works until it appears in this README and in a released version.
+The database uses the new names too:
+
+| Old | New |
+|---|---|
+| `reason_type` value `course_cancellation` | `item_cancellation` |
+| `reason_type` value `additional_course` | `additional_item` |
+| `course_id` column on `zatca_credit_note_lines` / `zatca_debit_note_lines` | `item_id` |
+| `course_ids` in the debit note "requested" event detail | `item_ids` |
+
+These were changed inside the original migrations, because the package had not run in production. **Any database that already ran the old migrations (local, staging) must be rebuilt** with `php artisan migrate:fresh`. Never do that on production.
 
 ---
 
-## Contributing
+## 18. Running the package tests
 
-- Open an issue or discuss the change with the team before starting large work.
-- Keep changes scoped — one feature/fix per pull request.
-- Add or update tests for anything you change (see [Testing](#testing)).
-- Never commit real ZATCA credentials, `.env` files, or certificates.
-- Run `php artisan zatca:health-check` and the test suite before opening a PR.
-- Update this README and `docs/COMPATIBILITY.md` if you change public behavior.
+```bash
+composer install
+```
+
+```bash
+composer test
+```
+
+The suite uses Orchestra Testbench and SQLite and never calls ZATCA or the real SDK. To also test the real SDK on your machine, set `ZATCA_SDK_EXECUTABLE` and `ZATCA_SDK_ROOT` and run:
+
+```bash
+composer smoke
+```
+
+More operational detail is in [`docs/OPERATIONS.md`](docs/OPERATIONS.md), [`docs/SERVER_REQUIREMENTS.md`](docs/SERVER_REQUIREMENTS.md), [`docs/DATABASE.md`](docs/DATABASE.md) and [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 
 ---
 
 ## License
 
-Proprietary — internal use only. Not for external distribution outside the company.
+Proprietary. Internal use only.

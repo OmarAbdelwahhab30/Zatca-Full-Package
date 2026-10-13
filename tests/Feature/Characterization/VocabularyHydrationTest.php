@@ -46,19 +46,22 @@ class VocabularyHydrationTest extends TestCase
         }
     }
 
-    public function test_report_pending_and_requeue_ignore_clearance_rows(): void
+    /** Clearance documents are never sent to Reporting by the sweep or by requeue. */
+    public function test_report_pending_and_requeue_never_report_clearance_rows(): void
     {
         Bus::fake();
         foreach (ZatcaInvoiceStatus::cases() as $status) {
             if ($status->isClearanceState()) {
-                $this->invoiceRow($status, ['document_type' => ZatcaComplianceDocumentType::StandardInvoice]);
+                $this->invoiceRow($status, ['document_type' => ZatcaComplianceDocumentType::StandardInvoice, 'submission_model' => 'clearance']);
             }
         }
 
         $this->artisan('zatca:report-pending')->assertSuccessful();
-        $this->artisan('zatca:requeue', ['--status' => 'pending_clearance'])->assertFailed();
+        $this->artisan('zatca:requeue', ['--status' => 'pending_clearance'])->assertSuccessful();
+        $this->artisan('zatca:requeue', ['--status' => 'clearance_rejected'])->assertFailed();
         $this->artisan('zatca:requeue', ['--status' => 'manual_review'])->assertSuccessful();
 
         Bus::assertNotDispatched(RetryZatcaInvoiceJob::class);
+        Bus::assertDispatched(\Zatca\Jobs\RetryZatcaClearanceJob::class);
     }
 }

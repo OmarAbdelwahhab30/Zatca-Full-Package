@@ -97,7 +97,7 @@ trait GoldenDocuments
                 'cn-uuid-0003',
                 14,
             ),
-            'debit_additional_course' => self::noteCase(
+            'debit_additional_item' => self::noteCase(
                 SimplifiedDebitNoteXmlGenerator::class,
                 (new DebitNoteDataFactory)->make(
                     $single,

@@ -42,27 +42,30 @@ class DebitNoteIssuerTest extends TestCase
         ]);
     }
 
-    public function test_an_additional_course_debit_note_records_its_charge_and_course(): void
+    public function test_an_additional_item_debit_note_records_its_charge_and_item(): void
     {
         $original = $this->reportedOriginal(7001);
 
         $debitNote = $this->issuer()->issue(
             $original,
-            ZatcaDebitNoteReason::AdditionalCourse,
-            [new DebitNoteLineInput('Course D', 1, 200.00, 15.0, 200.00, 30.00, null, courseId: 44)],
+            ZatcaDebitNoteReason::AdditionalItem,
+            [new DebitNoteLineInput('Course D', 1, 200.00, 15.0, 200.00, 30.00, null, itemId: 44)],
             'إضافة دورة تدريبية لم تكن ضمن الفاتورة الأصلية',
             (string) Str::uuid(),
         );
 
         $this->assertSame('DN-'.str_pad((string) $debitNote->id, 6, '0', STR_PAD_LEFT), $debitNote->debit_note_number);
-        $this->assertSame(ZatcaDebitNoteReason::AdditionalCourse, $debitNote->reason_type);
+        $this->assertSame(ZatcaDebitNoteReason::AdditionalItem, $debitNote->reason_type);
         $this->assertSame(200.00, (float) $debitNote->total_excl_vat);
         $this->assertSame(30.00, (float) $debitNote->total_vat);
         $this->assertSame(230.00, (float) $debitNote->total_incl_vat);
 
         $line = $debitNote->lines()->first();
-        $this->assertSame(44, (int) $line->course_id);
-        // An added course was never on the original, so it references no original line.
+        $this->assertSame(44, (int) $line->item_id);
+        $this->assertSame(44, $line->course_id, 'deprecated read-only alias');
+        $requested = $debitNote->events()->where('event', 'requested')->first();
+        $this->assertSame([44], $requested->detail['item_ids']);
+        // An added item was never on the original, so it references no original line.
         $this->assertNull($line->original_line_index);
     }
 
@@ -251,7 +254,7 @@ class DebitNoteIssuerTest extends TestCase
     public function test_a_price_adjustment_may_reference_a_course_an_accepted_debit_note_added(): void
     {
         $original = $this->reportedOriginal(7012);
-        $added = $this->additionalCourse($original, courseId: 44);
+        $added = $this->additionalItem($original, itemId: 44);
 
         $adjustment = $this->issuer()->issue(
             $original->fresh(),
@@ -264,7 +267,7 @@ class DebitNoteIssuerTest extends TestCase
         $line = $adjustment->lines()->first();
         $this->assertSame($added->id, (int) $line->source_debit_note_line_id);
         $this->assertNull($line->original_line_index);
-        $this->assertNull($line->course_id);
+        $this->assertNull($line->item_id);
         $this->assertSame($added->id, $line->sourceDebitNoteLine->id);
         $this->assertSame(57.50, (float) $adjustment->total_incl_vat);
     }
@@ -273,7 +276,7 @@ class DebitNoteIssuerTest extends TestCase
     public function test_a_reference_to_a_course_from_a_debit_note_that_is_not_accepted_is_refused(): void
     {
         $original = $this->reportedOriginal(7013);
-        $pending = $this->additionalCourse($original, courseId: 44, accept: false);
+        $pending = $this->additionalItem($original, itemId: 44, accept: false);
         $reference = new DebitNoteLineInput('x', 1, 50.00, 15.0, 50.00, 7.50, sourceDebitNoteLineId: $pending->id);
 
         // While it is pending nothing may be issued against the invoice at all.
@@ -297,7 +300,7 @@ class DebitNoteIssuerTest extends TestCase
     public function test_a_reference_to_a_course_added_to_another_invoice_is_refused(): void
     {
         $other = $this->reportedOriginal(7015);
-        $added = $this->additionalCourse($other, courseId: 44);
+        $added = $this->additionalItem($other, itemId: 44);
         $original = $this->reportedOriginal(7016);
 
         $this->assertRefusedReference($original, new DebitNoteLineInput('x', 1, 50.00, 15.0, 50.00, 7.50, sourceDebitNoteLineId: $added->id));
@@ -306,7 +309,7 @@ class DebitNoteIssuerTest extends TestCase
     public function test_a_line_may_not_reference_both_an_original_line_and_an_added_course(): void
     {
         $original = $this->reportedOriginal(7017);
-        $added = $this->additionalCourse($original, courseId: 44);
+        $added = $this->additionalItem($original, itemId: 44);
 
         $this->assertRefusedReference($original, new DebitNoteLineInput('x', 1, 50.00, 15.0, 50.00, 7.50, originalLineIndex: 0, sourceDebitNoteLineId: $added->id));
     }
@@ -347,7 +350,7 @@ class DebitNoteIssuerTest extends TestCase
     {
         $original = $this->reportedOriginal(7020);
         $this->creditNote($original, [0])->update(['accepted_at' => now()]);
-        $added = $this->additionalCourse($original, courseId: 44);
+        $added = $this->additionalItem($original, itemId: 44);
         $adjustAdded = new DebitNoteLineInput('x', 1, 50.00, 15.0, 50.00, 7.50, sourceDebitNoteLineId: $added->id);
 
         $this->assertRefusedReference(
@@ -371,7 +374,7 @@ class DebitNoteIssuerTest extends TestCase
     public function test_a_price_adjustment_may_correct_several_items_in_one_note(): void
     {
         $original = $this->reportedOriginal(7140);
-        $added = $this->additionalCourse($original, 77);
+        $added = $this->additionalItem($original, 77);
 
         $note = $this->issuer()->issue(
             $original->fresh(),
@@ -459,12 +462,12 @@ class DebitNoteIssuerTest extends TestCase
     }
 
     /** @return \Zatca\Models\ZatcaDebitNoteLine the line that added the course */
-    private function additionalCourse(ZatcaInvoice $original, int $courseId, bool $accept = true): \Zatca\Models\ZatcaDebitNoteLine
+    private function additionalItem(ZatcaInvoice $original, int $itemId, bool $accept = true): \Zatca\Models\ZatcaDebitNoteLine
     {
         $debitNote = $this->issuer()->issue(
             $original->fresh(),
-            ZatcaDebitNoteReason::AdditionalCourse,
-            [new DebitNoteLineInput('Course D', 1, 200.00, 15.0, 200.00, 30.00, courseId: $courseId)],
+            ZatcaDebitNoteReason::AdditionalItem,
+            [new DebitNoteLineInput('Course D', 1, 200.00, 15.0, 200.00, 30.00, itemId: $itemId)],
             'x',
             (string) Str::uuid(),
         );

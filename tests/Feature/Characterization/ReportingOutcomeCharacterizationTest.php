@@ -30,10 +30,9 @@ use Zatca\Tests\TestCase;
  * (ReportsZatcaInvoice::report). Every outcome below must stay exactly as it is for
  * Simplified documents.
  *
- * These tests describe behaviour, they do not endorse it. In particular a Guzzle
- * ConnectException (connection refused, DNS failure, connect timeout) escapes the job
- * instead of being recorded — see the test named for it and blueprint Appendix D
- * (HT-xx, L-01). It is characterised here so that a fix is a deliberate change.
+ * These tests describe behaviour, they do not endorse it. A Guzzle ConnectException
+ * (connection refused, DNS failure, connect timeout) used to escape the job (L-01); it is
+ * now recorded as HTTP 0 and retried like any other request that got no answer.
  *
  * @group characterization
  */
@@ -138,27 +137,18 @@ class ReportingOutcomeCharacterizationTest extends TestCase
         );
     }
 
-    /**
-     * Current behaviour (L-01): a connect-level failure is not a RequestException, so
-     * HttpConnector does not catch it. The job throws, nothing is recorded and the
-     * invoice keeps its status and counter; the next scheduled run tries again.
-     */
-    public function test_a_connect_exception_escapes_and_records_nothing(): void
+    /** L-01 fixed: a connect-level failure is recorded as HTTP 0 and retried, like a timeout. */
+    public function test_a_connect_exception_is_recorded_and_retried_as_http_zero(): void
     {
         $invoice = $this->invoiceRow(ZatcaInvoiceStatus::PendingReporting, ['attempt_count' => 1]);
         $this->zatca->append(new ConnectException('cURL error 7: Failed to connect', new Request('POST', 'x')));
 
-        try {
-            $this->report($invoice);
-            $this->fail('A ConnectException used to escape the reporting job.');
-        } catch (ConnectException) {
-            // The documented current behaviour.
-        }
+        $this->report($invoice);
 
         $invoice->refresh();
-        $this->assertSame(ZatcaInvoiceStatus::PendingReporting, $invoice->status);
-        $this->assertSame(1, $invoice->attempt_count);
-        $this->assertSame(0, ZatcaSubmissionAttempt::query()->count());
+        $this->assertSame(ZatcaInvoiceStatus::Retrying, $invoice->status);
+        $this->assertSame(2, $invoice->attempt_count);
+        $this->assertSame(0, (int) ZatcaSubmissionAttempt::query()->sole()->http_status);
     }
 
     /** A request-level failure without a response is recorded as HTTP 0 and retried. */

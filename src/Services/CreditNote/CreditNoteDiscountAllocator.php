@@ -10,18 +10,18 @@ use Zatca\DTOs\ZatcaInvoiceData;
  *
  * The problem it exists to solve: since bundle invoices moved the discount out of
  * the line values and into one `cac:AllowanceCharge`, each line now states the
- * course's ORIGINAL price. Copying those lines onto a Credit Note verbatim — which
+ * item's ORIGINAL price. Copying those lines onto a Credit Note verbatim — which
  * is exactly what CreditNoteDataFactory does, correctly, for every other invoice —
  * would credit 320.00 against an invoice that only ever charged 288.00.
  *
- * The discount belongs to the bundle as a whole, not to any course in it, so it is
+ * The discount belongs to the bundle as a whole, not to any item in it, so it is
  * NOT split across the lines. It is a balance that the credited lines draw down, in
  * invoice line order:
  *
  *     applied = min(remaining discount, line's original value)
  *     credit  = line's original value - applied
  *
- * which makes the individual amounts depend on the order courses are credited in,
+ * which makes the individual amounts depend on the order items are credited in,
  * while the cumulative total always closes on exactly what was invoiced. Crediting
  * A(120) then B(200) out of a 32.00 discount gives 88 then 200; the other order
  * gives 168 then 120; both total 288.
@@ -33,11 +33,11 @@ class CreditNoteDiscountAllocator
 {
     /**
      * @param  ZatcaInvoiceData  $original  the frozen original snapshot — its lines are the
-     *   original course values and its allowances are the discounts drawn against them.
+     *   original item values and its allowances are the discounts drawn against them.
      * @param  int[]  $selectedIndexes  lines this note credits.
      * @param  array<string, float>  $availableByPool  pool key => discount still unspent, as
      *   computed by CreditNoteLedger from lines that are currently reserved or credited.
-     * @param  array<int, float>  $effectiveValues  line index => what the course is worth
+     * @param  array<int, float>  $effectiveValues  line index => what the item is worth
      *   right now (see effectiveValues()). The discount a line may consume is capped by
      *   this rather than its invoiced value; a line missing here is capped by its line.
      */
@@ -51,7 +51,7 @@ class CreditNoteDiscountAllocator
 
         // Ascending invoice line order, so the sequence a note consumes its discount in
         // is the document's own order rather than whatever order the admin happened to
-        // tick the boxes in — two admins selecting the same courses get the same amounts.
+        // tick the boxes in — two admins selecting the same items get the same amounts.
         $selectedIndexes = array_values(array_unique($selectedIndexes));
         sort($selectedIndexes);
 
@@ -71,7 +71,7 @@ class CreditNoteDiscountAllocator
             $pool = $poolOfLine[$index] ?? null;
 
             if ($pool === null) {
-                // Not part of any allowance — a non-bundle course sharing the invoice.
+                // Not part of any allowance — a non-bundle item sharing the invoice.
                 // Credited at its line value, exactly as it always was.
                 $credits[$index] = $gross;
                 $applied[$index] = 0.0;
@@ -79,7 +79,7 @@ class CreditNoteDiscountAllocator
                 continue;
             }
 
-            // A course a debit note priced up is worth more than its line, and the
+            // An item a debit note priced up is worth more than its line, and the
             // discount is drawn against all of it; what exceeds the line itself comes
             // off the price increases credited beside it (see overflowOntoDebitLines()).
             $consume = min(max($remaining[$pool] ?? 0.0, 0.0), $effectiveValues[$index] ?? $gross);
@@ -104,7 +104,7 @@ class CreditNoteDiscountAllocator
     }
 
     /**
-     * What each selected course is worth right now, for drawing its bundle discount:
+     * What each selected item is worth right now, for drawing its bundle discount:
      * its line, minus the price adjustments already credited against it, plus the
      * debit note price increases on it that this same note credits.
      *
@@ -144,7 +144,7 @@ class CreditNoteDiscountAllocator
     }
 
     /**
-     * The discount each course drew beyond what is left of its own line, taken off the
+     * The discount each item drew beyond what is left of its own line, taken off the
      * price increases credited beside it, in debit note line order.
      *
      * @param  int[]  $selected
@@ -210,10 +210,10 @@ class CreditNoteDiscountAllocator
     }
 
     /**
-     * Pools whose discount covered every course in them: the bundle was sold for
-     * nothing, so each of its courses was free and none can be over- or under-credited
-     * however the discount is spread. Their courses are cancelled at zero, alone,
-     * together or beside any other course, exactly like a course priced 0.
+     * Pools whose discount covered every item in them: the bundle was sold for
+     * nothing, so each of its items was free and none can be over- or under-credited
+     * however the discount is spread. Their items are cancelled at zero, alone,
+     * together or beside any other item, exactly like an item priced 0.
      *
      * @return string[]
      */

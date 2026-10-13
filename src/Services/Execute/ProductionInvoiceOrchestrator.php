@@ -10,6 +10,7 @@ use Zatca\DTOs\InvoiceSequenceReservation;
 use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaInvoiceStatus;
+use Zatca\Enums\ZatcaSubmissionModel;
 use Zatca\Events\ZatcaInvoiceGenerated;
 use Zatca\Exceptions\CrossEgsDuplicateException;
 use Zatca\Exceptions\ZatcaCredentialsMissingException;
@@ -184,7 +185,7 @@ class ProductionInvoiceOrchestrator
      *     a known source that is always the original, so a replacement would never be
      *     created at all.
      *  2. generate() calls $source->toInvoiceData(), re-reading the host record. The
-     *     host's prices, courses or buyer details may have moved since the sale; a
+     *     host's prices, items or buyer details may have moved since the sale; a
      *     document built from them would not be a regeneration of this invoice but a
      *     different invoice wearing its number.
      *  3. Nothing in generate() expresses the relationship between a rejected document
@@ -566,7 +567,11 @@ class ProductionInvoiceOrchestrator
                 'invoice_hash' => $signed['invoiceHash'],
                 'signed_xml_base64' => $signed['signedXmlBase64'],
                 'qr_code' => $signed['qrCode'],
-                'status' => ZatcaInvoiceStatus::PendingReporting,
+                // Each submission model has its own "signed, waiting to be sent" status, so
+                // nothing that selects by status can hand a Standard document to Reporting.
+                'status' => $locked->submission_model === ZatcaSubmissionModel::Clearance
+                    ? ZatcaInvoiceStatus::PendingClearance
+                    : ZatcaInvoiceStatus::PendingReporting,
             ]);
 
             $didSign = true;

@@ -12,6 +12,7 @@ use Zatca\Services\Security\ZatcaCredentialStore;
 use Zatca\State\EgsRegistry;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Exception\TransferException;
 use Illuminate\Support\Facades\Config;
 
 /**
@@ -167,8 +168,12 @@ class HttpConnector implements ZatcaConnectorInterface
             ]));
 
             return $normalize($response);
-        } catch (RequestException $e) {
-            if ($e->hasResponse()) {
+        } catch (TransferException $e) {
+            // RequestException may carry a response worth normalizing. ConnectException
+            // (connection refused, DNS failure, connect timeout) is a TransferException
+            // but not a RequestException in Guzzle 7, and is recorded as HTTP 0 below
+            // like any other "never got an answer" failure.
+            if ($e instanceof RequestException && $e->hasResponse()) {
                 return $normalize($e->getResponse());
             }
 

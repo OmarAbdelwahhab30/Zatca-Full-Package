@@ -12,6 +12,7 @@ class ZatcaDebitNoteLine extends Model
     protected $guarded = [];
 
     protected $casts = [
+        'item_id' => 'integer',
         'quantity' => 'integer',
         'unit_price' => 'decimal:2',
         'vat_rate' => 'decimal:2',
@@ -30,9 +31,17 @@ class ZatcaDebitNoteLine extends Model
         return $this->belongsTo(ZatcaInvoice::class, 'original_zatca_invoice_id');
     }
 
-    /** The earlier debit note line (an added course) this line adjusts, if any. */
+    /** The earlier debit note line (an added item) this line adjusts, if any. */
     public function sourceDebitNoteLine(): BelongsTo
     {
         return $this->belongsTo(self::class, 'source_debit_note_line_id');
+    }
+
+    /** @deprecated Use `$line->item_id`. Read-only alias kept for code written before the rename. */
+    public function getCourseIdAttribute(): ?int
+    {
+        $value = $this->attributes['item_id'] ?? null;
+
+        return $value === null ? null : (int) $value;
     }
 }

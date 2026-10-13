@@ -2,6 +2,8 @@
 
 namespace Zatca\DTOs;
 
+use Zatca\Enums\ZatcaVatCategory;
+
 /**
  * A document-level `cac:AllowanceCharge` (ChargeIndicator=false — this package
  * only ever emits allowances, never charges). Reduces the document totals
@@ -13,7 +15,7 @@ namespace Zatca\DTOs;
  * poolKey/lineIndexes carry WHICH lines the allowance belongs to. They never
  * reach the XML — ZATCA has no field for them — but they are frozen into the
  * snapshot, because a later Credit Note has to know that this 32.00 belongs to
- * lines 0 and 1 and not to the unrelated course on line 2. Recovering that from
+ * lines 0 and 1 and not to the unrelated item on line 2. Recovering that from
  * the host's Transaction rows afterwards works for a single allowance and
  * becomes guesswork with two, so it is recorded at signing time instead.
  */
@@ -33,6 +35,9 @@ class ZatcaAllowanceCharge
         public readonly float $vatAmount,
         public readonly ?string $poolKey = null,
         public readonly array $lineIndexes = [],
+        public readonly ZatcaVatCategory $vatCategory = ZatcaVatCategory::Standard,
+        public readonly ?string $vatExemptionReasonCode = null,
+        public readonly ?string $vatExemptionReason = null,
     ) {}
 
     public function amountInclVat(): float

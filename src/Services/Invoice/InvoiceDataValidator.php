@@ -4,6 +4,7 @@ namespace Zatca\Services\Invoice;
 
 use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\Enums\ZatcaComplianceDocumentType;
+use Zatca\Enums\ZatcaVatCategory;
 use Zatca\Exceptions\ZatcaException;
 
 /**
@@ -52,6 +53,14 @@ class InvoiceDataValidator
             $this->validateNoteRequirements($data);
         }
 
+        // Every amount in the generated XML is stated in SAR. Another document currency
+        // would also need a second TaxTotal in SAR (BR-KSA-68), which is not generated.
+        if (strtoupper($data->currency) !== 'SAR') {
+            throw new ZatcaException(
+                "[ZATCA] Invoice [{$data->sourceReference}] currency is [{$data->currency}]; only SAR is supported."
+            );
+        }
+
         if ($data->lines === []) {
             throw new ZatcaException(
                 "[ZATCA] Invoice [{$data->sourceReference}] has no lines, so there is nothing to invoice."
@@ -72,6 +81,15 @@ class InvoiceDataValidator
                     .$this->format($allowance->amountExclVat).', VAT '.$this->format($allowance->vatAmount).').'
                 );
             }
+
+            $this->validateVatCategory($data, "allowance {$number}", $allowance->vatCategory, $allowance->vatRate, $allowance->vatAmount, $allowance->vatExemptionReasonCode, $allowance->vatExemptionReason);
+
+            $this->assertWithinOneFil(
+                round($allowance->amountExclVat * $allowance->vatRate / 100, 2),
+                $allowance->vatAmount,
+                $data->sourceReference,
+                "allowance {$number}: VAT amount does not equal the allowance amount × {$allowance->vatRate}%"
+            );
 
             $allowanceNet += $allowance->amountExclVat;
             $allowanceVat += $allowance->vatAmount;
@@ -99,6 +117,27 @@ class InvoiceDataValidator
                 throw new ZatcaException(
                     "[ZATCA] Invoice [{$data->sourceReference}] line {$number} has a negative VAT rate "
                     ."({$line->vatRate})."
+                );
+            }
+
+            $this->validateVatCategory($data, "line {$number}", $line->vatCategory, $line->vatRate, $line->vatAmount, $line->vatExemptionReasonCode, $line->vatExemptionReason);
+
+            // BR-KSA-EN16931-11: line net = quantity × unit price.
+            $this->assertWithinOneFil(
+                round($line->quantity * $line->unitPrice, 2),
+                $line->lineTotalExclVat,
+                $data->sourceReference,
+                "line {$number}: quantity × unit price does not equal the line net amount"
+            );
+
+            // BR-KSA-50: line VAT = line net × rate. A line with a zero net and a positive VAT
+            // is a VAT-only correction (a Debit Note VAT Adjustment) and is exempt from it.
+            if ($line->lineTotalExclVat > 0 || $line->vatAmount == 0.0) {
+                $this->assertWithinOneFil(
+                    round($line->lineTotalExclVat * $line->vatRate / 100, 2),
+                    $line->vatAmount,
+                    $data->sourceReference,
+                    "line {$number}: VAT amount does not equal the line net × {$line->vatRate}%"
                 );
             }
 
@@ -297,6 +336,49 @@ class InvoiceDataValidator
         } catch (ZatcaException) {
             return false;
         }
+    }
+
+    /**
+     * BR-KSA-69 and the EN16931 category rules: standard-rated means a rate above zero
+     * and no exemption; zero-rated and exempt mean 0%, no VAT, and a ZATCA exemption
+     * reason code (VATEX-SA-...) with its text.
+     */
+    private function validateVatCategory(ZatcaInvoiceData $data, string $where, ZatcaVatCategory $category, float $rate, float $vat, ?string $code, ?string $reason): void
+    {
+        $prefix = "[ZATCA] Invoice [{$data->sourceReference}] {$where}";
+
+        if ($category === ZatcaVatCategory::Standard) {
+            if ($rate <= 0) {
+                throw new ZatcaException("{$prefix} is standard-rated (S) with a {$rate}% rate. Use ZatcaVatCategory::ZeroRated or ::Exempt for a 0% item.");
+            }
+
+            return;
+        }
+
+        if ($rate != 0.0 || abs($vat) >= self::EPSILON) {
+            throw new ZatcaException("{$prefix} is VAT category {$category->value} and must have a 0% rate and 0.00 VAT.");
+        }
+
+        if (! is_string($code) || ! preg_match('/^VATEX-SA-[A-Z0-9-]+$/', $code)) {
+            throw new ZatcaException("{$prefix} is VAT category {$category->value} and needs a ZATCA exemption reason code such as VATEX-SA-32 (BR-KSA-69).");
+        }
+
+        if (! is_string($reason) || trim($reason) === '') {
+            throw new ZatcaException("{$prefix} is VAT category {$category->value} and needs the exemption reason text (BR-KSA-69).");
+        }
+    }
+
+    /** Line-level rounding may differ from a recomputation by at most one fil. */
+    private function assertWithinOneFil(float $expected, float $actual, string $reference, string $rule): void
+    {
+        if (abs($actual - $expected) < 0.01 + self::EPSILON) {
+            return;
+        }
+
+        throw new ZatcaException(
+            "[ZATCA] Invoice [{$reference}] does not reconcile — {$rule} (expected "
+            .$this->format($expected).', got '.$this->format($actual).').'
+        );
     }
 
     private function assertEqual(float $actual, float $expected, string $reference, string $rule): void

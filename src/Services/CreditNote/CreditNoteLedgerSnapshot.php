@@ -27,11 +27,11 @@ class CreditNoteLedgerSnapshot
      *   null means no debit note sources, i.e. the original total
      * @param  array<int, float>  $lineAdjustments  original_line_index => price adjustments still standing
      *   against that line (accepted or pending), gross
-     * @param  array<int, float>  $debitLineAdjustments  debit note line id => the same, for a debit note course
+     * @param  array<int, float>  $debitLineAdjustments  debit note line id => the same, for a debit note item
      * @param  array<int, float>  $adjustableLines  original_line_index => the amount a new price adjustment
      *   must stay strictly below. Only lines that are still available appear.
      * @param  array<int, float>  $adjustableDebitLines  debit note line id => the same, for available
-     *   Additional Course lines only
+     *   Additional Item lines only
      * @param  array<string, int[]>  $attachedDebitLineIds  source key => the debit note lines that only
      *   raised that source's price, whatever state they are in. Crediting the source credits these
      *   too — see CreditSource::attachedToKey().
@@ -101,11 +101,11 @@ class CreditNoteLedgerSnapshot
     }
 
     /**
-     * What one course is worth RIGHT NOW across both note kinds: what the invoice charged
+     * What one item is worth RIGHT NOW across both note kinds: what the invoice charged
      * for it, plus every accepted Debit Note price increase on it, minus every Credit Note
      * price adjustment standing against it.
      *
-     * This is a figure to show an admin, so that neither flow presents a course at a price
+     * This is a figure to show an admin, so that neither flow presents an item at a price
      * the other flow has already changed. It is deliberately NOT the cap a new adjustment
      * is held to: adjustableFor() stays per-source, because each source is still credited
      * on its own and folding them together would let one be credited twice.
@@ -119,13 +119,13 @@ class CreditNoteLedgerSnapshot
     }
 
     /**
-     * Everything Credit Notes have taken off this course's value: its price adjustments,
+     * Everything Credit Notes have taken off this item's value: its price adjustments,
      * plus every Debit Note increase on it that a Credit Note has since given back. Without
      * the second part a reversed increase would still count in currentValueFor(), because
      * debitUpliftFor() lists every increase ever accepted.
      *
      * Display only, like currentValueFor(). adjustmentFor() stays the price adjustments
-     * alone: a reversed increase is credited as its own source, never against the course.
+     * alone: a reversed increase is credited as its own source, never against the item.
      */
     public function creditReductionFor(string $sourceKey): float
     {
@@ -196,7 +196,7 @@ class CreditNoteLedgerSnapshot
 
     /**
      * The amount a new price adjustment of this source must stay strictly below, or null
-     * when the source cannot be price-adjusted right now (not available, not a course,
+     * when the source cannot be price-adjusted right now (not available, not an item,
      * or not a source of this invoice).
      */
     public function adjustableFor(string $sourceKey): ?float
@@ -212,7 +212,7 @@ class CreditNoteLedgerSnapshot
 
     /**
      * The amount a new price adjustment of this source must stay strictly below once the
-     * Debit Note increases riding on it are counted in — what the course is actually worth
+     * Debit Note increases riding on it are counted in — what the item is actually worth
      * to correct, not just what the invoice's own line says.
      *
      * adjustableFor() is the source's own room; the increases attached to it are worth
@@ -245,12 +245,12 @@ class CreditNoteLedgerSnapshot
      * increases it has to reverse, and how much is then taken off the source itself.
      *
      * An amount that fits in the source's own room takes nothing else — which is every
-     * ordinary adjustment, unchanged. Only one that would reduce the course below what it
+     * ordinary adjustment, unchanged. Only one that would reduce the item below what it
      * is worth on its own reaches for the increases, and it takes each one WHOLE, because
      * a Debit Note line is credited or it is not; there is no half of one. Whatever is
      * left afterwards must still fit in the source's own room, and must not be nothing:
      * an amount that only reverses increases is a credit of those increases, which is
-     * issued by naming them, not by adjusting a course this takes nothing off.
+     * issued by naming them, not by adjusting an item this takes nothing off.
      *
      * Taking them in the same note is what keeps the books straight: an increase this
      * adjustment has already drawn on is credited by it, so nothing can credit it twice.
@@ -271,7 +271,7 @@ class CreditNoteLedgerSnapshot
 
         foreach ($this->attachedAvailableDebitLineIds($sourceKey) as $id) {
             if ($remaining < $own) {
-                break; // What is left already fits the course itself.
+                break; // What is left already fits the item itself.
             }
 
             $value = round(($this->debitSources[$id] ?? null)?->grossInclVat() ?? 0.0, 2);

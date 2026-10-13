@@ -35,7 +35,7 @@ use Illuminate\Support\Str;
  *     mid-transaction.
  *  3. There is consequently NO line-availability check and no active_line_key
  *     backstop. Two admins may issue two debit notes against the same invoice, for
- *     the same course, at the same moment, and both are valid documents. That is
+ *     the same item, at the same moment, and both are valid documents. That is
  *     the business rule, not an oversight: multiple debit notes per invoice are
  *     explicitly allowed. Duplicate-charge prevention is a human review concern,
  *     and the Idempotency-Key covers the only case a machine can judge — the same
@@ -43,7 +43,7 @@ use Illuminate\Support\Str;
  *
  * The original invoice, its lines and its snapshot are never read for values and
  * never written to. Even Price/VAT Adjustment, which references an original line
- * index, only records that reference. The same holds for an adjustment of a course
+ * index, only records that reference. The same holds for an adjustment of an item
  * an earlier Debit Note added: it records that debit note line's id and nothing more.
  */
 class DebitNoteIssuer
@@ -52,7 +52,7 @@ class DebitNoteIssuer
         private readonly DebitNoteEligibilityPolicy $eligibilityPolicy = new DebitNoteEligibilityPolicy,
         private readonly DebitNoteDataFactory $dataFactory = new DebitNoteDataFactory,
         private readonly InvoiceDataValidator $validator = new InvoiceDataValidator,
-        // Reused, not duplicated: which courses accepted debit notes added to this
+        // Reused, not duplicated: which items accepted debit notes added to this
         // original, and which items have been credited, are exactly what the Credit Note
         // flow already decides, and the two flows must never disagree about either.
         private readonly CreditNoteLedger $creditLedger = new CreditNoteLedger,
@@ -164,7 +164,7 @@ class DebitNoteIssuer
                     'line_total_excl_vat' => $line->lineTotalExclVat,
                     'vat_amount' => $line->vatAmount,
                     'line_total_incl_vat' => $line->lineTotalInclVat(),
-                    'course_id' => $line->courseId,
+                    'item_id' => $line->itemId,
                 ]);
             }
 
@@ -178,7 +178,7 @@ class DebitNoteIssuer
             ZatcaDebitNoteEvent::record($debitNote->getKey(), 'requested', $requestedBy, [
                 'reason_type' => $reasonType->value,
                 'line_count' => count($lines),
-                'course_ids' => array_values(array_filter(array_map(fn ($l) => $l->courseId, $lines))),
+                'item_ids' => array_values(array_filter(array_map(fn ($l) => $l->itemId, $lines))),
                 'total_incl_vat' => $debitNoteData->totalInclVat,
             ]);
 
@@ -193,8 +193,8 @@ class DebitNoteIssuer
     /**
      * What a line that adjusts something may reference:
      *
-     *  - A course an earlier Debit Note added must be an Additional Course line of an
-     *    ACCEPTED debit note against this same original — the courses the Credit Note
+     *  - An item an earlier Debit Note added must be an Additional Item line of an
+     *    ACCEPTED debit note against this same original — the items the Credit Note
      *    flow offers for crediting, so both flows agree on what exists — and the line
      *    must not also name an original line.
      *  - Either kind of item must still be 'available' in the Credit Note ledger. One

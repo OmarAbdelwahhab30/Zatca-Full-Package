@@ -18,15 +18,15 @@ use Illuminate\Support\Facades\Schema;
  *    against one invoice without interfering with each other or with credit notes.
  *
  * `original_line_index` is therefore nullable and purely informational:
- *  - Additional Course: null — the charge is for something that was never on the
- *    original invoice. `course_id` says which course it is.
+ *  - Additional Item: null — the charge is for something that was never on the
+ *    original invoice. `item_id` says which item it is.
  *  - Price Adjustment / VAT Adjustment: set, to record WHICH original line the
  *    adjustment relates to. It is a reference only. Nothing in this system ever
  *    edits, re-prices or re-snapshots the original line it points at.
  *  - Other: null.
  *
- * `course_id` is nullable and used by the Additional Course reason, so the host's
- * acceptance listener can create the access Transaction for the right course
+ * `item_id` is nullable and used by the Additional Item reason, so the host's
+ * acceptance listener can create the access Transaction for the right item
  * without re-parsing a free-text description.
  */
 return new class extends Migration
@@ -37,7 +37,7 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('debit_note_id')->index();
             $table->unsignedBigInteger('original_zatca_invoice_id');
-            // Nullable — see class docblock. An Additional Course line references no
+            // Nullable — see class docblock. An Additional Item line references no
             // original line at all.
             $table->unsignedInteger('original_line_index')->nullable();
 
@@ -49,7 +49,7 @@ return new class extends Migration
             $table->decimal('vat_amount', 14, 2);
             $table->decimal('line_total_incl_vat', 14, 2);
 
-            $table->unsignedBigInteger('course_id')->nullable()->index();
+            $table->unsignedBigInteger('item_id')->nullable()->index();
 
             $table->timestamps();
 
