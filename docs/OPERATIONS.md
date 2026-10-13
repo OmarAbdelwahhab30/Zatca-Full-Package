@@ -331,7 +331,7 @@ php artisan optimize:clear
 php artisan queue:restart
 ```
 
-Safe to do with work in flight: queued jobs exit quietly rather than failing, claims are released, and no invoice status or `attempt_count` is written. Payments, enrollment, local invoices and invoice emails keep working; onboarding and the diagnostic commands stay available so an EGS can still be repaired while invoicing is off.
+Safe to do with work in flight: queued jobs exit quietly rather than failing, claims are released, and no invoice status or `attempt_count` is written. Payments, order fulfilment, local invoices and invoice emails keep working; onboarding and the diagnostic commands stay available so an EGS can still be repaired while invoicing is off.
 
 Full behaviour, including what invoice PDFs look like while disabled, is in the README's [Disabling ZATCA](../README.md#disabling-zatca) section.
 

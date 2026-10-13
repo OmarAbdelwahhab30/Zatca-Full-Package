@@ -210,7 +210,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
 
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original,
-            ZatcaDebitNoteReason::AdditionalCourse,
+            ZatcaDebitNoteReason::AdditionalItem,
             [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00, null, 44)],
             'Additional course added',
             (string) Str::uuid(),
@@ -237,7 +237,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
 
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original->fresh(),
-            ZatcaDebitNoteReason::AdditionalCourse,
+            ZatcaDebitNoteReason::AdditionalItem,
             [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00, null, 44)],
             'x',
             (string) Str::uuid(),
@@ -256,7 +256,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $original = $this->clearedStandardOriginal(7203);
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original,
-            ZatcaDebitNoteReason::AdditionalCourse,
+            ZatcaDebitNoteReason::AdditionalItem,
             [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00, null, 44)],
             'x',
             (string) Str::uuid(),
@@ -277,7 +277,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $original = $this->clearedStandardOriginal(7204);
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original,
-            ZatcaDebitNoteReason::AdditionalCourse,
+            ZatcaDebitNoteReason::AdditionalItem,
             [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00, null, 44)],
             'x',
             (string) Str::uuid(),
@@ -311,7 +311,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $original = $this->clearedStandardOriginal(7205);
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original,
-            ZatcaDebitNoteReason::AdditionalCourse,
+            ZatcaDebitNoteReason::AdditionalItem,
             [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00, null, 44)],
             'x',
             (string) Str::uuid(),

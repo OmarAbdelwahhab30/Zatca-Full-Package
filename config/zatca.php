@@ -81,8 +81,8 @@ return [
     // Jobs already on the queue exit quietly instead of failing, and invoice statuses and
     // submission-attempt counters are left exactly as they were.
     //
-    // Unaffected: payments, enrollment, local application invoices built by
-    // InvoiceBuilder, and invoice emails. Onboarding and the read-only diagnostic
+    // Unaffected: payments, order fulfilment, your app's own local invoices (e.g. built by
+    // an InvoiceBuilder class), and invoice emails. Onboarding and the read-only diagnostic
     // commands also keep working, so an EGS can still be prepared or repaired while the
     // switch is off.
     //

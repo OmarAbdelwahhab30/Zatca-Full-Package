@@ -9,6 +9,7 @@ use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\DTOs\ZatcaInvoiceLine;
 use Zatca\Enums\ZatcaComplianceDocumentType;
 use DateTimeImmutable;
+use Illuminate\Support\Str;
 
 /**
  * Builds the canned invoice used only by `zatca:onboard test-invoice`
@@ -39,7 +40,9 @@ class ComplianceTestInvoiceDataFactory
 
         return new ZatcaInvoiceData(
             egsIdentifier: $egsIdentifier,
-            sourceReference: 'compliance-test-'.now()->format('YmdHis'),
+            // Unique per document: two compliance documents built in the same second must not
+            // share an invoice number (a note's own ID would otherwise equal the invoice it bills).
+            sourceReference: 'compliance-test-'.now()->format('YmdHis').'-'.Str::lower(Str::random(6)),
             buyerName: null,
             buyerVatNumber: null,
             issueDateTime: new DateTimeImmutable,

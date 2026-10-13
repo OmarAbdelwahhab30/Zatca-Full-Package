@@ -15,7 +15,9 @@ use Zatca\Models\ZatcaDebitNote;
 use Zatca\Models\ZatcaEgsCredential;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Models\ZatcaSubmissionAttempt;
+use Zatca\Jobs\RetryZatcaClearanceJob;
 use Zatca\Services\Connectors\ConnectorFactory;
+use Zatca\Support\SubmissionRetry;
 use Zatca\Support\ZatcaGate;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -58,6 +60,16 @@ trait ReportsZatcaInvoice
 
         if (! $invoice || $invoice->status->isTerminalSuccess()) {
             return; // Missing, or already reported — never resend the same invoice.
+        }
+
+        // Hard guard: a Standard document is cleared, never reported. However it got here
+        // (an old queued job, a status set by hand), hand it to the clearance path instead
+        // of posting it to the Reporting endpoint.
+        if (SubmissionRetry::isClearance($invoice)) {
+            Log::warning("[ZATCA] Document #{$invoice->id} is a Clearance document; rerouted from reporting to clearance.");
+            RetryZatcaClearanceJob::dispatch($invoice->id, $triggeredBy);
+
+            return;
         }
 
         $certificateState = ZatcaEgsCredential::query()
@@ -193,7 +205,7 @@ trait ReportsZatcaInvoice
             }
         }
 
-        // Same after-commit reasoning: the host's listener grants course access off the
+        // Same after-commit reasoning: the host's listener grants access off the
         // back of this, and must see accepted_at already persisted.
         if ($acceptedDebitNoteId !== null) {
             $debitNote = ZatcaDebitNote::query()->find($acceptedDebitNoteId);

@@ -75,6 +75,9 @@ class DebitNoteDataFactory
                 vatRate: $line->vatRate,
                 lineTotalExclVat: $line->lineTotalExclVat,
                 vatAmount: $line->vatAmount,
+                vatCategory: $line->vatCategory,
+                vatExemptionReasonCode: $line->vatExemptionReasonCode,
+                vatExemptionReason: $line->vatExemptionReason,
             );
         }
 
@@ -103,7 +106,7 @@ class DebitNoteDataFactory
             billingReferenceId: $billingReferenceId,
             adjustmentReason: $reason,
             // Standard only: the ORIGINAL invoice's own frozen buyer/supply date — never
-            // re-resolved from the host's current company/student state. For a Simplified
+            // re-resolved from the host's current company/customer state. For a Simplified
             // original both are already null, so this is a no-op for B2C.
             buyer: $original->buyer,
             supplyDate: $original->supplyDate,

@@ -61,10 +61,10 @@ class CreditNoteDebitSourceTest extends TestCase
     }
 
     /** Bug 1: the course a debit note added is offered, and credited at its own value. */
-    public function test_an_accepted_additional_course_line_becomes_creditable(): void
+    public function test_an_accepted_additional_item_line_becomes_creditable(): void
     {
         $original = $this->reportedInvoice(8001);
-        $debitNote = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00, courseId: 55);
+        $debitNote = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00, itemId: 55);
         $debitLineId = $debitNote->lines->first()->id;
 
         $ledger = $this->ledger($original);
@@ -82,7 +82,7 @@ class CreditNoteDebitSourceTest extends TestCase
         $this->assertSame(CreditSource::TYPE_DEBIT_NOTE_LINE, $line->source_type);
         $this->assertSame((int) $debitNote->id, (int) $line->source_debit_note_id);
         $this->assertSame((int) $debitLineId, (int) $line->source_debit_note_line_id);
-        $this->assertSame(55, (int) $line->course_id);
+        $this->assertSame(55, (int) $line->item_id);
         $this->assertSame('dn_line:'.$debitLineId, $line->active_line_key);
         $this->assertNull($line->discount_pool_key);
 
@@ -109,7 +109,7 @@ class CreditNoteDebitSourceTest extends TestCase
 
         foreach ($cases as [$sourceId, $state, $refusal]) {
             $original = $this->reportedInvoice($sourceId);
-            $note = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00, accept: false);
+            $note = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00, accept: false);
 
             if ($state !== null) {
                 $note->update([$state => now()]);
@@ -143,7 +143,7 @@ class CreditNoteDebitSourceTest extends TestCase
 
         // A pending debit note adds nothing creditable — and while it is in progress, no
         // new note may be issued at all.
-        $debitNote = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00, accept: false);
+        $debitNote = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00, accept: false);
         $this->assertTrue($this->ledger($original)->isFullyCredited());
         $this->assertSame(CreditNoteEligibilityVerdict::ADJUSTMENT_IN_PROGRESS, $this->verdict($original)->reason);
 
@@ -293,7 +293,7 @@ class CreditNoteDebitSourceTest extends TestCase
     {
         $original = $this->reportedInvoice(8019);
 
-        $addedLineId = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00, courseId: 55)
+        $addedLineId = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00, itemId: 55)
             ->lines->first()->id;
         $adjustmentLineId = $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 50.00, referencedDebitLineId: $addedLineId)
             ->lines->first()->id;
@@ -351,7 +351,7 @@ class CreditNoteDebitSourceTest extends TestCase
     public function test_the_same_debit_note_line_cannot_be_credited_twice(): void
     {
         $original = $this->reportedInvoice(8005);
-        $debitLineId = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00)->lines->first()->id;
+        $debitLineId = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00)->lines->first()->id;
 
         $this->issue($original, [], [$debitLineId])->update(['accepted_at' => now()]);
 
@@ -365,7 +365,7 @@ class CreditNoteDebitSourceTest extends TestCase
     public function test_the_unique_key_backstops_a_debit_note_line(): void
     {
         $original = $this->reportedInvoice(8006);
-        $debitLineId = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00)->lines->first()->id;
+        $debitLineId = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00)->lines->first()->id;
 
         $first = $this->issue($original, [], [$debitLineId]);
 
@@ -385,7 +385,7 @@ class CreditNoteDebitSourceTest extends TestCase
     public function test_cancelling_a_credit_note_releases_its_debit_note_line(): void
     {
         $original = $this->reportedInvoice(8007);
-        $debitLineId = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00)->lines->first()->id;
+        $debitLineId = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00)->lines->first()->id;
 
         $creditNote = $this->issue($original, [], [$debitLineId]);
         $this->assertSame('reserved', $this->ledger($original)->debitLineStates[$debitLineId]);
@@ -402,7 +402,7 @@ class CreditNoteDebitSourceTest extends TestCase
     public function test_replaying_the_same_request_never_claims_the_line_twice(): void
     {
         $original = $this->reportedInvoice(8008);
-        $debitLineId = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00)->lines->first()->id;
+        $debitLineId = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00)->lines->first()->id;
         $key = (string) Str::uuid();
 
         $first = $this->issuer()->issue($original, ZatcaCreditNoteType::Partial, [], 'x', $key, null, null, [$debitLineId]);
@@ -417,7 +417,7 @@ class CreditNoteDebitSourceTest extends TestCase
     public function test_a_note_can_credit_an_original_line_and_a_debit_note_line_together(): void
     {
         $original = $this->reportedInvoice(8009);
-        $debitLineId = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00)->lines->first()->id;
+        $debitLineId = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00)->lines->first()->id;
 
         $creditNote = $this->issue($original, [0], [$debitLineId]);
 
@@ -435,9 +435,9 @@ class CreditNoteDebitSourceTest extends TestCase
     public function test_full_credit_includes_accepted_debit_note_lines(): void
     {
         $original = $this->reportedInvoice(8010);
-        $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00);
+        $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00);
         // One that never became a source: cancelled, so it no longer blocks a new note.
-        $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 60.00, accept: false)
+        $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 60.00, accept: false)
             ->update(['cancelled_at' => now()]);
 
         $creditNote = $this->issuer()->issue($original, ZatcaCreditNoteType::Full, [], 'Full', (string) Str::uuid());
@@ -453,7 +453,7 @@ class CreditNoteDebitSourceTest extends TestCase
         $this->issuer()->issue($original, ZatcaCreditNoteType::Full, [], 'Full', (string) Str::uuid())
             ->update(['accepted_at' => now()]);
 
-        $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00);
+        $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00);
 
         $creditNote = $this->issuer()->issue($original, ZatcaCreditNoteType::Full, [], 'Full again', (string) Str::uuid());
 
@@ -497,7 +497,7 @@ class CreditNoteDebitSourceTest extends TestCase
     {
         $original = $this->reportedInvoice(8013);
         $other = $this->reportedInvoice(8014);
-        $foreignLineId = $this->debitNote($other, ZatcaDebitNoteReason::AdditionalCourse, 100.00)->lines->first()->id;
+        $foreignLineId = $this->debitNote($other, ZatcaDebitNoteReason::AdditionalItem, 100.00)->lines->first()->id;
 
         $this->assertSame([], $this->ledger($original)->debitSources);
 
@@ -509,7 +509,7 @@ class CreditNoteDebitSourceTest extends TestCase
     public function test_a_debit_note_line_that_disagrees_with_its_signed_snapshot_is_not_creditable(): void
     {
         $original = $this->reportedInvoice(8015);
-        $line = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00)->lines->first();
+        $line = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00)->lines->first();
 
         $line->update(['line_total_excl_vat' => 90.00]);
 
@@ -528,7 +528,7 @@ class CreditNoteDebitSourceTest extends TestCase
         $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 40.00, referencedIndex: 0);
         $this->issue($original, [0], [])->update(['accepted_at' => now()]);
 
-        $b = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00)->lines->first()->id;
+        $b = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00)->lines->first()->id;
 
         $this->issue($original, [], [$b])->update(['accepted_at' => now()]);
 
@@ -545,7 +545,7 @@ class CreditNoteDebitSourceTest extends TestCase
     {
         $original = $this->reportedInvoice(8017, [['Course A', 120.00], ['Course B', 200.00]], [32.00, 'bundle:1', [0, 1]]);
 
-        $added = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00)->lines->first()->id;
+        $added = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00)->lines->first()->id;
         $adjustment = $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 50.00, referencedIndex: 0)->lines->first()->id;
 
         $addedCredit = $this->issue($original, [], [$added]);
@@ -575,7 +575,7 @@ class CreditNoteDebitSourceTest extends TestCase
         $this->assertSame(288.00, (float) $full->total_incl_vat);
 
         // An added course: a price adjustment of a credited bundle line is refused (bug #33280).
-        $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 50.00, courseId: 44);
+        $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 50.00, itemId: 44);
 
         $reopened = $this->issuer()->issue($original, ZatcaCreditNoteType::Full, [], 'Full again', (string) Str::uuid());
         $reopened->update(['accepted_at' => now()]);
@@ -716,7 +716,7 @@ class CreditNoteDebitSourceTest extends TestCase
     {
         $original = $this->reportedInvoice(8032, [['Course A', 1000.00]]);
 
-        $added = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 300.00);
+        $added = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 300.00);
         $addedLineId = (int) $added->lines->first()->getKey();
         $key = CreditSource::debitNoteLineKey($addedLineId);
 
@@ -921,7 +921,7 @@ class CreditNoteDebitSourceTest extends TestCase
         ZatcaDebitNoteReason $reason,
         float $gross,
         ?int $referencedIndex = null,
-        ?int $courseId = null,
+        ?int $itemId = null,
         bool $accept = true,
         bool $vatOnly = false,
         ?int $referencedDebitLineId = null,
@@ -933,14 +933,14 @@ class CreditNoteDebitSourceTest extends TestCase
             $original->fresh(),
             $reason,
             [new DebitNoteLineInput(
-                description: $reason === ZatcaDebitNoteReason::AdditionalCourse ? 'Course B' : 'Adjustment',
+                description: $reason === ZatcaDebitNoteReason::AdditionalItem ? 'Course B' : 'Adjustment',
                 quantity: 1,
                 unitPrice: $net,
                 vatRate: 15.0,
                 lineTotalExclVat: $net,
                 vatAmount: $vat,
                 originalLineIndex: $referencedIndex,
-                courseId: $courseId,
+                itemId: $itemId,
                 sourceDebitNoteLineId: $referencedDebitLineId,
             )],
             'Debit note reason',

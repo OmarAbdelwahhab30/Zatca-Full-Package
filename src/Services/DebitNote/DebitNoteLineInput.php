@@ -2,6 +2,8 @@
 
 namespace Zatca\Services\DebitNote;
 
+use Zatca\Enums\ZatcaVatCategory;
+
 /**
  * One line an admin is asking a Debit Note to add.
  *
@@ -15,28 +17,40 @@ namespace Zatca\Services\DebitNote;
  * the plain invoice path follows. InvoiceDataValidator is what decides whether
  * they reconcile, and it runs before an ICV is ever spent.
  *
- * Immutable, and host-agnostic: `courseId` is an opaque integer to this package.
+ * Immutable, and host-agnostic: `itemId` is an opaque integer to this package (your
+ * product, service or SKU id). `courseId` is its deprecated old name.
  */
 class DebitNoteLineInput
 {
+    /** Your own product/service id for an Additional Item line, or null. */
+    public readonly ?int $itemId;
+
+    /** @deprecated Use $itemId. Always equal to it. */
+    public readonly ?int $courseId;
+
     /**
      * @param  string  $description  what appears on the document and in the XML.
-     * @param  int  $quantity  always ≥ 1 (InvoiceDataValidator enforces it). Every Coursefer
-     *   line is quantity 1 today, but nothing here assumes that.
+     * @param  int  $quantity  always ≥ 1 (InvoiceDataValidator enforces it).
      * @param  float  $unitPrice  per-unit amount excluding VAT.
      * @param  float  $vatRate  percentage, e.g. 15.0.
      * @param  float  $lineTotalExclVat  net for the whole line. May legitimately be 0.00 for a
      *   VAT Adjustment line, where the ONLY thing being charged is under-collected VAT.
      * @param  float  $vatAmount  VAT for the whole line.
      * @param  int|null  $originalLineIndex  informational back-reference to the original invoice
-     *   line this adjusts (Price/VAT Adjustment). Null for Additional Course and Other. Nothing
+     *   line this adjusts (Price/VAT Adjustment). Null for Additional Item and Other. Nothing
      *   in this package or the host ever writes to the line it points at.
-     * @param  int|null  $courseId  host course id, for an Additional Course line, so the host's
-     *   acceptance listener can grant access without parsing the description.
+     * @param  int|null  $courseId  deprecated alias of $itemId, kept in its original position so
+     *   positional callers keep working.
      * @param  int|null  $sourceDebitNoteLineId  informational back-reference to the Additional
-     *   Course line of an ACCEPTED earlier Debit Note this adjusts — for a course that was never
+     *   Item line of an ACCEPTED earlier Debit Note this adjusts — for an item that was never
      *   on the original invoice. Mutually exclusive with $originalLineIndex; DebitNoteIssuer
      *   refuses a line that sets both, or one that names anything else.
+     * @param  int|null  $itemId  your own product/service id, for an Additional Item line, so your
+     *   ZatcaDebitNoteAccepted listener can deliver it without parsing the description. Stored
+     *   in the `item_id` column.
+     * @param  ZatcaVatCategory  $vatCategory  S (default), or Z/E for a zero-rated/exempt charge.
+     * @param  string|null  $vatExemptionReasonCode  e.g. "VATEX-SA-32". Required for Z/E.
+     * @param  string|null  $vatExemptionReason  the reason text. Required for Z/E.
      */
     public function __construct(
         public readonly string $description,
@@ -46,9 +60,22 @@ class DebitNoteLineInput
         public readonly float $lineTotalExclVat,
         public readonly float $vatAmount,
         public readonly ?int $originalLineIndex = null,
-        public readonly ?int $courseId = null,
+        ?int $courseId = null,
         public readonly ?int $sourceDebitNoteLineId = null,
-    ) {}
+        ?int $itemId = null,
+        public readonly ZatcaVatCategory $vatCategory = ZatcaVatCategory::Standard,
+        public readonly ?string $vatExemptionReasonCode = null,
+        public readonly ?string $vatExemptionReason = null,
+    ) {
+        if ($itemId !== null && $courseId !== null && $itemId !== $courseId) {
+            throw new \InvalidArgumentException(
+                "Give itemId or its deprecated alias courseId, not two different values ({$itemId} vs {$courseId})."
+            );
+        }
+
+        $this->itemId = $itemId ?? $courseId;
+        $this->courseId = $this->itemId;
+    }
 
     public function lineTotalInclVat(): float
     {
@@ -60,6 +87,8 @@ class DebitNoteLineInput
      */
     public static function fromArray(array $row): self
     {
+        $itemId = $row['item_id'] ?? $row['course_id'] ?? null;
+
         return new self(
             description: (string) ($row['description'] ?? ''),
             quantity: (int) ($row['quantity'] ?? 1),
@@ -70,10 +99,13 @@ class DebitNoteLineInput
             originalLineIndex: isset($row['original_line_index']) && $row['original_line_index'] !== null
                 ? (int) $row['original_line_index']
                 : null,
-            courseId: isset($row['course_id']) && $row['course_id'] !== null ? (int) $row['course_id'] : null,
             sourceDebitNoteLineId: isset($row['source_debit_note_line_id']) && $row['source_debit_note_line_id'] !== null
                 ? (int) $row['source_debit_note_line_id']
                 : null,
+            itemId: $itemId !== null ? (int) $itemId : null,
+            vatCategory: ZatcaVatCategory::tryFrom((string) ($row['vat_category'] ?? '')) ?? ZatcaVatCategory::Standard,
+            vatExemptionReasonCode: $row['vat_exemption_reason_code'] ?? null,
+            vatExemptionReason: $row['vat_exemption_reason'] ?? null,
         );
     }
 }

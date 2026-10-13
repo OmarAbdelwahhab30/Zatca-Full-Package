@@ -175,7 +175,7 @@ class DebitNoteLifecycleTest extends TestCase
 
         return app(DebitNoteIssuer::class)->issue(
             $original,
-            ZatcaDebitNoteReason::AdditionalCourse,
+            ZatcaDebitNoteReason::AdditionalItem,
             [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00, null, 44)],
             'Additional course',
             (string) Str::uuid(),

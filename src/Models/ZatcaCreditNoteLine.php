@@ -13,6 +13,7 @@ class ZatcaCreditNoteLine extends Model
     protected $guarded = [];
 
     protected $casts = [
+        'item_id' => 'integer',
         'quantity' => 'integer',
         'unit_price' => 'decimal:2',
         'vat_rate' => 'decimal:2',
@@ -44,8 +45,8 @@ class ZatcaCreditNoteLine extends Model
     }
 
     /**
-     * A partial credit of one course's value (see ZatcaCreditNoteReason::PriceAdjustment).
-     * Neither an original-line claim nor a debit-note-line claim: the course it adjusts
+     * A partial credit of one item's value (see ZatcaCreditNoteReason::PriceAdjustment).
+     * Neither an original-line claim nor a debit-note-line claim: the item it adjusts
      * stays creditable, so callers that read claims by source must leave these out.
      */
     public function isPriceAdjustment(): bool
@@ -77,13 +78,21 @@ class ZatcaCreditNoteLine extends Model
 
     /**
      * "pa:{credit_note_id}:{source_key}" — a price adjustment's key. It claims no source
-     * (a course can be adjusted more than once), so it is keyed by its own note; the
-     * source key is part of it because one note may adjust several courses, and the
+     * (an item can be adjusted more than once), so it is keyed by its own note; the
+     * source key is part of it because one note may adjust several items, and the
      * column is unique. It still lives in active_line_key so that cancelling a note
      * releases it by the same single mechanism as every other claim.
      */
     public static function priceAdjustmentKey(int $creditNoteId, string $sourceKey): string
     {
         return 'pa:'.$creditNoteId.':'.$sourceKey;
+    }
+
+    /** @deprecated Use `$line->item_id`. Read-only alias kept for code written before the rename. */
+    public function getCourseIdAttribute(): ?int
+    {
+        $value = $this->attributes['item_id'] ?? null;
+
+        return $value === null ? null : (int) $value;
     }
 }

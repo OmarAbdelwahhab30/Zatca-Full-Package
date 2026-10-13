@@ -119,7 +119,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
 
         $cancellation = $this->cancelLines($original, [0]);
 
-        $this->assertSame(ZatcaCreditNoteReason::CourseCancellation, $cancellation->reason_type);
+        $this->assertSame(ZatcaCreditNoteReason::ItemCancellation, $cancellation->reason_type);
         $this->assertSame(500.00, (float) $cancellation->total_incl_vat);
         $this->assertSame(CreditSource::TYPE_INVOICE_LINE, $cancellation->lines->sole()->source_type);
 
@@ -246,10 +246,10 @@ class CreditNotePriceAdjustmentTest extends TestCase
     }
 
     /** A course a debit note added can be adjusted too, and crediting it later takes only what is left. */
-    public function test_an_additional_course_from_a_debit_note_can_be_adjusted(): void
+    public function test_an_additional_item_from_a_debit_note_can_be_adjusted(): void
     {
         $original = $this->reportedInvoice(9110);
-        $debitNote = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00, courseId: 55);
+        $debitNote = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00, itemId: 55);
         $debitLineId = $debitNote->lines->sole()->id;
 
         $this->assertSame(100.00, $this->ledger($original)->adjustableFor('dn_line:'.$debitLineId));
@@ -263,7 +263,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $this->assertNull($line->original_line_index);
         $this->assertSame((int) $debitNote->id, (int) $line->source_debit_note_id);
         $this->assertSame((int) $debitLineId, (int) $line->source_debit_note_line_id);
-        $this->assertSame(55, (int) $line->course_id);
+        $this->assertSame(55, (int) $line->item_id);
 
         $ledger = $this->ledger($original);
         $this->assertSame('available', $ledger->debitLineStates[$debitLineId]);
@@ -535,7 +535,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
     public function test_one_note_can_correct_an_original_course_and_an_added_one(): void
     {
         $original = $this->reportedInvoice(9144, [['Course A', 700.00]]);
-        $addedLineId = (int) $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 500.00, courseId: 77)
+        $addedLineId = (int) $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 500.00, itemId: 77)
             ->lines->first()->getKey();
         $addedKey = CreditSource::debitNoteLineKey($addedLineId);
 
@@ -636,7 +636,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
         ZatcaDebitNoteReason $reason,
         float $gross,
         ?int $referencedIndex = null,
-        ?int $courseId = null,
+        ?int $itemId = null,
         bool $vatOnly = false,
     ): ZatcaDebitNote {
         $net = $vatOnly ? 0.00 : round($gross / 1.15, 2);
@@ -646,14 +646,14 @@ class CreditNotePriceAdjustmentTest extends TestCase
             $original->fresh(),
             $reason,
             [new DebitNoteLineInput(
-                description: $reason === ZatcaDebitNoteReason::AdditionalCourse ? 'Course B' : 'Adjustment',
+                description: $reason === ZatcaDebitNoteReason::AdditionalItem ? 'Course B' : 'Adjustment',
                 quantity: 1,
                 unitPrice: $net,
                 vatRate: 15.0,
                 lineTotalExclVat: $net,
                 vatAmount: $vat,
                 originalLineIndex: $referencedIndex,
-                courseId: $courseId,
+                itemId: $itemId,
             )],
             'Debit note reason',
             (string) Str::uuid(),

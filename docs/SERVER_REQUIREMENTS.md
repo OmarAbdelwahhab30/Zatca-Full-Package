@@ -171,7 +171,7 @@ NC='\033[0m'
 
 echo -e "${GREEN}=== Starting ZATCA Production Server Setup ===${NC}"
 
-read -p "Enter absolute path to your Laravel Application (e.g. /var/www/coursefer): " APP_DIR
+read -p "Enter absolute path to your Laravel Application (e.g. /var/www/my-shop): " APP_DIR
 
 if [ ! -f "$APP_DIR/artisan" ]; then
     echo -e "${RED}Error: Could not find artisan file at $APP_DIR${NC}"

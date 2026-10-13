@@ -5,11 +5,11 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Why a Credit Note was issued: 'course_cancellation' or 'price_adjustment' — see
+ * Why a Credit Note was issued: 'item_cancellation' or 'price_adjustment' — see
  * Zatca\Enums\ZatcaCreditNoteReason.
  *
- * Nullable with no backfill: every note issued before this column existed was a
- * course cancellation, and ZatcaCreditNote::reason() reads NULL exactly that way, so
+ * Nullable with no backfill: every note issued before this column existed was an
+ * item cancellation, and ZatcaCreditNote::reason() reads NULL exactly that way, so
  * no existing row needs rewriting.
  *
  * A price adjustment's line rows need no schema change. They use

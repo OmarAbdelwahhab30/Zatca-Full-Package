@@ -15,7 +15,9 @@ use Zatca\Models\ZatcaDebitNote;
 use Zatca\Models\ZatcaEgsCredential;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Models\ZatcaSubmissionAttempt;
+use Zatca\Jobs\RetryZatcaInvoiceJob;
 use Zatca\Services\Connectors\ConnectorFactory;
+use Zatca\Support\SubmissionRetry;
 use Zatca\Support\ZatcaGate;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +66,15 @@ trait ClearsZatcaInvoice
 
         if (! $invoice || $invoice->status->isTerminalSuccess()) {
             return; // Missing, or already cleared — never resend the same document.
+        }
+
+        // Hard guard, mirror of ReportsZatcaInvoice: a Simplified document is reported,
+        // never cleared.
+        if (! SubmissionRetry::isClearance($invoice)) {
+            Log::warning("[ZATCA] Document #{$invoice->id} is a Reporting document; rerouted from clearance to reporting.");
+            RetryZatcaInvoiceJob::dispatch($invoice->id, $triggeredBy);
+
+            return;
         }
 
         $certificateState = ZatcaEgsCredential::query()

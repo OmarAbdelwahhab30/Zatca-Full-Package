@@ -110,18 +110,21 @@ class ContractInventoryCharacterizationTest extends TestCase
     public function test_the_dispatch_site_inventory_is_unchanged(): void
     {
         $this->assertSame([
-            'Console/Commands/ReportPendingInvoices.php' => ['RetryZatcaClearanceJob' => 1, 'RetryZatcaInvoiceJob' => 1],
-            'Console/Commands/RequeueInvoices.php' => ['RetryZatcaInvoiceJob' => 1],
             // P25: these five now branch between Report.../Clear... at dispatch time,
             // so both class-name tokens legitimately appear once each in the source.
             'Jobs/CompleteZatcaInvoiceGenerationJob.php' => ['ClearZatcaInvoiceJob' => 1, 'ReportZatcaInvoiceJob' => 1],
+            // Each send path hands a document of the other model to the right one (hard guard).
+            'Jobs/Concerns/ClearsZatcaInvoice.php' => ['RetryZatcaInvoiceJob' => 1],
+            'Jobs/Concerns/ReportsZatcaInvoice.php' => ['RetryZatcaClearanceJob' => 1],
             'Jobs/GenerateZatcaCreditNoteJob.php' => ['ClearZatcaInvoiceJob' => 1, 'ReportZatcaInvoiceJob' => 1],
             'Jobs/GenerateZatcaDebitNoteJob.php' => ['ClearZatcaInvoiceJob' => 1, 'ReportZatcaInvoiceJob' => 1],
             'Jobs/GenerateZatcaInvoiceJob.php' => ['ClearZatcaInvoiceJob' => 1, 'ReportZatcaInvoiceJob' => 1],
             'Jobs/RegenerateZatcaInvoiceJob.php' => ['ClearZatcaInvoiceJob' => 1, 'ReportZatcaInvoiceJob' => 1],
-            'Services/Certificate/CertificateLifecycleManager.php' => ['RetryZatcaInvoiceJob' => 1],
             'Services/CreditNote/CreditNoteIssuer.php' => ['GenerateZatcaCreditNoteJob' => 1],
             'Services/DebitNote/DebitNoteIssuer.php' => ['GenerateZatcaDebitNoteJob' => 1],
+            // report-pending, requeue and certificate-renewal resume all re-send through
+            // this one router, which picks the job from the submission model.
+            'Support/SubmissionRetry.php' => ['RetryZatcaClearanceJob' => 1, 'RetryZatcaInvoiceJob' => 1],
         ], $this->dispatchSites());
     }
 

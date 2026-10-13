@@ -24,8 +24,8 @@ use Illuminate\Support\Str;
  *
  * Two kinds of note, one set of guarantees (see ZatcaCreditNoteReason):
  *
- *  - issue(): a course cancellation, crediting whole sources.
- *  - issuePriceAdjustment(): part of one course's value, leaving the course creditable
+ *  - issue(): an item cancellation, crediting whole sources.
+ *  - issuePriceAdjustment(): part of one item's value, leaving the item creditable
  *    for whatever is left of it.
  *
  * Concurrency (scenarios 6, 19, 20, 21; BR-06, BR-11, AC-09, AC-21):
@@ -105,7 +105,7 @@ class CreditNoteIssuer
 
             $originalData = InvoiceDataSnapshot::fromArray($authoritative->invoice_data_snapshot);
 
-            // Bundle invoices state each course at its ORIGINAL price and carry the
+            // Bundle invoices state each item at its ORIGINAL price and carry the
             // discount once, at document level. Crediting such a line verbatim would
             // hand back more than was ever charged, so the discount still unspent is
             // drawn down here — inside the lock, against committed rows, so a second
@@ -114,7 +114,7 @@ class CreditNoteIssuer
             //
             $allocation = $selected === [] ? null : $this->allocateDiscount($originalData, $ledgerSnapshot, $selected, $selectedDebit);
 
-            // A course priced up by a debit note draws its discount against its whole
+            // An item priced up by a debit note draws its discount against its whole
             // value; what the line itself cannot absorb comes off its price increase.
             $overflow = $allocation === null ? [] : CreditNoteDiscountAllocator::overflowOntoDebitLines(
                 $originalData, $ledgerSnapshot, $allocation, $selected, $selectedDebit
@@ -124,7 +124,7 @@ class CreditNoteIssuer
                 $this->assertNoBundlePoolDrainedForFree($allocation, $selected, $ledgerSnapshot, $debitSources, $overflow, CreditNoteDiscountAllocator::freePools($originalData));
             }
 
-            // A course whose price was already adjusted is worth that much less than its
+            // An item whose price was already adjusted is worth that much less than its
             // line says. What cancelling it credits is what is left of it — the
             // adjustment was credited once already and must never be credited again.
             $lineCredits = $this->lineCredits($originalData, $ledgerSnapshot, $allocation, $selected);
@@ -134,7 +134,7 @@ class CreditNoteIssuer
                 $ledgerSnapshot,
                 $originalData,
                 $type,
-                ZatcaCreditNoteReason::CourseCancellation,
+                ZatcaCreditNoteReason::ItemCancellation,
                 $reason,
                 $idempotencyKey,
                 $requestedBy,
@@ -158,9 +158,9 @@ class CreditNoteIssuer
 
             // We do not file documents a discount made worth nothing. Reachable when a
             // bundle discount covers the whole selection (a 30.00 discount against a
-            // 20.00 course), and the discount that would have been consumed is left
+            // 20.00 item), and the discount that would have been consumed is left
             // intact for the next note by rolling this transaction back. A selection
-            // worth nothing WITHOUT any discount — a course that was free — is issued:
+            // worth nothing WITHOUT any discount — an item that was free — is issued:
             // there is nothing to protect, and it is the only way to take it back.
             if (round($creditNoteData->totalInclVat, 2) <= 0.0
                 && $this->drawsOnDiscount($allocation, $selected, CreditNoteDiscountAllocator::freePools($originalData))) {
@@ -177,7 +177,7 @@ class CreditNoteIssuer
             $this->assertWithinInvoicedAmount($originalData, $ledgerSnapshot, $allocation, $selected, $lineCredits, $debitLines);
 
             foreach ($selected as $position => $index) {
-                // The credited line, which for a bundle course is its original value
+                // The credited line, which for a bundle item is its original value
                 // minus the discount this note consumed — not the line as invoiced.
                 $line = $creditNoteData->lines[$position];
 
@@ -225,14 +225,14 @@ class CreditNoteIssuer
                     'line_total_excl_vat' => $line->lineTotalExclVat,
                     'vat_amount' => $line->vatAmount,
                     'line_total_incl_vat' => $line->lineTotalInclVat(),
-                    'course_id' => $source->courseId,
+                    'item_id' => $source->itemId,
                     'active_line_key' => ZatcaCreditNoteLine::debitNoteLineKey($source->debitNoteLineId),
                 ]);
             }
 
             return $this->finish($creditNote, $creditNoteData, $requestedBy, [
                 'type' => $type->value,
-                'reason_type' => ZatcaCreditNoteReason::CourseCancellation->value,
+                'reason_type' => ZatcaCreditNoteReason::ItemCancellation->value,
                 'line_indexes' => $selected,
                 'debit_note_line_ids' => $selectedDebit,
                 'total_incl_vat' => $creditNoteData->totalInclVat,
@@ -243,35 +243,35 @@ class CreditNoteIssuer
     }
 
     /**
-     * Issues a price adjustment: a Credit Note for the difference when courses were
+     * Issues a price adjustment: a Credit Note for the difference when items were
      * charged more than their correct price.
      *
-     * The courses are not taken back. Each keeps its line (or debit note line), stays
+     * The items are not taken back. Each keeps its line (or debit note line), stays
      * creditable for whatever is left of it, and acceptance changes nobody's access —
-     * so what must hold instead is that a course always keeps some value: its adjustment
-     * has to stay strictly below what is left of it. Reducing a course to nothing is a
+     * so what must hold instead is that an item always keeps some value: its adjustment
+     * has to stay strictly below what is left of it. Reducing an item to nothing is a
      * cancellation, and is issued as one.
      *
-     * "What is left of it" spans both note kinds. A Debit Note that raised a course's
-     * price charged for that course, so it is part of what may be corrected, and the
-     * adjustment may reach up to the two together. Reaching past the course's own value
+     * "What is left of it" spans both note kinds. A Debit Note that raised an item's
+     * price charged for that item, so it is part of what may be corrected, and the
+     * adjustment may reach up to the two together. Reaching past the item's own value
      * REVERSES the increases it needs, in this same note and under this same lock: each
      * one is credited in full beside the adjustment's own line, so the note's total is
      * exactly the amount asked for and an increase this adjustment has already drawn on
-     * can never be credited a second time. An adjustment that fits inside the course's own
+     * can never be credited a second time. An adjustment that fits inside the item's own
      * value — every ordinary one — touches none of them.
      *
-     * SEVERAL courses may be corrected in one note. Each carries its own amount and is
-     * measured against its own course's cap; nothing is pooled between them, and the note
-     * is worth their sum. One course refused takes the whole note with it — a partially
+     * SEVERAL items may be corrected in one note. Each carries its own amount and is
+     * measured against its own item's cap; nothing is pooled between them, and the note
+     * is worth their sum. One item refused takes the whole note with it — a partially
      * applied correction is not something an admin can reason about, and the transaction
      * rolls back rather than issuing a note that says less than was asked for.
      *
-     * @param  PriceAdjustmentInput[]  $adjustments  one per course, at most one entry per course
+     * @param  PriceAdjustmentInput[]  $adjustments  one per item, at most one entry per item
      * @param  array{type: string, id: int|string}|null  $requestedBy
      *
      * @throws CreditNoteException when the original is not eligible, a source cannot be
-     *   adjusted, or an amount is not below what is left of its course.
+     *   adjusted, or an amount is not below what is left of its item.
      */
     public function issuePriceAdjustments(
         ZatcaInvoice $original,
@@ -308,7 +308,7 @@ class CreditNoteIssuer
             $total = 0.0;
 
             foreach ($adjustments as $adjustment) {
-                // One course, one amount. Two entries for the same course would each be
+                // One item, one amount. Two entries for the same item would each be
                 // measured against a cap the other has already spent.
                 if (isset($resolved[$adjustment->sourceKey])) {
                     throw CreditNoteException::notAdjustable();
@@ -329,21 +329,21 @@ class CreditNoteIssuer
                     throw CreditNoteException::zeroValue();
                 }
 
-                // Strictly below the course AND the increases on it: see the method docblock.
+                // Strictly below the item AND the increases on it: see the method docblock.
                 if ($gross >= $adjustable) {
                     throw CreditNoteException::adjustmentExceedsValue();
                 }
 
                 // Which increases this amount has to reverse, and what is then taken off the
-                // course itself. Refused when no combination of whole increases leaves a
-                // remainder the course can absorb — an increase cannot be credited by halves.
+                // item itself. Refused when no combination of whole increases leaves a
+                // remainder the item can absorb — an increase cannot be credited by halves.
                 $plan = $ledgerSnapshot->planAdjustment($adjustment->sourceKey, $gross);
 
                 if ($plan === null) {
                     throw CreditNoteException::adjustmentExceedsValue();
                 }
 
-                // An increase rides on exactly one course, so two courses cannot reach for
+                // An increase rides on exactly one item, so two items cannot reach for
                 // the same one. Refused rather than trusted: claiming it twice would credit
                 // it twice, and the unique active_line_key would only catch it on insert.
                 foreach ($plan['debitLineIds'] as $increaseId) {
@@ -371,7 +371,7 @@ class CreditNoteIssuer
                 $total = round($total + $gross, 2);
             }
 
-            // Implied by the per-course caps, re-checked because it is the invariant every
+            // Implied by the per-item caps, re-checked because it is the invariant every
             // other note is held to as well.
             if ($total > round($ledgerSnapshot->remainingCreditableInclVat, 2)) {
                 throw CreditNoteException::exceedsRemaining();
@@ -394,20 +394,19 @@ class CreditNoteIssuer
             $reversedSources = [];
 
             foreach ($resolved as $entry) {
-                $line = new ZatcaInvoiceLine(
-                    description: $entry['input']->description,
+                // The adjusted item's own frozen rate and VAT category, never the tenant's
+                // current ones. Quantity is always 1, so unit price and line net are the same figure.
+                $line = $entry['adjustedLine']->withAmounts(
                     quantity: 1,
-                    // Quantity is always 1, so unit price and line net are the same figure.
                     unitPrice: $entry['net'],
-                    // The adjusted course's own frozen rate, never the tenant's current one.
-                    vatRate: $entry['adjustedLine']->vatRate,
                     lineTotalExclVat: $entry['net'],
                     vatAmount: $entry['vat'],
+                    description: $entry['input']->description,
                 );
 
-                // The caller split the WHOLE amount for this course. When part of it is paid
+                // The caller split the WHOLE amount for this item. When part of it is paid
                 // by reversing increases — which carry their own signed split — the
-                // adjustment's own line is restated at what is actually taken off the course,
+                // adjustment's own line is restated at what is actually taken off the item,
                 // in the same proportion of net to VAT the caller asked for, so the lines
                 // still add up to the amount.
                 $adjustmentLines[] = $entry['plan']['ownAmount'] === $entry['gross']
@@ -453,7 +452,7 @@ class CreditNoteIssuer
                     'line_total_excl_vat' => $line->lineTotalExclVat,
                     'vat_amount' => $line->vatAmount,
                     'line_total_incl_vat' => $line->lineTotalInclVat(),
-                    'course_id' => $entry['source']?->courseId,
+                    'item_id' => $entry['source']?->itemId,
                     'active_line_key' => ZatcaCreditNoteLine::priceAdjustmentKey(
                         $creditNote->getKey(),
                         $entry['input']->sourceKey,
@@ -481,7 +480,7 @@ class CreditNoteIssuer
                     'line_total_excl_vat' => $reversedLine->lineTotalExclVat,
                     'vat_amount' => $reversedLine->vatAmount,
                     'line_total_incl_vat' => $reversedLine->lineTotalInclVat(),
-                    'course_id' => $reversed->courseId,
+                    'item_id' => $reversed->itemId,
                     'active_line_key' => ZatcaCreditNoteLine::debitNoteLineKey($reversed->debitNoteLineId),
                 ]);
             }
@@ -500,11 +499,11 @@ class CreditNoteIssuer
     }
 
     /**
-     * The one-course form of issuePriceAdjustments(), which is what it was before several
-     * courses could share a note. Every rule above applies to it unchanged.
+     * The one-item form of issuePriceAdjustments(), which is what it was before several
+     * items could share a note. Every rule above applies to it unchanged.
      *
-     * @param  string  $sourceKey  the course being adjusted: "line:{index}" for a line of the
-     *   original invoice, "dn_line:{id}" for an Additional Course line of an accepted debit note.
+     * @param  string  $sourceKey  the item being adjusted: "line:{index}" for a line of the
+     *   original invoice, "dn_line:{id}" for an Additional Item line of an accepted debit note.
      * @param  float  $netAmount  the difference before VAT.
      * @param  float  $vatAmount  VAT on the difference. Split by the caller under its own price tax
      *   policy, at the adjusted line's rate — which is what the note's line is taxed at.
@@ -634,7 +633,7 @@ class CreditNoteIssuer
      * consumed) and a line whose price was adjusted (less what the adjustments already
      * credited). An index left out is credited verbatim, as it always was.
      *
-     * Never negative. Each adjustment was capped below the course's worst-case value
+     * Never negative. Each adjustment was capped below the item's worst-case value
      * when it was issued, so only rounding could take a line below zero — and a note
      * that under-credits a fil is recoverable where a negative line is not.
      *
@@ -664,8 +663,8 @@ class CreditNoteIssuer
     }
 
     /**
-     * A debit note line as this note credits it: verbatim, unless its course's price was
-     * adjusted, or the bundle discount on the course it raised reached into it.
+     * A debit note line as this note credits it: verbatim, unless its item's price was
+     * adjusted, or the bundle discount on the item it raised reached into it.
      */
     private function debitLineCredit(CreditNoteLedgerSnapshot $ledgerSnapshot, CreditSource $source, string $creditNoteNumber, float $discount = 0.0): ZatcaInvoiceLine
     {
@@ -691,7 +690,7 @@ class CreditNoteIssuer
      *
      * @throws CreditNoteException when the original carries a discount whose line
      *   membership was never frozen. Refusing is deliberate: the alternative is
-     *   guessing which courses a discount belonged to, and a wrong guess credits an
+     *   guessing which items a discount belonged to, and a wrong guess credits an
      *   amount that was never charged.
      */
     private function allocateDiscount(
@@ -717,14 +716,14 @@ class CreditNoteIssuer
     }
 
     /**
-     * A bundle course worth less than its discount credits nothing on its own — and
+     * A bundle item worth less than its discount credits nothing on its own — and
      * that alone is refused a few lines below, by the note-wide zero-value check,
      * because nothing else in the selection gives the note any value either.
      *
-     * The gap that check cannot see: the SAME worthless course selected ALONGSIDE a
-     * course from a different pool, or no pool at all. The note's total is then
-     * positive — from the unrelated course — so the zero-value check passes, while
-     * the bundle course still drained its discount for a 0.00 credit. Checked per
+     * The gap that check cannot see: the SAME worthless item selected ALONGSIDE an
+     * item from a different pool, or no pool at all. The note's total is then
+     * positive — from the unrelated item — so the zero-value check passes, while
+     * the bundle item still drained its discount for a 0.00 credit. Checked per
      * pool, not per note, so this can never slip through behind someone else's value.
      *
      * A pool is EXEMPT when every one of its credited lines in this note sums to the
@@ -732,11 +731,11 @@ class CreditNoteIssuer
      * already refuses, with its own clearer reason.
      *
      * A pool that drew NO discount in this note drained nothing, so it is never refused
-     * here: a bundle course that was free in its own right (priced 0) credits 0.00 and
-     * consumes nothing, and may be cancelled alongside any other course.
+     * here: a bundle item that was free in its own right (priced 0) credits 0.00 and
+     * consumes nothing, and may be cancelled alongside any other item.
      *
-     * A course's price increases credited beside it count toward its pool: the discount
-     * is drawn against the course's whole value, so the increase is where its credit is.
+     * An item's price increases credited beside it count toward its pool: the discount
+     * is drawn against the item's whole value, so the increase is where its credit is.
      *
      * @param  CreditSource[]  $debitSources
      * @param  array<int, array{amount: float, pool: string}>  $overflow

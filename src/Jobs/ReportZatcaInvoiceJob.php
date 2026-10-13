@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Config;
  * GenerateZatcaInvoiceJob signs and stores the invoice. If ZATCA is
  * unavailable or the attempt fails transiently, the invoice is left in
  * Retrying/Pending Reporting for `zatca:report-pending` (RetryZatcaInvoiceJob)
- * to pick up later — course access and payment are already final by this point.
+ * to pick up later — access and payment are already final by this point.
  */
 class ReportZatcaInvoiceJob implements ShouldQueue
 {
