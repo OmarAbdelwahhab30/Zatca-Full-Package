@@ -2,8 +2,12 @@
 
 namespace Zatca\Services\Invoice;
 
+use Zatca\DTOs\BuyerAddress;
+use Zatca\DTOs\BuyerOtherId;
+use Zatca\DTOs\BuyerParty;
 use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\DTOs\ZatcaInvoiceLine;
+use Zatca\Enums\ZatcaComplianceDocumentType;
 use DateTimeImmutable;
 
 /**
@@ -14,8 +18,16 @@ use DateTimeImmutable;
  */
 class ComplianceTestInvoiceDataFactory
 {
-    public function make(string $egsIdentifier, string $description = 'Compliance Test Item'): ZatcaInvoiceData
-    {
+    /**
+     * @param  ZatcaComplianceDocumentType  $documentType  a Standard type attaches the
+     *   canned buyer and supply date a Standard document requires (BR-KSA-63/67,
+     *   BR-KSA-15) — ignored for Simplified, exactly like production data.
+     */
+    public function make(
+        string $egsIdentifier,
+        string $description = 'Compliance Test Item',
+        ZatcaComplianceDocumentType $documentType = ZatcaComplianceDocumentType::Invoice,
+    ): ZatcaInvoiceData {
         $line = new ZatcaInvoiceLine(
             description: $description,
             quantity: 1,
@@ -36,6 +48,24 @@ class ComplianceTestInvoiceDataFactory
             totalExclVat: 100.00,
             totalVat: 15.00,
             totalInclVat: 115.00,
+            // A Standard note's onboarding placeholder reason — the Standard note
+            // generators refuse to emit one silently (unlike the Simplified ones,
+            // which default this for onboarding); Simplified stays untouched (null).
+            adjustmentReason: ($documentType->isStandard() && $documentType->requiresBillingReference())
+                ? 'Compliance test '.($documentType->isCreditNoteKind() ? 'credit note' : 'debit note')
+                : null,
+            buyer: $documentType->isStandard() ? $this->cannedBuyer() : null,
+            supplyDate: $documentType->isStandard() ? new DateTimeImmutable : null,
+        );
+    }
+
+    private function cannedBuyer(): BuyerParty
+    {
+        return new BuyerParty(
+            registrationName: 'Compliance Test Buyer',
+            vatNumber: null,
+            otherId: BuyerOtherId::commercialRegistration('7000000007'),
+            address: new BuyerAddress('Test Street', '1234', 'Test District', 'Riyadh', '12345'),
         );
     }
 }

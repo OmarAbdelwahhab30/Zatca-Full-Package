@@ -62,6 +62,51 @@ class ZatcaGate
     }
 
     /**
+     * May NEW B2B work start — a company sale, a Standard invoice, a WATHQ lookup?
+     *
+     * Fail-closed, unlike enabled(): B2B is a new behaviour, so an unset, empty or
+     * malformed zatca.b2b.enabled means off (see isExplicitlyOn()). It also requires the
+     * global switch: with ZATCA off, B2B is off whatever its own flag says.
+     *
+     * Not a guard for work already in flight: Standard documents signed while B2B was on
+     * keep being cleared when it is turned off (decision D-19, "drain"). The clearance
+     * sweep asks enabled(), not this.
+     */
+    public function b2bEnabled(): bool
+    {
+        return $this->enabled() && self::isExplicitlyOn(config('zatca.b2b.enabled'));
+    }
+
+    public function b2bDisabled(): bool
+    {
+        return ! $this->b2bEnabled();
+    }
+
+    /** Info level, like skip(): B2B being off is an administrator's choice, not a fault. */
+    public function skipB2b(string $context): void
+    {
+        Log::info("[ZATCA] Skipped {$context}: B2B invoicing is disabled (zatca.b2b.enabled is not on, or ZATCA is disabled).");
+    }
+
+    /**
+     * The fail-closed reading used by every B2B switch (this package's and the host's
+     * WATHQ flag): true only for true, 1, or the strings "true", "1", "on", "yes" —
+     * trimmed, any case. Everything else, including null, '' and "yes please", is off.
+     */
+    public static function isExplicitlyOn(mixed $value): bool
+    {
+        if ($value === true || $value === 1) {
+            return true;
+        }
+
+        if (! is_string($value)) {
+            return false;
+        }
+
+        return in_array(strtolower(trim($value)), ['true', '1', 'on', 'yes'], true);
+    }
+
+    /**
      * Records that something was skipped because the switch is off.
      *
      * Deliberately info, not warning: while ZATCA is disabled these are the expected

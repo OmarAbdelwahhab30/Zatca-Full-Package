@@ -2,8 +2,11 @@
 
 namespace Zatca\Models;
 
+use Zatca\Enums\ZatcaComplianceDocumentType;
 use Zatca\Enums\ZatcaEnvironment;
 use Zatca\Enums\ZatcaInvoiceStatus;
+use Zatca\Enums\ZatcaSubmissionModel;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -18,6 +21,7 @@ class ZatcaInvoice extends Model
     protected $casts = [
         'environment' => ZatcaEnvironment::class,
         'status' => ZatcaInvoiceStatus::class,
+        'document_type' => ZatcaComplianceDocumentType::class,
         'last_zatca_response' => 'array',
         'invoice_data_snapshot' => 'array',
         'icv' => 'integer',
@@ -29,7 +33,24 @@ class ZatcaInvoice extends Model
         'regeneration_claimed_at' => 'datetime',
         'generation_claimed_at' => 'datetime',
         'abandoned_at' => 'datetime',
+        'cleared_at' => 'datetime',
+        'submission_claimed_at' => 'datetime',
+        'in_doubt_since' => 'datetime',
+        'reissued_by_id' => 'integer',
     ];
+
+    /**
+     * How ZATCA receives this document. The column defaults to 'reporting'; a model
+     * created without it (every B2C path) has no attribute until refreshed, and reads as
+     * Reporting too. An unknown stored value throws, like the other enum casts.
+     */
+    protected function submissionModel(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value) => $value === null ? ZatcaSubmissionModel::Reporting : ZatcaSubmissionModel::from($value),
+            set: fn (ZatcaSubmissionModel|string $value) => $value instanceof ZatcaSubmissionModel ? $value->value : ZatcaSubmissionModel::from($value)->value,
+        );
+    }
 
     /**
      * How far a regeneration chain may be followed.
@@ -39,6 +60,18 @@ class ZatcaInvoice extends Model
      * how many times one invoice may be regenerated — see ZatcaRegenerationEligibility.
      */
     public const MAX_REGENERATION_CHAIN_DEPTH = 5;
+
+    /** The Credit Note business record this technical document belongs to, if it is one. */
+    public function creditNote(): BelongsTo
+    {
+        return $this->belongsTo(ZatcaCreditNote::class, 'credit_note_id');
+    }
+
+    /** The Debit Note business record this technical document belongs to, if it is one. */
+    public function debitNote(): BelongsTo
+    {
+        return $this->belongsTo(ZatcaDebitNote::class, 'debit_note_id');
+    }
 
     public function submissionAttempts(): HasMany
     {
@@ -76,6 +109,37 @@ class ZatcaInvoice extends Model
         return $this->hasMany(self::class, 'regenerated_from_id');
     }
 
+    /**
+     * When ZATCA accepted this document, whichever way it was submitted: a Simplified
+     * (B2C) document is reported and stamps reported_at, a Standard (B2B) one is
+     * cleared and stamps cleared_at only. Read this for "تاريخ الإبلاغ", never
+     * reported_at alone, or every cleared document shows as not yet reported.
+     */
+    public function acceptedAt(): ?\Illuminate\Support\Carbon
+    {
+        return $this->reported_at ?? $this->cleared_at;
+    }
+
+    /**
+     * Whether a Credit Note or Debit Note against this original has not reached a final
+     * state yet — neither accepted nor cancelled. A rejected or failed note counts: it
+     * still holds what it claimed until it is retried or cancelled.
+     *
+     * While one does, no further note of either kind may be issued against this
+     * original, so the same course can never be adjusted twice before the first
+     * adjustment settles. See CreditNoteEligibilityPolicy / DebitNoteEligibilityPolicy.
+     */
+    public function hasAdjustmentInProgress(): bool
+    {
+        $unsettled = fn ($query) => $query
+            ->where('original_zatca_invoice_id', $this->getKey())
+            ->whereNull('accepted_at')
+            ->whereNull('cancelled_at');
+
+        return $unsettled(ZatcaCreditNote::query())->exists()
+            || $unsettled(ZatcaDebitNote::query())->exists();
+    }
+
     /** Whether a newer document has taken over from this one. */
     public function isSuperseded(): bool
     {
@@ -92,6 +156,24 @@ class ZatcaInvoice extends Model
     public function isGenerationInFlight(): bool
     {
         return $this->generation_claimed_at !== null;
+    }
+
+    /** Whether this technical document is a Credit Note (381), Simplified or Standard, rather than an invoice (388). */
+    public function isCreditNote(): bool
+    {
+        return $this->document_type?->isCreditNoteKind() === true;
+    }
+
+    /** Whether this technical document is a Debit Note (383), Simplified or Standard, rather than an invoice (388). */
+    public function isDebitNote(): bool
+    {
+        return $this->document_type?->isDebitNoteKind() === true;
+    }
+
+    /** Whether this document adjusts another one — a credit note (381) or a debit note (383). */
+    public function isAdjustmentNote(): bool
+    {
+        return $this->document_type?->requiresBillingReference() === true;
     }
 
     /**

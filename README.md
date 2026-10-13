@@ -1483,6 +1483,17 @@ Two tests are **skipped by default** — they drive the real Java SDK. Run them 
 ZATCA_SDK_EXECUTABLE=/path/to.jar ZATCA_SDK_ROOT=/path/to/sdk vendor/bin/phpunit
 ```
 
+### Golden XML fixtures (Simplified documents)
+
+`tests/Unit/Golden/SimplifiedXmlGoldenTest.php` compares the unsigned XML of the three Simplified generators (invoice, credit note, debit note) byte for byte with the files in `tests/Fixtures/Golden/V2/simplified/`. It exists so that B2B work on shared DTOs and generators cannot silently change what B2C customers receive. The fixtures record current output; they do not prove ZATCA compliance. The only normalisation is CRLF to LF, because a Windows checkout turns the signature heredoc into CRLF while the servers emit LF.
+
+When a change to Simplified output is intended, rewrite the fixtures and review every changed line before committing. Never run this in CI:
+
+```bash
+composer golden:update   # rewrites the fixtures; each case is reported as incomplete
+composer test            # must be green again against the new fixtures
+```
+
 ### Continuous integration
 
 `.github/workflows/zatca_tests.yml` runs the whole suite on PHP 8.1, 8.2 and 8.3 for every push or PR touching `packages/zatca/**`. It needs no database, no credentials and no secrets. The SDK-backed tests skip there, which is why you should run them locally before a signing change.

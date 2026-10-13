@@ -39,12 +39,21 @@ class SimplifiedCreditNoteXmlGenerator extends AbstractSimplifiedUblDocumentXmlG
      * ZATCA business rule KSA-10 (BR-KSA-17): a credit/debit note (InvoiceTypeCode
      * 381/383) must state the reason it was issued, specifically as
      * `cac:PaymentMeans/cbc:InstructionNote` — a top-level `cbc:Note` was tried
-     * first and rejected by ZATCA's sandbox for landing at the wrong path. This
-     * is a compliance test document with no real reversed sale behind it, so
-     * the reason says exactly that rather than inventing one that doesn't exist.
+     * first and rejected by ZATCA's sandbox for landing at the wrong path.
+     *
+     * A production Credit Note always carries its own admin-supplied reason via
+     * ZatcaInvoiceData::$adjustmentReason. Compliance onboarding's synthetic
+     * ZatcaInvoiceData never sets it, so onboarding keeps emitting this fixed
+     * placeholder — there is no real reversed sale behind that document to
+     * describe, and this keeps onboarding output byte-identical.
      */
-    protected function paymentMeansInstructionNoteXml(): string
+    protected function paymentMeansInstructionNoteXml(?string $reason): string
     {
-        return '<cbc:InstructionNote>Compliance test credit note</cbc:InstructionNote>';
+        $reason ??= 'Compliance test credit note';
+
+        return sprintf(
+            '<cbc:InstructionNote>%s</cbc:InstructionNote>',
+            htmlspecialchars($reason, ENT_XML1 | ENT_QUOTES, 'UTF-8')
+        );
     }
 }

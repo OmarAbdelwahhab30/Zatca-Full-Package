@@ -1,0 +1,22 @@
+{
+    "version": 1,
+    "egs_identifier": "default",
+    "source_reference": "order:42",
+    "buyer_name": "Test Student",
+    "buyer_vat_number": null,
+    "issue_date_time": "2026-01-01T10:00:00+00:00",
+    "currency": "SAR",
+    "lines": [
+        {
+            "description": "Course Enrollment",
+            "quantity": 1,
+            "unit_price": 200.0,
+            "vat_rate": 15.0,
+            "line_total_excl_vat": 200.0,
+            "vat_amount": 30.0
+        }
+    ],
+    "total_excl_vat": 200.0,
+    "total_vat": 30.0,
+    "total_incl_vat": 230.0
+}

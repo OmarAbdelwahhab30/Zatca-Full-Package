@@ -121,6 +121,49 @@ class ResponseNormalizerTest extends TestCase
         $this->assertFalse($result->successful);
     }
 
+    /** F-CL-01/F-CL-06/F-CL-09: 200 CLEARED, PASS. */
+    public function test_it_normalizes_a_cleared_response(): void
+    {
+        $body = '{"clearanceStatus":"CLEARED","clearedInvoice":"QmFzZTY0","validationResults":{"infoMessages":[],"warningMessages":[],"errorMessages":[],"status":"PASS"},"reportingStatus":"REPORTED"}';
+
+        $result = $this->normalizer->normalizeClearance(new Response(200, [], $body));
+
+        $this->assertTrue($result->successful);
+        $this->assertSame(ZatcaResponseStatus::Pass, $result->status);
+        $this->assertSame('CLEARED', $result->payload->clearanceStatus);
+        $this->assertSame('QmFzZTY0', $result->payload->clearedInvoiceBase64);
+    }
+
+    /** F-CL-06: 202 CLEARED with a warning. */
+    public function test_it_normalizes_a_cleared_with_warnings_response(): void
+    {
+        $body = '{"clearanceStatus":"CLEARED","clearedInvoice":"QmFzZTY0","validationResults":{"infoMessages":[],"warningMessages":[{"type":"WARNING","code":"BR-KSA-51","category":"KSA","message":"warning text","status":"WARNING"}],"errorMessages":[],"status":"WARNING"}}';
+
+        $result = $this->normalizer->normalizeClearance(new Response(202, [], $body));
+
+        $this->assertTrue($result->successful);
+        $this->assertSame(ZatcaResponseStatus::Warning, $result->status);
+        $this->assertSame(['warning text'], $result->payload->validationWarnings);
+    }
+
+    /**
+     * F-CL-09: the clearance schema spells the field `erroMessages`. Until a live
+     * sandbox response confirms which spelling is actually sent (G-04), both must
+     * be readable — a document must never look error-free just because we read
+     * the wrong key.
+     */
+    public function test_it_tolerates_the_documented_erromessages_typo(): void
+    {
+        $body = '{"clearanceStatus":"NOT_CLEARED","clearedInvoice":null,"validationResults":{"infoMessages":[],"warningMessages":[],"erroMessages":[{"type":"ERROR","code":"BR-KSA-06","category":"KSA","message":"rejected","status":"ERROR"}],"status":"ERROR"}}';
+
+        $result = $this->normalizer->normalizeClearance(new Response(400, [], $body));
+
+        $this->assertFalse($result->successful);
+        $this->assertSame(['rejected'], $result->errors);
+        $this->assertSame(['rejected'], $result->payload->validationErrors);
+        $this->assertNull($result->payload->clearedInvoiceBase64);
+    }
+
     public function test_it_handles_401_without_throwing(): void
     {
         $body = '{"timestamp":1654514661409,"status":401,"error":"Unauthorized","message":""}';

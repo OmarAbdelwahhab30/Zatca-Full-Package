@@ -3,6 +3,7 @@
 namespace Zatca\Jobs;
 
 use Zatca\Enums\ZatcaInvoiceStatus;
+use Zatca\Enums\ZatcaSubmissionModel;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Services\Execute\ProductionInvoiceOrchestrator;
 use Zatca\Support\ZatcaGate;
@@ -108,9 +109,14 @@ class RegenerateZatcaInvoiceJob implements ShouldQueue
                 ['icv' => $replacement->icv]
             );
 
-            // The same reporting path the purchase flow uses. The actor travels with it so
-            // the replacement's first attempt is attributed to the admin who asked for it.
-            ReportZatcaInvoiceJob::dispatch($replacement->id, $this->triggeredBy);
+            // The same reporting/clearance path the purchase flow uses. The actor travels
+            // with it so the replacement's first attempt is attributed to the admin who
+            // asked for it.
+            if ($replacement->submission_model === ZatcaSubmissionModel::Clearance) {
+                ClearZatcaInvoiceJob::dispatch($replacement->id, $this->triggeredBy);
+            } else {
+                ReportZatcaInvoiceJob::dispatch($replacement->id, $this->triggeredBy);
+            }
         } catch (Throwable $e) {
             Log::error(
                 "[ZATCA] Regeneration of document #{$original->id} failed: ".$e->getMessage()

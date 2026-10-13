@@ -11,6 +11,7 @@ use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Events\ZatcaInvoiceGenerated;
+use Zatca\Exceptions\CrossEgsDuplicateException;
 use Zatca\Exceptions\ZatcaCredentialsMissingException;
 use Zatca\Exceptions\ZatcaDisabledException;
 use Zatca\Exceptions\ZatcaException;
@@ -105,6 +106,68 @@ class ProductionInvoiceOrchestrator
 
         if ($invoice->status !== ZatcaInvoiceStatus::Draft) {
             // Already signed (or further along) on a previous attempt — never re-sign.
+            return $invoice;
+        }
+
+        return $this->sign($invoice);
+    }
+
+    /**
+     * Generates the technical ZATCA document for one Credit Note business record.
+     *
+     * Structurally the same two-step shape as generate() — reserve, then sign — but the
+     * input is already a finished ZatcaInvoiceData (built by CreditNoteDataFactory from
+     * the ORIGINAL invoice's frozen snapshot, not from any host record), so there is no
+     * InvoiceSourceContract here and nothing is re-read. $sourceReference IS the Credit
+     * Note number: idempotency and the (egs, environment, source_reference) unique index
+     * work exactly as they do for a plain invoice, so calling this twice for the same
+     * note number returns the same document rather than reserving a second ICV.
+     *
+     * Never called with a documentType other than CreditNote — see
+     * XmlGeneratorFactory::forData(), which is what actually decides the generator, and
+     * would emit a 388 for any other document_type value here.
+     */
+    public function generateCreditNote(ZatcaInvoiceData $invoiceData, string $egsIdentifier, int $creditNoteId): ZatcaInvoice
+    {
+        $this->assertEnabled('generate a ZATCA credit note');
+
+        $invoice = $this->reserveAdjustmentNoteDraft($invoiceData, $egsIdentifier, ['credit_note_id' => $creditNoteId]);
+
+        if ($invoice->status !== ZatcaInvoiceStatus::Draft) {
+            return $invoice;
+        }
+
+        return $this->sign($invoice);
+    }
+
+    /**
+     * Generates the technical ZATCA document for one Debit Note business record.
+     *
+     * Exactly symmetrical to generateCreditNote(), down to sharing its reservation
+     * path: the only difference between the two documents at this level is which
+     * business record the technical row links back to, and which UBL type code
+     * XmlGeneratorFactory::forData() picks from the already-frozen
+     * ZatcaInvoiceData::$documentType.
+     *
+     * In particular a Debit Note takes its ICV and PIH from the SAME EGS chain as
+     * invoices and credit notes — there is no separate debit-note counter — which is
+     * what keeps the EGS's hash chain a single, verifiable sequence.
+     *
+     * $invoiceData->sourceReference IS the Debit Note number, so idempotency and the
+     * (egs, environment, source_reference) unique index work exactly as they do for a
+     * plain invoice: calling this twice for the same note returns the same document
+     * rather than reserving a second ICV.
+     *
+     * Never called with a documentType other than DebitNote — see
+     * XmlGeneratorFactory::forData(), which is what actually decides the generator.
+     */
+    public function generateDebitNote(ZatcaInvoiceData $invoiceData, string $egsIdentifier, int $debitNoteId): ZatcaInvoice
+    {
+        $this->assertEnabled('generate a ZATCA debit note');
+
+        $invoice = $this->reserveAdjustmentNoteDraft($invoiceData, $egsIdentifier, ['debit_note_id' => $debitNoteId]);
+
+        if ($invoice->status !== ZatcaInvoiceStatus::Draft) {
             return $invoice;
         }
 
@@ -284,6 +347,8 @@ class ProductionInvoiceOrchestrator
             return $existing;
         }
 
+        $this->assertNoDocumentOnAnotherEgs($egsIdentifier, $egsConfig->environment->value, $sourceReference);
+
         if (! $this->signingKeyProvider->hasProductionCredentials($egsIdentifier, $egsConfig->environment)) {
             throw ZatcaCredentialsMissingException::forEgs($egsIdentifier, ZatcaCredentialType::Production);
         }
@@ -304,13 +369,15 @@ class ProductionInvoiceOrchestrator
                 // is rolled back with it via the same connection's savepoint.
                 $reservation = $this->counterManager->reserve($egsIdentifier, $egsConfig->environment);
 
-                $unsignedXml = $this->xmlGeneratorFactory->make()->generate($invoiceData, $egsConfig, $uuid, $reservation);
+                $unsignedXml = $this->xmlGeneratorFactory->forData($invoiceData)->generate($invoiceData, $egsConfig, $uuid, $reservation);
 
                 return ZatcaInvoice::create([
                     'egs_identifier' => $egsIdentifier,
                     'environment' => $egsConfig->environment->value,
                     'source_reference' => $sourceReference,
                     'owner_id' => $this->ownerResolver->resolve($egsIdentifier),
+                    'document_type' => $invoiceData->documentType->value,
+                    'submission_model' => $invoiceData->documentType->submissionModel()->value,
                     'uuid' => $uuid,
                     'icv' => $reservation->icv,
                     'previous_invoice_hash' => $reservation->previousInvoiceHash,
@@ -339,6 +406,92 @@ class ProductionInvoiceOrchestrator
             if ($existing) {
                 return $existing;
             }
+
+            // Lost the race to a document on another EGS (zatca_inv_env_src_uq).
+            $this->assertNoDocumentOnAnotherEgs($egsIdentifier, $egsConfig->environment->value, $sourceReference);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Adjustment-note counterpart of reserveDraft(), shared by Credit Notes (381) and
+     * Debit Notes (383): idempotently reserves the ICV/UUID/PIH and persists a Draft
+     * row, keyed by the NOTE's OWN source_reference (its number) rather than the
+     * original invoice's.
+     *
+     * Deliberately not merged into reserveDraft() — that method calls
+     * $source->toInvoiceData() and re-reads the host record; here the data is already
+     * built by the note's own DataFactory from a frozen snapshot, and there is no
+     * InvoiceSourceContract at all.
+     *
+     * Equally deliberately, ONE method rather than one per note kind. The two differ
+     * by a single foreign key column, which is what $linkAttributes carries; writing
+     * it twice would have meant two places to fix every future change to how a note's
+     * draft is reserved.
+     *
+     * @param  array<string, int>  $linkAttributes  exactly one of ['credit_note_id' => id]
+     *   or ['debit_note_id' => id] — the business record this technical row belongs to.
+     */
+    private function reserveAdjustmentNoteDraft(ZatcaInvoiceData $invoiceData, string $egsIdentifier, array $linkAttributes): ZatcaInvoice
+    {
+        $egsConfig = $this->egsRegistry->for($egsIdentifier);
+        $sourceReference = $invoiceData->sourceReference;
+
+        $existing = $this->findExisting($egsIdentifier, $egsConfig->environment->value, $sourceReference);
+
+        if ($existing) {
+            return $existing;
+        }
+
+        $this->assertNoDocumentOnAnotherEgs($egsIdentifier, $egsConfig->environment->value, $sourceReference);
+
+        if (! $this->signingKeyProvider->hasProductionCredentials($egsIdentifier, $egsConfig->environment)) {
+            throw ZatcaCredentialsMissingException::forEgs($egsIdentifier, ZatcaCredentialType::Production);
+        }
+
+        $this->invoiceDataValidator->validate($invoiceData);
+
+        $uuid = (string) Str::uuid();
+
+        try {
+            return DB::transaction(function () use ($egsIdentifier, $egsConfig, $sourceReference, $uuid, $invoiceData, $linkAttributes) {
+                $reservation = $this->counterManager->reserve($egsIdentifier, $egsConfig->environment);
+
+                $unsignedXml = $this->xmlGeneratorFactory->forData($invoiceData)->generate($invoiceData, $egsConfig, $uuid, $reservation);
+
+                return ZatcaInvoice::create([
+                    'egs_identifier' => $egsIdentifier,
+                    'environment' => $egsConfig->environment->value,
+                    'source_reference' => $sourceReference,
+                    'owner_id' => $this->ownerResolver->resolve($egsIdentifier),
+                    'document_type' => $invoiceData->documentType->value,
+                    'submission_model' => $invoiceData->documentType->submissionModel()->value,
+                    ...$linkAttributes,
+                    'uuid' => $uuid,
+                    'icv' => $reservation->icv,
+                    'previous_invoice_hash' => $reservation->previousInvoiceHash,
+                    'unsigned_xml' => $unsignedXml,
+                    'invoice_data_snapshot' => InvoiceDataSnapshot::toArray($invoiceData),
+                    'total_excl_vat' => $invoiceData->totalExclVat,
+                    'total_vat' => $invoiceData->totalVat,
+                    'total_incl_vat' => $invoiceData->totalInclVat,
+                    'currency' => $invoiceData->currency,
+                    'status' => ZatcaInvoiceStatus::Draft,
+                ]);
+            });
+        } catch (QueryException $e) {
+            if (! $this->isDuplicateKeyViolation($e)) {
+                throw $e;
+            }
+
+            $existing = $this->findExisting($egsIdentifier, $egsConfig->environment->value, $sourceReference);
+
+            if ($existing) {
+                return $existing;
+            }
+
+            $this->assertNoDocumentOnAnotherEgs($egsIdentifier, $egsConfig->environment->value, $sourceReference);
 
             throw $e;
         }
@@ -502,7 +655,7 @@ class ProductionInvoiceOrchestrator
             return null;
         }
 
-        $current = $this->xmlGeneratorFactory->make()->generate(
+        $current = $this->xmlGeneratorFactory->forData($invoiceData)->generate(
             $invoiceData,
             $egsConfig,
             $draft->uuid,
@@ -545,13 +698,20 @@ class ProductionInvoiceOrchestrator
             // rolls back with it rather than leaving a gap in the sequence.
             $reservation = $this->counterManager->reserve($original->egs_identifier, $egsConfig->environment);
 
-            $unsignedXml = $this->xmlGeneratorFactory->make()->generate($invoiceData, $egsConfig, $uuid, $reservation);
+            $unsignedXml = $this->xmlGeneratorFactory->forData($invoiceData)->generate($invoiceData, $egsConfig, $uuid, $reservation);
 
             return ZatcaInvoice::create([
                 'egs_identifier' => $original->egs_identifier,
                 'environment' => $egsConfig->environment->value,
                 'source_reference' => $this->nextReplacementReference($original),
                 'owner_id' => $original->owner_id,
+                'document_type' => $original->document_type,
+                'submission_model' => $original->submission_model,
+                // Carried across so a regenerated note's replacement still belongs to the
+                // same business record — for both note kinds. Exactly one of these is ever
+                // non-null on any row.
+                'credit_note_id' => $original->credit_note_id,
+                'debit_note_id' => $original->debit_note_id,
                 'uuid' => $uuid,
                 'icv' => $reservation->icv,
                 'previous_invoice_hash' => $reservation->previousInvoiceHash,
@@ -631,6 +791,24 @@ class ProductionInvoiceOrchestrator
             ->where('environment', $environment)
             ->where('source_reference', $sourceReference)
             ->first();
+    }
+
+    /**
+     * One sale, one tax document, whichever EGS signs it. Checked before credentials or
+     * an ICV slot are touched; the unique index zatca_inv_env_src_uq is the final arbiter
+     * for a race. The other EGS's document is never returned in place of this one.
+     */
+    private function assertNoDocumentOnAnotherEgs(string $egsIdentifier, string $environment, string $sourceReference): void
+    {
+        $other = ZatcaInvoice::query()
+            ->where('environment', $environment)
+            ->where('source_reference', $sourceReference)
+            ->where('egs_identifier', '!=', $egsIdentifier)
+            ->value('egs_identifier');
+
+        if ($other !== null) {
+            throw CrossEgsDuplicateException::for($sourceReference, $environment, $egsIdentifier, (string) $other);
+        }
     }
 
     private function isDuplicateKeyViolation(QueryException $e): bool

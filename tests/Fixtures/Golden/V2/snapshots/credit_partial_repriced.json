@@ -1,0 +1,25 @@
+{
+    "version": 2,
+    "egs_identifier": "default",
+    "source_reference": "CN-2026-000002",
+    "buyer_name": "محمد عبدالله",
+    "buyer_vat_number": null,
+    "issue_date_time": "2026-02-01T12:00:00+00:00",
+    "currency": "SAR",
+    "lines": [
+        {
+            "description": "دورة المحاسبة المالية",
+            "quantity": 1,
+            "unit_price": 450.0,
+            "vat_rate": 15.0,
+            "line_total_excl_vat": 450.0,
+            "vat_amount": 67.5
+        }
+    ],
+    "total_excl_vat": 450.0,
+    "total_vat": 67.5,
+    "total_incl_vat": 517.5,
+    "document_type": "simplified_credit_note",
+    "billing_reference_id": "order:108",
+    "adjustment_reason": "Refund of one course from a discounted bundle"
+}

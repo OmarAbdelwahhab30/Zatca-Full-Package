@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 use Zatca\Enums\ZatcaInvoiceStatus;
+use Zatca\Enums\ZatcaSubmissionModel;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Services\Execute\ProductionInvoiceOrchestrator;
 use Zatca\Support\ZatcaGate;
@@ -114,11 +115,15 @@ class CompleteZatcaInvoiceGenerationJob implements ShouldQueue
                 ['icv' => $completed->icv, 'status' => $completed->status->value]
             );
 
-            // The same reporting path the purchase flow uses, so the invoice rejoins the
-            // normal pipeline with its full retry budget and its attempt history intact.
-            // The actor travels with it so the first attempt is attributed to the admin
-            // who asked for it.
-            ReportZatcaInvoiceJob::dispatch($completed->id, $this->triggeredBy);
+            // The same reporting/clearance path the purchase flow uses, so the invoice
+            // rejoins the normal pipeline with its full retry budget and its attempt
+            // history intact. The actor travels with it so the first attempt is
+            // attributed to the admin who asked for it.
+            if ($completed->submission_model === ZatcaSubmissionModel::Clearance) {
+                ClearZatcaInvoiceJob::dispatch($completed->id, $this->triggeredBy);
+            } else {
+                ReportZatcaInvoiceJob::dispatch($completed->id, $this->triggeredBy);
+            }
         } catch (Throwable $e) {
             $this->recordFailure($e);
 

@@ -48,6 +48,10 @@ class ZatcaHealthCheck extends Command
             $healthy = false;
         }
 
+        if (! $this->checkEgsSet($registry)) {
+            $healthy = false;
+        }
+
         foreach ($registry->identifiers() as $egs) {
             $egsConfig = $registry->for($egs);
 
@@ -72,6 +76,71 @@ class ZatcaHealthCheck extends Command
         }
 
         return $healthy ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * One taxpayer, one identity: every EGS must carry the primary EGS's seller data,
+     * or two documents of the same seller would name two different companies. Also
+     * reports a B2B EGS identifier that collides with the primary (it is then ignored)
+     * and B2B CSR fields that are not set yet.
+     */
+    private function checkEgsSet(\Zatca\State\EgsRegistry $registry): bool
+    {
+        $healthy = true;
+        $primary = $registry->primary();
+        $b2b = config('zatca.b2b.egs_identifier');
+
+        if (is_string($b2b) && $b2b !== '' && $b2b === $primary->egsIdentifier) {
+            $this->error("[FAIL] ZATCA_B2B_EGS_IDENTIFIER [{$b2b}] equals the primary EGS identifier; the B2B EGS is ignored. Give it its own identifier.");
+            $healthy = false;
+        }
+
+        $identity = fn (EgsConfig $c) => [
+            'VAT number' => $c->vatNumber,
+            'organization identifier' => $c->organizationIdentifier,
+            'English legal name' => $c->organizationName,
+            'Arabic legal name' => $c->companyNameAr,
+            'CR number' => $c->commercialRegistrationNumber,
+            'street' => $c->street,
+            'district' => $c->district,
+            'building number' => $c->buildingNumber,
+            'additional number' => $c->additionalNumber,
+            'city' => $c->city,
+            'postal code' => $c->postalCode,
+            'VAT percentage' => $c->vatPercentage,
+        ];
+
+        foreach ($registry->identifiers() as $egs) {
+            if ($egs === $primary->egsIdentifier) {
+                continue;
+            }
+            $config = $registry->for($egs);
+            $drift = array_keys(array_diff_assoc(array_map('strval', $identity($config)), array_map('strval', $identity($primary))));
+
+            if ($drift !== []) {
+                $this->error("[FAIL] [{$egs}] seller data differs from the primary EGS [{$primary->egsIdentifier}]: ".implode(', ', $drift).'.');
+                $healthy = false;
+            }
+
+            if ($egs === $b2b) {
+                $raw = config("zatca.egs.{$egs}");
+                $unset = array_keys(array_filter([
+                    'ZATCA_B2B_CSR_COMMON_NAME' => $raw['common_name'] ?? null,
+                    'ZATCA_B2B_CSR_SERIAL_NUMBER' => $raw['serial_number'] ?? null,
+                    'ZATCA_B2B_INVOICE_TYPE' => $raw['invoice_type'] ?? null,
+                ], fn ($v) => $v === null || $v === ''));
+
+                if ($unset !== []) {
+                    $this->warn("[PENDING] [{$egs}] B2B EGS not ready for onboarding — not set: ".implode(', ', $unset).'.');
+                }
+
+                if ($config->environment !== $primary->environment) {
+                    $this->warn("[WARN] [{$egs}] environment {$config->environment->value} differs from the primary EGS ({$primary->environment->value}).");
+                }
+            }
+        }
+
+        return $healthy;
     }
 
     /**

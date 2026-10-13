@@ -1,0 +1,51 @@
+{
+    "version": 1,
+    "egs_identifier": "default",
+    "source_reference": "order:108",
+    "buyer_name": "محمد عبدالله",
+    "buyer_vat_number": null,
+    "issue_date_time": "2026-01-25T14:05:09+00:00",
+    "currency": "SAR",
+    "lines": [
+        {
+            "description": "دورة المحاسبة المالية",
+            "quantity": 1,
+            "unit_price": 500.0,
+            "vat_rate": 15.0,
+            "line_total_excl_vat": 500.0,
+            "vat_amount": 75.0
+        },
+        {
+            "description": "Excel for Accountants",
+            "quantity": 1,
+            "unit_price": 300.0,
+            "vat_rate": 15.0,
+            "line_total_excl_vat": 300.0,
+            "vat_amount": 45.0
+        },
+        {
+            "description": "VAT Fundamentals",
+            "quantity": 1,
+            "unit_price": 200.0,
+            "vat_rate": 15.0,
+            "line_total_excl_vat": 200.0,
+            "vat_amount": 30.0
+        }
+    ],
+    "total_excl_vat": 920.0,
+    "total_vat": 138.0,
+    "total_incl_vat": 1058.0,
+    "allowance_charges": [
+        {
+            "reason": "Bundle discount",
+            "amount_excl_vat": 80.0,
+            "vat_rate": 15.0,
+            "vat_amount": 12.0,
+            "pool_key": "bundle:7",
+            "line_indexes": [
+                0,
+                1
+            ]
+        }
+    ]
+}

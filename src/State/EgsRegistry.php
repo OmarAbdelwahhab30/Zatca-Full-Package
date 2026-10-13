@@ -38,6 +38,27 @@ class EgsRegistry
         return array_keys(Config::get('zatca.egs', []));
     }
 
+    /**
+     * The primary EGS — config('zatca.primary_egs'). B2C documents, the seller identity,
+     * the admin settings and the price tax policy belong to it. Use this rather than
+     * default(): with a B2B EGS configured, "first key" is an accident of array order.
+     *
+     * Falls back to default() when the key is absent (a config cached before it existed)
+     * or names an EGS that is not configured, which is exactly the behaviour before
+     * primary() existed.
+     */
+    public function primary(): EgsConfig
+    {
+        $primary = Config::get('zatca.primary_egs');
+
+        if (is_string($primary) && array_key_exists($primary, Config::get('zatca.egs', []))) {
+            return $this->for($primary);
+        }
+
+        return $this->default();
+    }
+
+    /** The first configured EGS. Prefer primary(). */
     public function default(): EgsConfig
     {
         $identifiers = $this->identifiers();

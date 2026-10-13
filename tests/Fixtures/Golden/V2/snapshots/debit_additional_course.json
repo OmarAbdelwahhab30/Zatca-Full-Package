@@ -1,0 +1,25 @@
+{
+    "version": 2,
+    "egs_identifier": "default",
+    "source_reference": "DN-2026-000001",
+    "buyer_name": "Test Student",
+    "buyer_vat_number": null,
+    "issue_date_time": "2026-01-12T08:00:00+00:00",
+    "currency": "SAR",
+    "lines": [
+        {
+            "description": "Additional course: Data Analysis",
+            "quantity": 1,
+            "unit_price": 300.0,
+            "vat_rate": 15.0,
+            "line_total_excl_vat": 300.0,
+            "vat_amount": 45.0
+        }
+    ],
+    "total_excl_vat": 300.0,
+    "total_vat": 45.0,
+    "total_incl_vat": 345.0,
+    "document_type": "simplified_debit_note",
+    "billing_reference_id": "order:42",
+    "adjustment_reason": "Additional course added to the enrolment"
+}

@@ -5,6 +5,8 @@ namespace Zatca\Jobs;
 use Zatca\Contracts\InvoiceSourceContract;
 use Zatca\Contracts\InvoiceSourceResolverContract;
 use Zatca\DTOs\InvoiceSourceReference;
+use Zatca\Enums\ZatcaSubmissionModel;
+use Zatca\Exceptions\CrossEgsDuplicateException;
 use Zatca\Exceptions\ZatcaCredentialsMissingException;
 use Zatca\Services\Execute\ProductionInvoiceOrchestrator;
 use Zatca\Support\ZatcaGate;
@@ -88,11 +90,27 @@ class GenerateZatcaInvoiceJob implements ShouldQueue
 
         try {
             $invoice = $orchestrator->generate($invoiceSource, $sourceRecord, $this->egsIdentifier);
+        } catch (CrossEgsDuplicateException $e) {
+            // The sale already has a document on another EGS. Retrying cannot change that.
+            Log::error('[ZATCA] Document generation refused: '.$e->getMessage());
+            $this->fail($e);
+
+            return;
         } catch (ZatcaCredentialsMissingException $e) {
             // Production onboarding hasn't completed for this EGS yet. Retrying won't
             // help until an admin finishes onboarding — fail quietly, don't spam retries.
             Log::warning('[ZATCA] Invoice generation skipped: '.$e->getMessage());
             $this->fail($e);
+
+            return;
+        }
+
+        // P25: a Standard document is cleared, never reported — the two profiles use
+        // different ZATCA endpoints and different status vocabularies.
+        if ($invoice->submission_model === ZatcaSubmissionModel::Clearance) {
+            ClearZatcaInvoiceJob::dispatch($invoice->id)
+                ->onConnection(Config::get('zatca.queue.connection'))
+                ->onQueue(Config::get('zatca.queue.queue'));
 
             return;
         }

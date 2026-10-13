@@ -2,13 +2,26 @@
 
 namespace Zatca\Tests\Feature;
 
+use DateTimeImmutable;
+use Illuminate\Support\Facades\Queue;
+use Zatca\Contracts\InvoiceSourceContract;
 use Zatca\Contracts\ZatcaSdkInterface;
+use Zatca\DTOs\BuyerAddress;
+use Zatca\DTOs\BuyerParty;
+use Zatca\DTOs\ZatcaInvoiceData;
+use Zatca\DTOs\ZatcaInvoiceLine;
 use Zatca\Enums\ZatcaCertificateState;
+use Zatca\Enums\ZatcaComplianceDocumentType;
 use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaEnvironment;
 use Zatca\Enums\ZatcaInvoiceStatus;
+use Zatca\Enums\ZatcaSubmissionModel;
+use Zatca\Jobs\ClearZatcaInvoiceJob;
+use Zatca\Jobs\RegenerateZatcaInvoiceJob;
+use Zatca\Jobs\ReportZatcaInvoiceJob;
 use Zatca\Models\ZatcaEgsCredential;
 use Zatca\Models\ZatcaInvoice;
+use Zatca\Models\ZatcaSubmissionAttempt;
 use Zatca\Services\Execute\ProductionInvoiceOrchestrator;
 use Zatca\Services\Regeneration\RegenerationPolicy;
 use Zatca\Services\Regeneration\RegenerationVerdict;
@@ -269,5 +282,134 @@ class RegenerationPolicyTest extends TestCase
 
         $this->assertFalse($this->policy->allows($transient));
         $this->assertTrue($this->policy->allows($rejected));
+    }
+
+    // -------------------------------------------------------------------------
+    // Standard (B2B/Clearance) documents — a rejected Standard invoice previously
+    // had no reissue path at all: REGENERABLE_STATUSES only listed the Reporting
+    // states. Buyer inheritance and Clearance-vs-Reporting routing on regeneration
+    // were already correct (ProductionInvoiceOrchestrator::regenerate(),
+    // RegenerateZatcaInvoiceJob); only this policy gate was missing them.
+    // -------------------------------------------------------------------------
+
+    /** A Standard invoice, signed, that ZATCA then rejected on validation grounds (400). */
+    private function rejectedStandardInvoice(int $sourceId = 9500, int $httpStatus = 400, string $egs = 'default'): ZatcaInvoice
+    {
+        $invoice = app(ProductionInvoiceOrchestrator::class)
+            ->generate($this->fakeStandardInvoiceSource(), (object) ['id' => $sourceId], $egs);
+
+        $invoice->update([
+            'status' => ZatcaInvoiceStatus::ClearanceRejected,
+            'attempt_count' => 1,
+            'last_error' => 'simulated clearance rejection',
+        ]);
+
+        ZatcaSubmissionAttempt::create([
+            'zatca_invoice_id' => $invoice->id,
+            'attempt_number' => 1,
+            'outcome' => 'failed',
+            'http_status' => $httpStatus,
+            'error_code' => 'BR-KSA-XX',
+            'error_message' => 'simulated clearance rejection',
+            'attempted_at' => now(),
+        ]);
+
+        return $invoice->fresh();
+    }
+
+    private function fakeStandardInvoiceSource(): InvoiceSourceContract
+    {
+        return new class implements InvoiceSourceContract
+        {
+            public function toInvoiceData(mixed $source, string $egsIdentifier): ZatcaInvoiceData
+            {
+                return new ZatcaInvoiceData(
+                    egsIdentifier: $egsIdentifier,
+                    sourceReference: $this->sourceReference($source),
+                    buyerName: 'Standard Buyer LLC',
+                    buyerVatNumber: '310123456700003',
+                    issueDateTime: new DateTimeImmutable('2026-08-17T10:30:00+03:00'),
+                    currency: 'SAR',
+                    lines: [new ZatcaInvoiceLine('Course Enrollment', 1, 100.00, 15.0, 100.00, 15.00)],
+                    totalExclVat: 100.00,
+                    totalVat: 15.00,
+                    totalInclVat: 115.00,
+                    documentType: ZatcaComplianceDocumentType::StandardInvoice,
+                    buyer: new BuyerParty(
+                        registrationName: 'Standard Buyer LLC',
+                        vatNumber: '310123456700003',
+                        otherId: null,
+                        address: new BuyerAddress(
+                            street: 'Test Street',
+                            buildingNumber: '1234',
+                            district: 'Test District',
+                            city: 'Riyadh',
+                            postalCode: '12345',
+                            countryCode: 'SA',
+                            additionalNumber: null,
+                        ),
+                    ),
+                    supplyDate: new DateTimeImmutable('2026-08-17T10:30:00+03:00'),
+                );
+            }
+
+            public function sourceReference(mixed $source): string
+            {
+                return 'order:'.$source->id;
+            }
+        };
+    }
+
+    public function test_a_standard_document_rejected_by_clearance_is_regenerable(): void
+    {
+        $verdict = $this->policy->verdict($this->rejectedStandardInvoice(9501, httpStatus: 400));
+
+        $this->assertTrue($verdict->eligible);
+        $this->assertNull($verdict->reason);
+    }
+
+    /**
+     * @dataProvider clearanceTransientFailureStatuses
+     *
+     * The same HTTP-status re-classification applies to Clearance as to Reporting:
+     * a network failure or a persistent server error was never judged by ZATCA, so
+     * the fix is retrying, not spending a fresh ICV slot on an identical document.
+     */
+    public function test_a_standard_document_with_a_transient_clearance_failure_says_retry_instead(int $httpStatus): void
+    {
+        $verdict = $this->policy->verdict($this->rejectedStandardInvoice(9600 + $httpStatus, $httpStatus));
+
+        $this->assertFalse($verdict->eligible);
+        $this->assertSame(RegenerationVerdict::TRANSIENT_FAILURE_RETRY_INSTEAD, $verdict->reason);
+    }
+
+    public static function clearanceTransientFailureStatuses(): array
+    {
+        return [
+            'network error' => [0],
+            'internal server error' => [500],
+        ];
+    }
+
+    /** Regenerating a rejected Standard document must clear it, never report it. */
+    public function test_regenerating_a_rejected_standard_document_dispatches_clearance_not_reporting(): void
+    {
+        Queue::fake();
+
+        $original = $this->rejectedStandardInvoice(9700);
+        $this->assertTrue($this->policy->allows($original));
+
+        $replacement = app(ProductionInvoiceOrchestrator::class)->regenerate($original);
+        $this->assertSame(ZatcaSubmissionModel::Clearance, $replacement->submission_model);
+
+        if ($replacement->submission_model === ZatcaSubmissionModel::Clearance) {
+            ClearZatcaInvoiceJob::dispatch($replacement->id);
+        } else {
+            ReportZatcaInvoiceJob::dispatch($replacement->id);
+        }
+
+        Queue::assertPushed(ClearZatcaInvoiceJob::class);
+        Queue::assertNotPushed(ReportZatcaInvoiceJob::class);
+        Queue::assertNotPushed(RegenerateZatcaInvoiceJob::class);
     }
 }

@@ -3,6 +3,7 @@
 namespace Zatca\Services\Connectors\V2;
 
 use Zatca\Contracts\ResponseNormalizerInterface;
+use Zatca\DTOs\Payloads\ClearancePayload;
 use Zatca\DTOs\Payloads\ComplianceCsidPayload;
 use Zatca\DTOs\Payloads\ComplianceInvoicePayload;
 use Zatca\DTOs\Payloads\ProductionCsidPayload;
@@ -101,6 +102,37 @@ class ResponseNormalizer implements ResponseNormalizerInterface
         ));
     }
 
+    /**
+     * POST /invoices/clearance/single. Same validationResults shape as reporting
+     * (Facts Register F-CL-09), plus a `clearedInvoice` (base64) and `clearanceStatus`
+     * (CLEARED/NOT_CLEARED) at the top level that reporting never carries.
+     */
+    public function normalizeClearance(ResponseInterface $response): ZatcaApiResult
+    {
+        return $this->normalizeValidationShaped(
+            $response,
+            'POST /invoices/clearance/single',
+            fn (array $v, ?string $reportingStatus, array $body) => new ClearancePayload(
+                clearanceStatus: $body['clearanceStatus'] ?? null,
+                clearedInvoiceBase64: $body['clearedInvoice'] ?? null,
+                validationWarnings: array_column($v['warningMessages'] ?? [], 'message'),
+                validationErrors: array_column($this->errorMessagesOf($v), 'message'),
+            )
+        );
+    }
+
+    /**
+     * F-CL-09: the clearance response schema spells the field `erroMessages`
+     * while every example body uses `errorMessages`. Tolerate both until a
+     * live sandbox response confirms which one is actually sent (G-04).
+     *
+     * @param  array<string,mixed>  $validationResults
+     */
+    private function errorMessagesOf(array $validationResults): array
+    {
+        return $validationResults['errorMessages'] ?? $validationResults['erroMessages'] ?? [];
+    }
+
     private function normalizeValidationShaped(ResponseInterface $response, string $endpoint, callable $payloadFactory): ZatcaApiResult
     {
         $body = $this->decode($response);
@@ -122,9 +154,9 @@ class ResponseNormalizer implements ResponseNormalizerInterface
 
         $status = ZatcaResponseStatus::fromClearanceStatus($validationResults['status']);
         $reportingStatus = $body['reportingStatus'] ?? null;
-        $errorMessages = array_column($validationResults['errorMessages'] ?? [], 'message');
+        $errorMessages = array_column($this->errorMessagesOf($validationResults), 'message');
 
-        $payload = $payloadFactory($validationResults, $reportingStatus);
+        $payload = $payloadFactory($validationResults, $reportingStatus, $body);
 
         // HTTP 409 is ONLY treated as a successful/idempotent outcome when the response body
         // itself confirms this exact invoice was already reported. A 409 for any other reason
@@ -148,7 +180,7 @@ class ResponseNormalizer implements ResponseNormalizerInterface
                 'warningMessages' => array_column($validationResults['warningMessages'] ?? [], 'message'),
                 // Keep only safe code/message pairs, in ZATCA's original order,
                 // so diagnostics never has to guess which explanation belongs to a code.
-                'validationErrors' => $this->validationDetails($validationResults['errorMessages'] ?? []),
+                'validationErrors' => $this->validationDetails($this->errorMessagesOf($validationResults)),
                 'validationWarnings' => $this->validationDetails($validationResults['warningMessages'] ?? []),
             ],
             warnings: array_column($validationResults['warningMessages'] ?? [], 'message'),

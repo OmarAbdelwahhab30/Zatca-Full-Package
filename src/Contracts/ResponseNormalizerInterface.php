@@ -18,4 +18,6 @@ interface ResponseNormalizerInterface
     public function normalizeProductionCsidRenewal(ResponseInterface $response): ZatcaApiResult;
 
     public function normalizeReporting(ResponseInterface $response): ZatcaApiResult;
+
+    public function normalizeClearance(ResponseInterface $response): ZatcaApiResult;
 }

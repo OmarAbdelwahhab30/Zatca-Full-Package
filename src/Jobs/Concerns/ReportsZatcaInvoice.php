@@ -7,7 +7,11 @@ use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Enums\ZatcaResponseStatus;
 use Zatca\DTOs\ZatcaApiResult;
+use Zatca\Events\ZatcaCreditNoteAccepted;
+use Zatca\Events\ZatcaDebitNoteAccepted;
 use Zatca\Events\ZatcaInvoiceNeedsAttention;
+use Zatca\Models\ZatcaCreditNote;
+use Zatca\Models\ZatcaDebitNote;
 use Zatca\Models\ZatcaEgsCredential;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Models\ZatcaSubmissionAttempt;
@@ -82,7 +86,10 @@ trait ReportsZatcaInvoice
             $invoice->signed_xml_base64,
         );
 
-        $finalStatus = DB::transaction(function () use ($zatcaInvoiceId, $result, $attemptNumber, $triggeredBy) {
+        $acceptedCreditNoteId = null;
+        $acceptedDebitNoteId = null;
+
+        $finalStatus = DB::transaction(function () use ($zatcaInvoiceId, $result, $attemptNumber, $triggeredBy, &$acceptedCreditNoteId, &$acceptedDebitNoteId) {
             $invoice = ZatcaInvoice::query()->lockForUpdate()->find($zatcaInvoiceId);
 
             if (! $invoice || $invoice->status->isTerminalSuccess()) {
@@ -111,6 +118,43 @@ trait ReportsZatcaInvoice
                 'reported_at' => $status->isTerminalSuccess() ? now() : $invoice->reported_at,
             ]);
 
+            // Credit Status (BR-09) is derived from accepted_at, and nowhere else — a
+            // Credit Note that is pending, failed or rejected must never count as
+            // credited. Written in the SAME transaction as the terminal status so the
+            // two can never observably disagree, and only once (`whereNull`) so a
+            // regenerated note's later acceptance cannot overwrite an earlier one.
+            if ($status->isTerminalSuccess() && $invoice->credit_note_id !== null) {
+                $written = ZatcaCreditNote::query()
+                    ->whereKey($invoice->credit_note_id)
+                    ->whereNull('accepted_at')
+                    ->update(['accepted_at' => now()]);
+
+                // Only when THIS call was the one that wrote it — a regenerated note's
+                // later acceptance must not re-fire the event for an already-credited note.
+                if ($written > 0) {
+                    $acceptedCreditNoteId = $invoice->credit_note_id;
+                }
+            }
+
+            // The Debit Note counterpart, on exactly the same terms: accepted_at is the
+            // ONLY thing that makes a debit note count financially, it is written in the
+            // SAME transaction as the terminal status so the two can never observably
+            // disagree, and only once (`whereNull`) so a regenerated note's later
+            // acceptance cannot overwrite an earlier one.
+            //
+            // A row carries at most one of credit_note_id/debit_note_id, so these two
+            // blocks are mutually exclusive in practice.
+            if ($status->isTerminalSuccess() && $invoice->debit_note_id !== null) {
+                $written = ZatcaDebitNote::query()
+                    ->whereKey($invoice->debit_note_id)
+                    ->whereNull('accepted_at')
+                    ->update(['accepted_at' => now()]);
+
+                if ($written > 0) {
+                    $acceptedDebitNoteId = $invoice->debit_note_id;
+                }
+            }
+
             ZatcaSubmissionAttempt::create([
                 'zatca_invoice_id' => $invoice->id,
                 'attempt_number' => $attemptNumber,
@@ -137,6 +181,26 @@ trait ReportsZatcaInvoice
         // will never resolve itself — everything else is retried by the scheduler.
         if ($finalStatus === ZatcaInvoiceStatus::ManualReview) {
             $this->announceNeedsAttention($zatcaInvoiceId, $result, $attemptNumber);
+        }
+
+        // Same after-commit reasoning as above: a listener that reads the credit note
+        // (or dispatches a queued job against it) must see accepted_at already persisted.
+        if ($acceptedCreditNoteId !== null) {
+            $creditNote = ZatcaCreditNote::query()->find($acceptedCreditNoteId);
+
+            if ($creditNote) {
+                Event::dispatch(new ZatcaCreditNoteAccepted($creditNote));
+            }
+        }
+
+        // Same after-commit reasoning: the host's listener grants course access off the
+        // back of this, and must see accepted_at already persisted.
+        if ($acceptedDebitNoteId !== null) {
+            $debitNote = ZatcaDebitNote::query()->find($acceptedDebitNoteId);
+
+            if ($debitNote) {
+                Event::dispatch(new ZatcaDebitNoteAccepted($debitNote));
+            }
         }
     }
 

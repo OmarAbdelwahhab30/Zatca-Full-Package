@@ -110,34 +110,58 @@ class ComplianceOnboardingOrchestrator
     /** @return array{status:string, warnings:array<string>, errors:array<string>} */
     public function testInvoice(string $egsIdentifier): array
     {
-        return $this->submitComplianceDocument($egsIdentifier, ZatcaComplianceDocumentType::Invoice);
+        return $this->submitComplianceDocument($egsIdentifier, $this->invoiceTypeFor($egsIdentifier));
     }
 
     /**
-     * Submits a compliant simplified credit note, billed against the most
-     * recently submitted testInvoice() document for this EGS. ZATCA requires
-     * this — separately from the plain invoice check — before it will issue
-     * a Production CSID.
+     * Submits a compliant credit note, billed against the most recently
+     * submitted testInvoice() document for this EGS. ZATCA requires this —
+     * separately from the plain invoice check — before it will issue a
+     * Production CSID.
      *
      * @return array{status:string, warnings:array<string>, errors:array<string>}
      */
     public function testCreditNote(string $egsIdentifier): array
     {
+        $type = $this->noteTypeFor($egsIdentifier, ZatcaComplianceDocumentType::CreditNote, ZatcaComplianceDocumentType::StandardCreditNote);
+
         return $this->submitComplianceDocument(
             $egsIdentifier,
-            ZatcaComplianceDocumentType::CreditNote,
-            $this->requireInvoiceReference($egsIdentifier)
+            $type,
+            $this->requireInvoiceReference($egsIdentifier, $type)
         );
     }
 
     /** @return array{status:string, warnings:array<string>, errors:array<string>} */
     public function testDebitNote(string $egsIdentifier): array
     {
+        $type = $this->noteTypeFor($egsIdentifier, ZatcaComplianceDocumentType::DebitNote, ZatcaComplianceDocumentType::StandardDebitNote);
+
         return $this->submitComplianceDocument(
             $egsIdentifier,
-            ZatcaComplianceDocumentType::DebitNote,
-            $this->requireInvoiceReference($egsIdentifier)
+            $type,
+            $this->requireInvoiceReference($egsIdentifier, $type)
         );
+    }
+
+    /**
+     * A document belongs to the Standard profile when its EGS is not the primary
+     * one — the same rule EgsRegistry::primary() uses to tell the B2C unit from
+     * any other configured unit (today, the B2B one).
+     */
+    private function isStandardEgs(string $egsIdentifier): bool
+    {
+        return $egsIdentifier !== $this->egsRegistry->primary()->egsIdentifier;
+    }
+
+    private function invoiceTypeFor(string $egsIdentifier): ZatcaComplianceDocumentType
+    {
+        return $this->isStandardEgs($egsIdentifier) ? ZatcaComplianceDocumentType::StandardInvoice : ZatcaComplianceDocumentType::Invoice;
+    }
+
+    private function noteTypeFor(string $egsIdentifier, ZatcaComplianceDocumentType $simplified, ZatcaComplianceDocumentType $standard): ZatcaComplianceDocumentType
+    {
+        return $this->isStandardEgs($egsIdentifier) ? $standard : $simplified;
     }
 
     /** @return array{status:string, warnings:array<string>, errors:array<string>} */
@@ -148,7 +172,7 @@ class ComplianceOnboardingOrchestrator
     ): array {
         $egsConfig = $this->egsRegistry->for($egsIdentifier);
 
-        $invoiceData = $this->testInvoiceFactory->make($egsIdentifier, 'Compliance Test Item ('.$documentType->label().')');
+        $invoiceData = $this->testInvoiceFactory->make($egsIdentifier, 'Compliance Test Item ('.$documentType->label().')', $documentType);
         $uuid = (string) Str::uuid();
         $reservation = $this->counterManager->reserve($egsIdentifier, $egsConfig->environment);
 
@@ -196,18 +220,26 @@ class ComplianceOnboardingOrchestrator
         ];
     }
 
-    /** The invoice a credit/debit note compliance check must bill against — the most recent testInvoice() submission. */
-    private function requireInvoiceReference(string $egsIdentifier): string
+    /**
+     * The invoice a credit/debit note compliance check must bill against — the most recent
+     * compliance invoice of the note's own subtype (a Simplified note bills against a
+     * Simplified invoice, a Standard note against a Standard one).
+     */
+    private function requireInvoiceReference(string $egsIdentifier, ZatcaComplianceDocumentType $noteType): string
     {
+        $invoiceType = $noteType->isStandard()
+            ? ZatcaComplianceDocumentType::StandardInvoice
+            : ZatcaComplianceDocumentType::Invoice;
+
         $invoice = ZatcaComplianceDocument::query()
             ->where('egs_identifier', $egsIdentifier)
-            ->where('document_type', ZatcaComplianceDocumentType::Invoice->value)
+            ->where('document_type', $invoiceType->value)
             ->latest('id')
             ->first();
 
         if (! $invoice || ! $invoice->document_reference) {
             throw new ZatcaException(
-                "No compliant simplified invoice on record for EGS [{$egsIdentifier}]. Run `zatca:onboard test-invoice` "
+                "No compliant {$invoiceType->label()} on record for EGS [{$egsIdentifier}]. Run `zatca:onboard test-invoice` "
                 .'first — ZATCA requires the credit/debit note compliance check to bill against it.'
             );
         }

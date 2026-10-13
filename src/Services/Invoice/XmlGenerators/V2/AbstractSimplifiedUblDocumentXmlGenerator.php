@@ -4,8 +4,11 @@ namespace Zatca\Services\Invoice\XmlGenerators\V2;
 
 use Zatca\DTOs\EgsConfig;
 use Zatca\DTOs\InvoiceSequenceReservation;
+use Zatca\DTOs\ZatcaAllowanceCharge;
 use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\DTOs\ZatcaInvoiceLine;
+use Zatca\Services\Invoice\XmlGenerators\Concerns\RendersUblLinesAndTax;
+use Zatca\Services\Invoice\XmlGenerators\UblDocumentXmlGenerator;
 
 /**
  * Shared UBL 2.1 (Reporting model, B2C) template for every simplified document
@@ -33,8 +36,10 @@ use Zatca\DTOs\ZatcaInvoiceLine;
  * reports another structural rejection, that's the next thing to compare
  * against.
  */
-abstract class AbstractSimplifiedUblDocumentXmlGenerator
+abstract class AbstractSimplifiedUblDocumentXmlGenerator implements UblDocumentXmlGenerator
 {
+    use RendersUblLinesAndTax;
+
     private const SIGNATURE_PLACEHOLDER = <<<'XML'
 <ext:UBLExtensions>
     <ext:UBLExtension>
@@ -123,11 +128,17 @@ XML;
      * (InvoiceTypeCode 381/383) to state the reason it was issued at this
      * specific path — not a top-level `cbc:Note`.
      */
-    protected function paymentMeansInstructionNoteXml(): string
+    protected function paymentMeansInstructionNoteXml(?string $reason): string
     {
         return '';
     }
 
+    /**
+     * @param  ?string  $billingReferenceId  legacy explicit override, used only by
+     *   compliance onboarding (ComplianceOnboardingOrchestrator), whose ZatcaInvoiceData
+     *   never carries a billingReferenceId of its own. A production caller must set
+     *   $invoiceData->billingReferenceId instead — that value always wins when present.
+     */
     public function generate(
         ZatcaInvoiceData $invoiceData,
         EgsConfig $egsConfig,
@@ -135,19 +146,45 @@ XML;
         InvoiceSequenceReservation $reservation,
         ?string $billingReferenceId = null
     ): string {
+        $billingReferenceId = $invoiceData->billingReferenceId ?? $billingReferenceId;
         $lines = implode("\n", array_map(
             fn (int $i, ZatcaInvoiceLine $line) => $this->renderLine($i + 1, $line),
             array_keys($invoiceData->lines),
             $invoiceData->lines
         ));
 
-        $taxCategories = $this->groupByVatRate($invoiceData->lines);
+        // BT-106 LineExtensionAmount is the raw sum of line net amounts —
+        // pre-allowance. TaxExclusiveAmount is that sum minus allowances
+        // (already what $invoiceData->totalExclVat is), which is why the two
+        // are computed from different bases below.
+        $lineExtensionSum = array_reduce(
+            $invoiceData->lines,
+            fn (float $carry, ZatcaInvoiceLine $line) => $carry + $line->lineTotalExclVat,
+            0.0
+        );
+
+        // Per-category tax subtotals must net out any allowance in that same
+        // category, otherwise a TaxTotal's own TaxAmount (already net of
+        // allowance) would disagree with the sum of its TaxSubtotal amounts —
+        // an internally inconsistent document ZATCA will reject regardless of
+        // whether the document-level totals happen to reconcile on their own.
+        $taxCategories = $this->groupByVatRate($invoiceData->lines, $invoiceData->allowanceCharges);
         $taxCategoryXml = implode("\n", array_map(fn (float $rate) => $this->renderTaxCategory($rate), array_keys($taxCategories)));
         $taxSubtotalXml = implode("\n", array_map(
             fn (float $rate, array $amounts) => $this->renderTaxSubtotal($rate, $amounts['taxable'], $amounts['vat']),
             array_keys($taxCategories),
             $taxCategories
         ));
+
+        $allowanceChargeXml = implode("\n", array_map(
+            fn (ZatcaAllowanceCharge $allowance) => $this->renderAllowanceCharge($allowance),
+            $invoiceData->allowanceCharges
+        ));
+        $allowanceTotal = array_reduce(
+            $invoiceData->allowanceCharges,
+            fn (float $carry, ZatcaAllowanceCharge $allowance) => $carry + $allowance->amountExclVat,
+            0.0
+        );
 
         $buyerXml = $invoiceData->buyerName
             ? sprintf(
@@ -180,13 +217,14 @@ XML;
             '</cac:Party></cac:AccountingSupplierParty>'.
             '%s'.
             '<cac:PaymentMeans><cbc:PaymentMeansCode>10</cbc:PaymentMeansCode>%s</cac:PaymentMeans>'.
+            '%s'.
             '<cac:TaxTotal><cbc:TaxAmount currencyID="%s">%s</cbc:TaxAmount></cac:TaxTotal>'.
             '<cac:TaxTotal><cbc:TaxAmount currencyID="%s">%s</cbc:TaxAmount>%s</cac:TaxTotal>'.
             '<cac:LegalMonetaryTotal>'.
             '<cbc:LineExtensionAmount currencyID="%s">%s</cbc:LineExtensionAmount>'.
             '<cbc:TaxExclusiveAmount currencyID="%s">%s</cbc:TaxExclusiveAmount>'.
             '<cbc:TaxInclusiveAmount currencyID="%s">%s</cbc:TaxInclusiveAmount>'.
-            '<cbc:AllowanceTotalAmount currencyID="%s">0.00</cbc:AllowanceTotalAmount>'.
+            '<cbc:AllowanceTotalAmount currencyID="%s">%s</cbc:AllowanceTotalAmount>'.
             '<cbc:PrepaidAmount currencyID="%s">0.00</cbc:PrepaidAmount>'.
             '<cbc:PayableAmount currencyID="%s">%s</cbc:PayableAmount>'.
             '</cac:LegalMonetaryTotal>'.
@@ -220,19 +258,21 @@ XML;
             // Arabic-first — falling back to the English one.
             $this->esc((string) $egsConfig->invoiceLegalName()),
             $buyerXml,
-            $this->paymentMeansInstructionNoteXml(),
+            $this->paymentMeansInstructionNoteXml($invoiceData->adjustmentReason),
+            $allowanceChargeXml,
             $invoiceData->currency,
             $this->money($invoiceData->totalVat),
             $invoiceData->currency,
             $this->money($invoiceData->totalVat),
             $taxSubtotalXml,
             $invoiceData->currency,
-            $this->money($invoiceData->totalExclVat),
+            $this->money($lineExtensionSum),
             $invoiceData->currency,
             $this->money($invoiceData->totalExclVat),
             $invoiceData->currency,
             $this->money($invoiceData->totalInclVat),
             $invoiceData->currency,
+            $this->money($allowanceTotal),
             $invoiceData->currency,
             $invoiceData->currency,
             $this->money($invoiceData->totalInclVat),
@@ -240,64 +280,4 @@ XML;
         );
     }
 
-    /** @return array<string,array{taxable:float,vat:float}> keyed by rate */
-    private function groupByVatRate(array $lines): array
-    {
-        $groups = [];
-
-        foreach ($lines as $line) {
-            /** @var ZatcaInvoiceLine $line */
-            $key = (string) $line->vatRate;
-            $groups[$key]['taxable'] = ($groups[$key]['taxable'] ?? 0) + $line->lineTotalExclVat;
-            $groups[$key]['vat'] = ($groups[$key]['vat'] ?? 0) + $line->vatAmount;
-        }
-
-        return $groups;
-    }
-
-    private function renderTaxCategory(float $rate): string
-    {
-        return sprintf(
-            '<cac:TaxCategory><cbc:ID schemeID="UN/ECE 5305" schemeAgencyID="6">S</cbc:ID><cbc:Percent>%s</cbc:Percent><cac:TaxScheme><cbc:ID schemeID="UN/ECE 5153" schemeAgencyID="6">VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory>',
-            $rate
-        );
-    }
-
-    private function renderTaxSubtotal(float $rate, float $taxable, float $vat): string
-    {
-        return sprintf(
-            '<cac:TaxSubtotal><cbc:TaxableAmount currencyID="SAR">%s</cbc:TaxableAmount><cbc:TaxAmount currencyID="SAR">%s</cbc:TaxAmount><cac:TaxCategory><cbc:ID schemeID="UN/ECE 5305" schemeAgencyID="6">S</cbc:ID><cbc:Percent>%s</cbc:Percent><cac:TaxScheme><cbc:ID schemeID="UN/ECE 5153" schemeAgencyID="6">VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal>',
-            $this->money($taxable),
-            $this->money($vat),
-            $rate
-        );
-    }
-
-    private function renderLine(int $id, ZatcaInvoiceLine $line): string
-    {
-        return sprintf(
-            '<cac:InvoiceLine><cbc:ID>%d</cbc:ID><cbc:InvoicedQuantity unitCode="PCE">%d</cbc:InvoicedQuantity><cbc:LineExtensionAmount currencyID="SAR">%s</cbc:LineExtensionAmount>'.
-            '<cac:TaxTotal><cbc:TaxAmount currencyID="SAR">%s</cbc:TaxAmount><cbc:RoundingAmount currencyID="SAR">%s</cbc:RoundingAmount></cac:TaxTotal>'.
-            '<cac:Item><cbc:Name>%s</cbc:Name><cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>%s</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:ClassifiedTaxCategory></cac:Item>'.
-            '<cac:Price><cbc:PriceAmount currencyID="SAR">%s</cbc:PriceAmount></cac:Price></cac:InvoiceLine>',
-            $id,
-            $line->quantity,
-            $this->money($line->lineTotalExclVat),
-            $this->money($line->vatAmount),
-            $this->money($line->lineTotalInclVat()),
-            $this->esc($line->description),
-            $line->vatRate,
-            $this->money($line->unitPrice)
-        );
-    }
-
-    private function money(float $value): string
-    {
-        return number_format($value, 2, '.', '');
-    }
-
-    private function esc(string $value): string
-    {
-        return htmlspecialchars($value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
-    }
 }

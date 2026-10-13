@@ -31,7 +31,11 @@
     },
     "scripts": {
         "test": "vendor/bin/phpunit",
-        "smoke": "vendor/bin/testbench zatca:sdk-smoke-test"
+        "smoke": "vendor/bin/testbench zatca:sdk-smoke-test",
+        "golden:update": [
+            "@putenv ZATCA_GOLDEN_UPDATE=1",
+            "vendor/bin/phpunit --group golden"
+        ]
     },
     "extra": {
         "laravel": {

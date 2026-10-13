@@ -46,12 +46,26 @@ class RegenerationPolicy
      * so its presence means something outside the normal pipeline put it there; treating it
      * as recoverable matches how RequeueInvoices already treats it.
      *
-     * `retrying` and `pending_reporting` are excluded: neither has been refused by ZATCA,
-     * so there is nothing to fix. Terminal successes are excluded and hard-guarded below.
+     * `clearance_rejected` and `clearance_manual_review` are their Standard/Clearance
+     * counterparts — without them a rejected Standard (B2B) document had no reissue path at
+     * all, even though buyer inheritance and Clearance-vs-Reporting routing on regeneration
+     * were already correct (ProductionInvoiceOrchestrator::regenerate() and
+     * RegenerateZatcaInvoiceJob already handle a Standard replacement properly; only this
+     * gate was missing them). The HTTP-status re-classification below already applies
+     * correctly to both: ZATCA's Clearance and Reporting APIs share the same status
+     * vocabulary (400 rejection, 401/403 credentials, 5xx/0 transient — Facts Register
+     * F-CL-06), and `clearance_rejected` can only be reached on a non-transient 4xx in the
+     * first place (Zatca\Jobs\Concerns\ClearsZatcaInvoice checks network/5xx before it).
+     *
+     * `retrying`, `clearance_retrying`, `clearance_in_doubt` and `pending_*` are excluded:
+     * none of them has been refused by ZATCA, so there is nothing to fix — they retry
+     * instead. Terminal successes are excluded and hard-guarded below.
      */
     private const REGENERABLE_STATUSES = [
         ZatcaInvoiceStatus::Failed,
         ZatcaInvoiceStatus::ManualReview,
+        ZatcaInvoiceStatus::ClearanceRejected,
+        ZatcaInvoiceStatus::ClearanceManualReview,
     ];
 
     /** @return array<int, string> */

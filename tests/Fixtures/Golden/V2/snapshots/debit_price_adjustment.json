@@ -1,0 +1,25 @@
+{
+    "version": 2,
+    "egs_identifier": "default",
+    "source_reference": "DN-2026-000002",
+    "buyer_name": "محمد عبدالله",
+    "buyer_vat_number": null,
+    "issue_date_time": "2026-02-05T10:30:00+00:00",
+    "currency": "SAR",
+    "lines": [
+        {
+            "description": "Course A - price increase",
+            "quantity": 1,
+            "unit_price": 43.48,
+            "vat_rate": 15.0,
+            "line_total_excl_vat": 43.48,
+            "vat_amount": 6.52
+        }
+    ],
+    "total_excl_vat": 43.48,
+    "total_vat": 6.52,
+    "total_incl_vat": 50.0,
+    "document_type": "simplified_debit_note",
+    "billing_reference_id": "order:108",
+    "adjustment_reason": "Price increase agreed with the student"
+}

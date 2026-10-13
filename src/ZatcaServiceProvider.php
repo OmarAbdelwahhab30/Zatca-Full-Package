@@ -3,6 +3,7 @@
 namespace Zatca;
 
 use Zatca\Console\Commands\CheckCertificate;
+use Zatca\Console\Commands\CheckSourceUniqueness;
 use Zatca\Console\Commands\GenerateCredentials;
 use Zatca\Console\Commands\InspectZatca;
 use Zatca\Console\Commands\Onboard;
@@ -100,6 +101,7 @@ class ZatcaServiceProvider extends ServiceProvider
                 PruneSubmissionAttempts::class,
                 PruneSdkFiles::class,
                 SdkSmokeTest::class,
+                CheckSourceUniqueness::class,
             ]);
         }
     }

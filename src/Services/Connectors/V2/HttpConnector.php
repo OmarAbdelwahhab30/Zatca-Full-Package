@@ -96,11 +96,24 @@ class HttpConnector implements ZatcaConnectorInterface
         $credentials = $this->credentialStore->get($egsIdentifier, $environment, ZatcaCredentialType::Production);
 
         return $this->send($environment, 'POST', '/invoices/reporting/single', [
-            // Reporting model only — clearance not used in this package's scope.
+            // Reporting model (Simplified/B2C) only — Standard documents go through clearInvoice().
             'headers' => $this->headers(['Clearance-Status' => '0']),
             'auth' => [$credentials->authUsername(), $credentials->authPassword()],
             'json' => $this->requestMapper->mapInvoiceSubmissionRequest($invoiceHash, $uuid, $signedInvoiceBase64),
         ], fn ($response) => $this->responseNormalizer->normalizeReporting($response));
+    }
+
+    /** POST /invoices/clearance/single (Facts Register F-CL-01/F-CL-03) — Standard (B2B) documents. */
+    public function clearInvoice(string $egsIdentifier, string $invoiceHash, string $uuid, string $signedInvoiceBase64): ZatcaApiResult
+    {
+        $environment = $this->environmentFor($egsIdentifier);
+        $credentials = $this->credentialStore->get($egsIdentifier, $environment, ZatcaCredentialType::Production);
+
+        return $this->send($environment, 'POST', '/invoices/clearance/single', [
+            'headers' => $this->headers(['Clearance-Status' => '1']),
+            'auth' => [$credentials->authUsername(), $credentials->authPassword()],
+            'json' => $this->requestMapper->mapInvoiceSubmissionRequest($invoiceHash, $uuid, $signedInvoiceBase64),
+        ], fn ($response) => $this->responseNormalizer->normalizeClearance($response));
     }
 
     /**

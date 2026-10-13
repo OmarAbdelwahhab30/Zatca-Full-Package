@@ -1,0 +1,33 @@
+{
+    "version": 2,
+    "egs_identifier": "default",
+    "source_reference": "CN-2026-000003",
+    "buyer_name": "Test Student",
+    "buyer_vat_number": null,
+    "issue_date_time": "2026-01-20T16:45:30+00:00",
+    "currency": "SAR",
+    "lines": [
+        {
+            "description": "Course Enrollment - price adjustment",
+            "quantity": 1,
+            "unit_price": 50.0,
+            "vat_rate": 15.0,
+            "line_total_excl_vat": 50.0,
+            "vat_amount": 7.5
+        },
+        {
+            "description": "Extra workshop session",
+            "quantity": 1,
+            "unit_price": 40.0,
+            "vat_rate": 15.0,
+            "line_total_excl_vat": 40.0,
+            "vat_amount": 6.0
+        }
+    ],
+    "total_excl_vat": 90.0,
+    "total_vat": 13.5,
+    "total_incl_vat": 103.5,
+    "document_type": "simplified_credit_note",
+    "billing_reference_id": "order:42",
+    "adjustment_reason": "Price corrected after enrolment"
+}

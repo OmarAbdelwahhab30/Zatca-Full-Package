@@ -99,6 +99,50 @@ class ComplianceOnboardingOrchestratorNoteTest extends TestCase
         $this->assertStringContainsString('<cbc:InvoiceTypeCode name="0200000">383</cbc:InvoiceTypeCode>', $signedXml);
     }
 
+    /**
+     * P17: the reference lookup takes the note's subtype. A Simplified note keeps billing
+     * against the Simplified test invoice even when a newer Standard one is on record.
+     */
+    public function test_simplified_notes_ignore_a_newer_standard_compliance_invoice(): void
+    {
+        $this->seedComplianceCredentials();
+        $sdk = $this->fakeSigningSdk();
+        $this->app->instance(ZatcaSdkInterface::class, $sdk);
+        $this->fakeCompliancePass();
+        $orchestrator = app(ComplianceOnboardingOrchestrator::class);
+
+        $orchestrator->testInvoice(self::EGS);
+        $simplified = ZatcaComplianceDocument::where('document_type', 'simplified_invoice')->sole();
+        ZatcaComplianceDocument::create([
+            'egs_identifier' => self::EGS,
+            'document_type' => 'standard_invoice',
+            'uuid' => 'standard-compliance-invoice',
+            'icv' => 99,
+            'invoice_hash' => 'HASH-STANDARD',
+            'previous_invoice_hash' => 'HASH-PREVIOUS',
+            'unsigned_xml' => '<Invoice/>',
+            'signed_xml_base64' => base64_encode('<Invoice/>'),
+            'document_reference' => 'STANDARD-REF',
+        ]);
+
+        $orchestrator->testCreditNote(self::EGS);
+        $orchestrator->testDebitNote(self::EGS);
+
+        foreach (['simplified_credit_note', 'simplified_debit_note'] as $type) {
+            $this->assertSame($simplified->document_reference, ZatcaComplianceDocument::where('document_type', $type)->sole()->document_reference, $type);
+        }
+    }
+
+    /** The refusal names the missing invoice type; for Simplified notes the text is unchanged. */
+    public function test_the_refusal_message_is_unchanged_for_simplified_notes(): void
+    {
+        $this->seedComplianceCredentials();
+
+        $this->expectExceptionMessage('No compliant simplified invoice on record for EGS [default]. Run `zatca:onboard test-invoice` first');
+
+        app(ComplianceOnboardingOrchestrator::class)->testCreditNote(self::EGS);
+    }
+
     private function seedComplianceCredentials(): void
     {
         app(ZatcaCredentialStore::class)->store(self::EGS, ZatcaEnvironment::Sandbox, ZatcaCredentialType::Compliance, [

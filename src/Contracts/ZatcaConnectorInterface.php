@@ -43,4 +43,17 @@ interface ZatcaConnectorInterface
         string $uuid,
         string $signedInvoiceBase64
     ): ZatcaApiResult;
+
+    /**
+     * POST /invoices/clearance/single (Facts Register F-CL-01) — Standard
+     * (B2B) documents only. Unlike reportInvoice(), ZATCA returns a re-signed
+     * copy of the document on success; the caller is responsible for storing
+     * it (ZatcaInvoice::$cleared_xml_base64).
+     */
+    public function clearInvoice(
+        string $egsIdentifier,
+        string $invoiceHash,
+        string $uuid,
+        string $signedInvoiceBase64
+    ): ZatcaApiResult;
 }

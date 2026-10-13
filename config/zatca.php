@@ -1,5 +1,76 @@
 <?php
 
+// The primary EGS: the one B2C (Simplified) documents are signed under, and the one the
+// seller identity, the admin settings and the price tax policy belong to.
+$zatcaPrimaryEgs = env('ZATCA_EGS_IDENTIFIER', 'default');
+
+$zatcaPrimaryEgsConfig = [
+    'environment' => env('ZATCA_ENVIRONMENT', 'sandbox'),
+    'vat_number' => env('ZATCA_VAT_NUMBER'),
+    // ZATCA_ORG_NAME is the *English* company legal name. It feeds both
+    // csr.organization.name and (as fallback) the invoice RegistrationName.
+    // Do not add a separate ZATCA_COMPANY_NAME_EN — the two would drift.
+    'organization_name' => env('ZATCA_ORG_NAME'),
+    // ZATCA defines csr.organization.unit.name as the branch name (or the
+    // branch's 10-digit TIN for VAT-group members). This *is* the
+    // "Branch / Platform Name" shown in the admin UI.
+    'organization_unit_name' => env('ZATCA_ORG_UNIT_NAME'),
+    'common_name' => env('ZATCA_CSR_COMMON_NAME'),
+    'serial_number' => env('ZATCA_CSR_SERIAL_NUMBER'),
+    // Per ZATCA's CSR spec this is the taxpayer's 15-digit VAT registration
+    // number — it must never diverge from vat_number. zatca:health-check
+    // asserts they match.
+    'organization_identifier' => env('ZATCA_ORG_IDENTIFIER'),
+    'country_code' => env('ZATCA_COUNTRY_CODE', 'SA'),
+    'invoice_type' => env('ZATCA_INVOICE_TYPE', '0100'),
+    // Legacy single-line address. Superseded by the structured fields
+    // below; kept as the fallback for deployments that have not set them.
+    'location_address' => env('ZATCA_LOCATION_ADDRESS'),
+    'business_category' => env('ZATCA_BUSINESS_CATEGORY'),
+    'commercial_registration_number' => env('ZATCA_CRN'),
+
+    // Arabic company legal name — used for the invoice's
+    // cac:PartyLegalEntity/cbc:RegistrationName. Never fed to the CSR:
+    // non-ASCII in a CSR subject is a known ZATCA compliance-failure source.
+    'company_name_ar' => env('ZATCA_COMPANY_NAME_AR'),
+
+    // Displayed by the admin ZATCA Settings screen. Not yet consumed by
+    // invoice generation — VAT reaches the XML per-line via
+    // ZatcaInvoiceLine::vatRate, built by the host app's
+    // InvoiceSourceContract implementation (not written yet).
+    'vat_percentage' => (float) env('ZATCA_VAT_PERCENTAGE', 15),
+
+    // Structured national address. Maps 1:1 onto the seller's
+    // cac:PostalAddress in the invoice XML; joined into one line for the
+    // CSR's free-text csr.location.address.
+    'street' => env('ZATCA_STREET'),
+    'district' => env('ZATCA_DISTRICT'),
+    'building_number' => env('ZATCA_BUILDING_NUMBER'),
+    'additional_number' => env('ZATCA_ADDITIONAL_NUMBER'),
+    'city' => env('ZATCA_CITY'),
+    'postal_code' => env('ZATCA_POSTAL_CODE'),
+];
+
+// Optional second EGS for B2B (Standard) documents — its own CSR, certificate, ICV and
+// hash chain. Present only when ZATCA_B2B_EGS_IDENTIFIER is set to an identifier other
+// than the primary's. It inherits every seller field from the primary EGS (they are not
+// overridable: one taxpayer, one identity) and overrides only the CSR/device fields.
+// An unset CSR field or invoice type stays null and zatca:health-check reports it; the
+// invoice type value is decided by gate G-02.
+$zatcaB2bEgs = env('ZATCA_B2B_EGS_IDENTIFIER');
+
+$zatcaEgs = [$zatcaPrimaryEgs => $zatcaPrimaryEgsConfig];
+
+if (is_string($zatcaB2bEgs) && $zatcaB2bEgs !== '' && $zatcaB2bEgs !== $zatcaPrimaryEgs) {
+    $zatcaEgs[$zatcaB2bEgs] = array_merge($zatcaPrimaryEgsConfig, [
+        'environment' => env('ZATCA_B2B_ENVIRONMENT', $zatcaPrimaryEgsConfig['environment']),
+        'organization_unit_name' => env('ZATCA_B2B_ORG_UNIT_NAME', $zatcaPrimaryEgsConfig['organization_unit_name']),
+        'common_name' => env('ZATCA_B2B_CSR_COMMON_NAME'),
+        'serial_number' => env('ZATCA_B2B_CSR_SERIAL_NUMBER'),
+        'invoice_type' => env('ZATCA_B2B_INVOICE_TYPE'),
+    ]);
+}
+
 return [
     // Global kill switch, read everywhere through Zatca\Support\ZatcaGate — never as a
     // raw config() call in application code.
@@ -24,6 +95,23 @@ return [
     // arrives as '' and would cast to false, stopping invoicing by accident.
     // Only a recognisable false (false, "false", 0, "0", "off", "no") disables ZATCA.
     'enabled' => env('ZATCA_ENABLED', true),
+
+    // B2B: Standard tax invoices for company buyers, cleared by ZATCA before issue.
+    // Read only through ZatcaGate::b2bEnabled(); carried through raw like `enabled`.
+    //
+    // Fail-closed, the opposite of `enabled`: only an explicit true/1/on/yes turns it
+    // on, and only while `enabled` is on too. Unset, empty or malformed means OFF,
+    // because this switch starts a new behaviour rather than keeping an existing one.
+    //
+    // Turning it off stops NEW company sales only. Standard documents already signed
+    // keep being cleared by the clearance sweep (decision D-19, "drain"); stopping every
+    // ZATCA call is what `enabled` is for.
+    'b2b' => [
+        'enabled' => env('ZATCA_B2B_ENABLED', false),
+        // As configured, even when ignored (equal to the primary) — zatca:health-check
+        // reports that case.
+        'egs_identifier' => $zatcaB2bEgs,
+    ],
 
     // Independent version knobs — never infer one from another.
     'api_version' => env('ZATCA_API_VERSION', 'V2'),
@@ -110,57 +198,14 @@ return [
         'prune_after_days' => (int) env('ZATCA_PRUNE_SDK_FILES_AFTER_DAYS', 7),
     ],
 
-    // EGS registry: one entry today (default), more later without code changes.
-    // Everything EGS-scoped (credentials, ICV, PIH, certificate state) is resolved
-    // through EgsRegistry::for($egsIdentifier) — never read directly by code.
-    'egs' => [
-        env('ZATCA_EGS_IDENTIFIER', 'default') => [
-            'environment' => env('ZATCA_ENVIRONMENT', 'sandbox'),
-            'vat_number' => env('ZATCA_VAT_NUMBER'),
-            // ZATCA_ORG_NAME is the *English* company legal name. It feeds both
-            // csr.organization.name and (as fallback) the invoice RegistrationName.
-            // Do not add a separate ZATCA_COMPANY_NAME_EN — the two would drift.
-            'organization_name' => env('ZATCA_ORG_NAME'),
-            // ZATCA defines csr.organization.unit.name as the branch name (or the
-            // branch's 10-digit TIN for VAT-group members). This *is* the
-            // "Branch / Platform Name" shown in the admin UI.
-            'organization_unit_name' => env('ZATCA_ORG_UNIT_NAME'),
-            'common_name' => env('ZATCA_CSR_COMMON_NAME'),
-            'serial_number' => env('ZATCA_CSR_SERIAL_NUMBER'),
-            // Per ZATCA's CSR spec this is the taxpayer's 15-digit VAT registration
-            // number — it must never diverge from vat_number. zatca:health-check
-            // asserts they match.
-            'organization_identifier' => env('ZATCA_ORG_IDENTIFIER'),
-            'country_code' => env('ZATCA_COUNTRY_CODE', 'SA'),
-            'invoice_type' => env('ZATCA_INVOICE_TYPE', '0100'),
-            // Legacy single-line address. Superseded by the structured fields
-            // below; kept as the fallback for deployments that have not set them.
-            'location_address' => env('ZATCA_LOCATION_ADDRESS'),
-            'business_category' => env('ZATCA_BUSINESS_CATEGORY'),
-            'commercial_registration_number' => env('ZATCA_CRN'),
+    // The primary EGS (see $zatcaPrimaryEgs above). Resolve it with
+    // EgsRegistry::primary(), never by position in 'egs'.
+    'primary_egs' => $zatcaPrimaryEgs,
 
-            // Arabic company legal name — used for the invoice's
-            // cac:PartyLegalEntity/cbc:RegistrationName. Never fed to the CSR:
-            // non-ASCII in a CSR subject is a known ZATCA compliance-failure source.
-            'company_name_ar' => env('ZATCA_COMPANY_NAME_AR'),
-
-            // Displayed by the admin ZATCA Settings screen. Not yet consumed by
-            // invoice generation — VAT reaches the XML per-line via
-            // ZatcaInvoiceLine::vatRate, built by the host app's
-            // InvoiceSourceContract implementation (not written yet).
-            'vat_percentage' => (float) env('ZATCA_VAT_PERCENTAGE', 15),
-
-            // Structured national address. Maps 1:1 onto the seller's
-            // cac:PostalAddress in the invoice XML; joined into one line for the
-            // CSR's free-text csr.location.address.
-            'street' => env('ZATCA_STREET'),
-            'district' => env('ZATCA_DISTRICT'),
-            'building_number' => env('ZATCA_BUILDING_NUMBER'),
-            'additional_number' => env('ZATCA_ADDITIONAL_NUMBER'),
-            'city' => env('ZATCA_CITY'),
-            'postal_code' => env('ZATCA_POSTAL_CODE'),
-        ],
-    ],
+    // EGS registry: the primary EGS, plus the B2B one when configured (see the top of
+    // this file). Everything EGS-scoped (credentials, ICV, PIH, certificate state) is
+    // resolved through EgsRegistry::for($egsIdentifier) — never read directly by code.
+    'egs' => $zatcaEgs,
 
     // Supported package/SDK/API-version combinations. See docs/COMPATIBILITY.md.
     'compatibility' => [

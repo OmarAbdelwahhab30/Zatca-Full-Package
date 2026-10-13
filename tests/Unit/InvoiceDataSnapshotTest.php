@@ -4,6 +4,7 @@ namespace Zatca\Tests\Unit;
 
 use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\DTOs\ZatcaInvoiceLine;
+use Zatca\Enums\ZatcaComplianceDocumentType;
 use Zatca\Exceptions\ZatcaException;
 use Zatca\Support\InvoiceDataSnapshot;
 use DateTimeImmutable;
@@ -173,6 +174,85 @@ class InvoiceDataSnapshotTest extends TestCase
         foreach (['BEGIN', 'PRIVATE KEY', 'CERTIFICATE', 'secret', 'token', 'binarySecurityToken'] as $forbidden) {
             $this->assertStringNotContainsStringIgnoringCase($forbidden, $encoded);
         }
+    }
+
+    /** A plain invoice keeps writing v1 unchanged — a rollback must still be able to read it. */
+    public function test_a_plain_invoice_always_writes_version_1(): void
+    {
+        $snapshot = InvoiceDataSnapshot::toArray($this->invoiceData());
+
+        $this->assertSame(1, $snapshot['version']);
+        $this->assertArrayNotHasKey('document_type', $snapshot);
+        $this->assertArrayNotHasKey('billing_reference_id', $snapshot);
+        $this->assertArrayNotHasKey('adjustment_reason', $snapshot);
+    }
+
+    /** A Credit Note writes v2 and round-trips its extra fields. */
+    public function test_a_credit_note_round_trips_document_type_billing_reference_and_reason(): void
+    {
+        $original = $this->creditNoteData();
+
+        $snapshot = InvoiceDataSnapshot::toArray($original);
+        $this->assertSame(InvoiceDataSnapshot::VERSION_CREDIT_NOTE, $snapshot['version']);
+
+        $restored = InvoiceDataSnapshot::fromArray($snapshot);
+
+        $this->assertSame(ZatcaComplianceDocumentType::CreditNote, $restored->documentType);
+        $this->assertSame('payment:412', $restored->billingReferenceId);
+        $this->assertSame('Course refunded per policy', $restored->adjustmentReason);
+    }
+
+    /** @dataProvider unusableCreditNoteSnapshots */
+    public function test_it_refuses_a_credit_note_snapshot_missing_required_fields(array $snapshot): void
+    {
+        $this->expectException(ZatcaException::class);
+
+        InvoiceDataSnapshot::fromArray($snapshot);
+    }
+
+    public static function unusableCreditNoteSnapshots(): array
+    {
+        $valid = [
+            'version' => InvoiceDataSnapshot::VERSION_CREDIT_NOTE,
+            'egs_identifier' => 'default',
+            'source_reference' => 'CN-000001',
+            'issue_date_time' => '2026-09-14T10:30:00+03:00',
+            'currency' => 'SAR',
+            'lines' => [['description' => 'x', 'quantity' => 1, 'unit_price' => 1.0, 'vat_rate' => 15.0, 'line_total_excl_vat' => 1.0, 'vat_amount' => 0.15]],
+            'total_excl_vat' => 1.0,
+            'total_vat' => 0.15,
+            'total_incl_vat' => 1.15,
+            'document_type' => 'simplified_credit_note',
+            'billing_reference_id' => 'payment:412',
+            'adjustment_reason' => 'Course refunded',
+        ];
+
+        return [
+            'missing billing reference' => [array_diff_key($valid, ['billing_reference_id' => null])],
+            'blank billing reference' => [array_merge($valid, ['billing_reference_id' => ''])],
+            'missing reason' => [array_diff_key($valid, ['adjustment_reason' => null])],
+            'blank reason' => [array_merge($valid, ['adjustment_reason' => ''])],
+            'missing document type' => [array_diff_key($valid, ['document_type' => null])],
+        ];
+    }
+
+    private function creditNoteData(): ZatcaInvoiceData
+    {
+        return new ZatcaInvoiceData(
+            egsIdentifier: 'default',
+            sourceReference: 'CN-000001',
+            buyerName: 'Original Buyer',
+            buyerVatNumber: null,
+            issueDateTime: new DateTimeImmutable('2026-09-14T10:30:00+03:00'),
+            currency: 'SAR',
+            lines: [new ZatcaInvoiceLine('Course Enrollment', 1, 100.00, 15.0, 100.00, 15.00)],
+            totalExclVat: 100.00,
+            totalVat: 15.00,
+            totalInclVat: 115.00,
+            documentType: ZatcaComplianceDocumentType::CreditNote,
+            billingReferenceId: 'payment:412',
+            adjustmentReason: 'Course refunded per policy',
+        );
     }
 
     private function invoiceData(): ZatcaInvoiceData
