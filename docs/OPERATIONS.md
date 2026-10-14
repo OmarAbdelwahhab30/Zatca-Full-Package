@@ -279,6 +279,28 @@ It resets `attempt_count` by default — without that the invoice would be sent 
 
 ⚠ Only the `--only-transient` form belongs on the scheduler. Plain `zatca:requeue` retries rejections too, which just burns attempts and hides the real problem.
 
+### Recovering one sale after a technical failure — `zatca:recover`
+
+When a technical problem stopped one sale part-way (the SDK jar was missing, a folder was not writable, a worker died between signing and sending), fix the cause first, then finish that sale:
+
+```bash
+php artisan zatca:recover --source-type="App\Models\Order" --source-id=1042 --dry-run
+php artisan zatca:recover --source-type="App\Models\Order" --source-id=1042
+php artisan zatca:recover --id=41    # starting from a ZATCA document id
+```
+
+It finds the sale's current document and moves it one safe step forward: creates and signs it if it does not exist, signs an unsigned draft with its **same** ICV and UUID, or sends a signed document once more. B2C documents are reported and B2B documents are cleared, chosen from the document itself. It waits for ZATCA's answer and exits `0` only when ZATCA accepted the document.
+
+It refuses, and says why, when:
+- ZATCA rejected the document. Sending it again would fail the same way. Fix the cause and regenerate it.
+- a B2B document is `clearance_in_doubt`. Check on the ZATCA side, then add `--resend-in-doubt`.
+- a B2B EGS is configured and the sale has no document yet. Pass `--egs=` with the EGS your app signs that sale on.
+- the production certificate has expired, or ZATCA is switched off.
+
+**It never regenerates and never spends an extra ICV on a rejected document.** It is a manual tool: never schedule it. Full option list: README → Console commands → `zatca:recover`.
+
+How it differs from `zatca:requeue`: requeue restarts many already-signed documents through the queue. Recover handles one sale end to end, including unsigned drafts and sales with no document yet, and shows the result straight away.
+
 ### Surviving a ZATCA outage
 
 Reporting attempts are consumed at the pace `zatca:report-pending` runs:

@@ -141,7 +141,7 @@ You never edit an accepted invoice. You issue a note that points to it. A note a
 
 **Operations**
 - A global on/off switch (`ZATCA_ENABLED`) and a separate B2B switch (`ZATCA_B2B_ENABLED`).
-- 13 Artisan commands for health checks, status, inspection, requeue, cleanup and more.
+- 14 Artisan commands for health checks, status, inspection, requeue, recovery, cleanup and more.
 - Events for "invoice generated", "needs attention", "note accepted" and "certificate expiring".
 
 ---
@@ -181,13 +181,13 @@ Composer dependencies are installed for you: `guzzlehttp/guzzle`, `doctrine/dbal
 
 | Laravel | Framework | Testbench | PHPUnit | Carbon | PHP versions run | Result on each PHP version |
 |---|---|---|---|---|---|---|
-| 9 | 9.52.22 | 7.58 | 9.6 | 2.73 | 8.1, 8.3 | 703 tests passed, 3 skipped |
-| 10 | 10.50.3 | 8.39 | 10.5 | 2.73 | 8.2, 8.3 | 703 tests passed, 3 skipped |
-| 11 | 11.57.0 | 9.18 | 11.5 | 3.14 | 8.2, 8.3 | 703 tests passed, 3 skipped |
-| 12 | 12.70.0 | 10.12 | 11.5 | 3.14 | 8.2, 8.3, 8.4 | 703 tests passed, 3 skipped |
-| 12 | 12.70.0 | 10.12 | 12.5 | 3.14 | 8.3 | 703 tests passed, 3 skipped |
+| 9 | 9.52.22 | 7.58 | 9.6 | 2.73 | 8.1, 8.3 | 734 tests passed, 3 skipped |
+| 10 | 10.50.3 | 8.39 | 10.5 | 2.73 | 8.2, 8.3 | 734 tests passed, 3 skipped |
+| 11 | 11.57.0 | 9.18 | 11.5 | 3.14 | 8.2, 8.3 | 734 tests passed, 3 skipped |
+| 12 | 12.70.0 | 10.12 | 11.5 | 3.14 | 8.2, 8.3, 8.4 | 734 tests passed, 3 skipped |
+| 12 | 12.70.0 | 10.12 | 12.5 | 3.14 | 8.3 | 734 tests passed, 3 skipped |
 
-Every run gave 2,220 assertions and no PHPUnit warnings or deprecations. Full version details are in [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
+Every run gave 2,370 assertions and no PHPUnit warnings or deprecations. Full version details are in [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 
 The 3 skipped tests are the ones that drive the real ZATCA Java SDK. They skip unless you point them at an SDK install (see [Running the package tests](#18-running-the-package-tests)). So these results show the package code works on each Laravel version. They **do not** prove that real SDK signing works on each version. Run `composer smoke` and the onboarding sandbox steps on your own Laravel version before you go live.
 
@@ -1395,6 +1395,7 @@ app(EgsRegistry::class)->primary();                 // EgsConfig of the B2C EGS
 | `zatca:sdk-smoke-test` | Tests Java + SDK locally | After install / SDK change |
 | `zatca:report-pending` | Re-sends waiting documents | Scheduler, every 5 minutes |
 | `zatca:requeue` | Restarts stuck B2C invoices | By hand, or hourly with `--only-transient` |
+| `zatca:recover` | Finishes one sale's document after a technical failure (sign + report/clear) | By hand, never scheduled |
 | `zatca:status` | Shows anything needing attention | Scheduler hourly, or monitoring |
 | `zatca:inspect {resource}` | Shows credentials/state/invoice (no secrets) | When debugging |
 | `zatca:certificate:check` | Updates certificate states | Scheduler, daily |
@@ -1483,6 +1484,55 @@ It sends stuck documents again with the same signed XML. B2C documents go to Rep
 ```bash
 php artisan zatca:requeue --only-transient
 ```
+
+### `zatca:recover`
+
+Finishes the ZATCA side of **one sale** after a technical failure stopped it part-way: the SDK jar was missing, a folder was not writable, ZATCA was down, a worker died between signing and sending. It moves the sale's document one safe step forward through the normal pipeline and waits for ZATCA's answer, so you see the result straight away.
+
+```bash
+# Always look first
+php artisan zatca:recover --source-type="App\Models\Order" --source-id=1042 --dry-run
+
+# Then recover
+php artisan zatca:recover --source-type="App\Models\Order" --source-id=1042
+
+# Or start from a ZATCA document id (from logs, zatca:status or zatca:inspect)
+php artisan zatca:recover --id=41
+```
+
+| Option | Meaning |
+|---|---|
+| `--source-type=` + `--source-id=` | The sale, exactly as your `InvoiceSourceResolverContract` understands it. With the default resolver, `--source-type` is the Eloquent model class. Works for orders, payments, bookings, or anything else you map. |
+| `--id=` | A `zatca_invoices` id. Use it when a document already exists; it does not need the source record. Use either this or the two options above. |
+| `--egs=` | The EGS to sign a **new** document on. Required when a B2B EGS is configured, because only your app knows whether a sale is B2C or B2B. Ignored for an existing document, which always stays on its own EGS. |
+| `--resend-in-doubt` | Allow resending a B2B document in `clearance_in_doubt` (sent, but ZATCA never answered). Check on the ZATCA side first. |
+| `--dry-run` | Show the current state and the planned action. Writes, signs and sends nothing. |
+
+What it does, by the state of the sale's current document:
+
+| Current state | Action |
+|---|---|
+| No document yet | Creates it (new ICV and UUID), signs it, then reports (B2C) or clears (B2B) it |
+| Unsigned draft | Signs the **same** draft (same ICV and UUID), then reports or clears it |
+| Signed, waiting (`pending_reporting`, `retrying`, `failed`, `pending_clearance`, `clearance_retrying`) | Sends the stored signed XML once more. Never signs again. |
+| `manual_review` / `clearance_manual_review` after an outage (last attempt HTTP 0 or 5xx) | Sends it once more |
+| `clearance_in_doubt` | Stops, unless you pass `--resend-in-doubt` |
+| Rejected by ZATCA (`manual_review` / `clearance_manual_review` with a 4xx, or `clearance_rejected`) | **Stops.** The same document would be rejected again. Fix the cause and [regenerate](#re-issuing-a-rejected-invoice-regeneration) it. |
+| Already `reported` / `cleared` | Nothing |
+
+Safety rules:
+
+- **It never regenerates.** A replacement document uses a new ICV that can never be given back, so that stays a human decision.
+- It never resends a document ZATCA accepted or rejected, and never signs a document twice.
+- A replaced (regenerated) sale is recovered through its **current** document, never the rejected one.
+- More than one root document for the same sale stops the command with a table instead of a guess.
+- It stops if the production certificate has expired, if the B2B switch is off for a new B2B document, or if ZATCA is disabled.
+- One recovery per sale at a time (a cache lock). Your cache store must support locks (`redis`, `database`, `file`, `array`…).
+- It is safe to run again. It continues from wherever the last run stopped.
+
+It sends **once**. If ZATCA is still down, the document stays in `retrying` and `zatca:report-pending` carries on. It only handles the ZATCA document. Your app's own follow-ups for the sale (its invoice record, receipt, email) are not part of this package.
+
+Exit code `0` means ZATCA accepted the document, nothing was left to do, or a dry run found a safe plan. Exit code `1` means anything else: bad input, a refusal, a failure, or ZATCA has not accepted it yet. The output says which.
 
 ### `zatca:status`
 

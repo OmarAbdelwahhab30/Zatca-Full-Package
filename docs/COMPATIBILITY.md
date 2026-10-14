@@ -48,13 +48,13 @@ Laravel 9–11 are kept so existing apps keep working while they plan an upgrade
 
 | Laravel | Framework | Testbench | PHPUnit | PHP versions run | Result on each PHP version |
 |---|---|---|---|---|---|
-| 9 | 9.52.22 | 7.58 | 9.6 | 8.1, 8.3 | 703 passed, 3 skipped |
-| 10 | 10.50.3 | 8.39 | 10.5 | 8.2, 8.3 | 703 passed, 3 skipped |
-| 11 | 11.57.0 | 9.18 | 11.5 | 8.2, 8.3 | 703 passed, 3 skipped |
-| 12 | 12.70.0 | 10.12 | 11.5 | 8.2, 8.3, 8.4 | 703 passed, 3 skipped |
-| 12 | 12.70.0 | 10.12 | 12.5 | 8.3 | 703 passed, 3 skipped |
+| 9 | 9.52.22 | 7.58 | 9.6 | 8.1, 8.3 | 734 passed, 3 skipped |
+| 10 | 10.50.3 | 8.39 | 10.5 | 8.2, 8.3 | 734 passed, 3 skipped |
+| 11 | 11.57.0 | 9.18 | 11.5 | 8.2, 8.3 | 734 passed, 3 skipped |
+| 12 | 12.70.0 | 10.12 | 11.5 | 8.2, 8.3, 8.4 | 734 passed, 3 skipped |
+| 12 | 12.70.0 | 10.12 | 12.5 | 8.3 | 734 passed, 3 skipped |
 
-Every run gave 2,220 assertions and no PHPUnit warnings or deprecations. The 3 skipped tests are the real-SDK tests. Real SDK signing was **not** verified on any of these runs. Run `composer smoke` and the onboarding sandbox steps on your own setup before going live.
+Every run gave 2,370 assertions and no PHPUnit warnings or deprecations. The 3 skipped tests are the real-SDK tests. Real SDK signing was **not** verified on any of these runs. Run `composer smoke` and the onboarding sandbox steps on your own setup before going live.
 
 **PHPUnit:** the package allows PHPUnit 9 to 12. Composer picks the version from your Laravel and PHP versions: Laravel 9 gets 9, Laravel 10 gets 10, Laravel 11 gets 11, and Laravel 12 gets 12 on PHP 8.3+ or 11 on PHP 8.2. The tests carry both PHP attributes (`#[DataProvider]`, `#[Group]`, read by PHPUnit 10+) and the matching docblock tags (`@dataProvider`, `@group`, read by PHPUnit 9). Keep both when you add a test, or Laravel 9 runs lose their data providers.
 

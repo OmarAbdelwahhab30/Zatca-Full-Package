@@ -112,6 +112,9 @@ class ContractInventoryCharacterizationTest extends TestCase
     public function test_the_dispatch_site_inventory_is_unchanged(): void
     {
         $this->assertSame([
+            // zatca:recover sends one document synchronously, routed by its own
+            // submission_model exactly like the jobs below.
+            'Console/Commands/RecoverZatcaInvoice.php' => ['ClearZatcaInvoiceJob' => 1, 'ReportZatcaInvoiceJob' => 1],
             // P25: these five now branch between Report.../Clear... at dispatch time,
             // so both class-name tokens legitimately appear once each in the source.
             'Jobs/CompleteZatcaInvoiceGenerationJob.php' => ['ClearZatcaInvoiceJob' => 1, 'ReportZatcaInvoiceJob' => 1],

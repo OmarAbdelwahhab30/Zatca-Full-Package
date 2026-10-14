@@ -178,6 +178,34 @@ All nine lines must say `[OK]`. If it says `SKIPPED`, the SDK paths in `.env` ar
 
 ---
 
+## Case G — One sale's invoice never finished
+
+A technical problem (missing SDK jar, unwritable folder, a worker that died) stopped a sale part-way: no document, an unsigned draft, or a signed document that was never sent. Fix the cause first (Case F), then finish that sale:
+
+```bash
+php artisan zatca:recover --source-type="App\Models\Order" --source-id=1042 --dry-run
+php artisan zatca:recover --source-type="App\Models\Order" --source-id=1042
+```
+
+Or, if you have the document id from `zatca:status` or the logs:
+
+```bash
+php artisan zatca:recover --id=41
+```
+
+Read the dry run first. It shows the current state and exactly what will happen. If it says it will stop, it tells you why:
+
+| It says | Do this |
+|---|---|
+| ZATCA rejected the document | Read the reason (`zatca:inspect invoice --id=…`), fix it, then regenerate. Recover never regenerates. |
+| `clearance_in_doubt` | Check on the ZATCA side whether it was cleared. Only if not, run again with `--resend-in-doubt`. |
+| Pass `--egs=` | A B2B EGS is configured. Use the EGS your app signs this sale on. |
+| Certificate expired | Renew it (Case D), then run again. |
+
+It is safe to run more than once. It continues from wherever the last run stopped and never signs or sends anything twice.
+
+---
+
 ## Never do these
 
 | Never | Why |
@@ -205,6 +233,7 @@ php artisan zatca:status                  # Is anything wrong?
 php artisan zatca:inspect invoice --id=41 # Why did this invoice fail?
 php artisan zatca:requeue --dry-run       # What is stuck, and why?
 php artisan zatca:requeue --id=41         # Send one invoice again
+php artisan zatca:recover --id=41 --dry-run # Finish one sale that broke part-way (look first)
 php artisan zatca:report-pending          # Push waiting invoices now
 php artisan zatca:health-check            # Is the setup still correct?
 php artisan zatca:sdk-smoke-test          # Does signing still work?

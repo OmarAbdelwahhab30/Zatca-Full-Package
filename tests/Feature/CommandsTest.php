@@ -30,6 +30,8 @@ class CommandsTest extends TestCase
             ['zatca:prune-submission-attempts'],
             ['zatca:prune-sdk-files'],
             ['zatca:sdk-smoke-test'],
+            ['zatca:check-source-uniqueness'],
+            ['zatca:recover'],
         ];
     }
 }
