@@ -1,0 +1,2 @@
+# Keep the bundled ZATCA SDK byte-for-byte as ZATCA ships it (no line-ending conversion of install.sh, jar, schemas).
+/SDKs/** -text
