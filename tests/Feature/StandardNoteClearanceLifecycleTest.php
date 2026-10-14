@@ -14,6 +14,8 @@ use Zatca\DTOs\BuyerParty;
 use Zatca\DTOs\Payloads\ClearancePayload;
 use Zatca\DTOs\ZatcaApiResult;
 use Zatca\DTOs\ZatcaInvoiceData;
+use Zatca\DTOs\ZatcaInvoiceItem;
+use Zatca\DTOs\ZatcaInvoiceInput;
 use Zatca\DTOs\ZatcaInvoiceLine;
 use Zatca\Enums\ZatcaComplianceDocumentType;
 use Zatca\Enums\ZatcaCreditNoteType;
@@ -211,7 +213,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original,
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00, null, 44)],
+            [new DebitNoteLineInput('Extra course', 1, 230.00, courseId: 44)],
             'Additional course added',
             (string) Str::uuid(),
         );
@@ -238,7 +240,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original->fresh(),
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00, null, 44)],
+            [new DebitNoteLineInput('Extra course', 1, 230.00, courseId: 44)],
             'x',
             (string) Str::uuid(),
         );
@@ -257,7 +259,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original,
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00, null, 44)],
+            [new DebitNoteLineInput('Extra course', 1, 230.00, courseId: 44)],
             'x',
             (string) Str::uuid(),
         );
@@ -278,7 +280,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original,
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00, null, 44)],
+            [new DebitNoteLineInput('Extra course', 1, 230.00, courseId: 44)],
             'x',
             (string) Str::uuid(),
         );
@@ -312,7 +314,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original,
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00, null, 44)],
+            [new DebitNoteLineInput('Extra course', 1, 230.00, courseId: 44)],
             'x',
             (string) Str::uuid(),
         );
@@ -346,19 +348,16 @@ class StandardNoteClearanceLifecycleTest extends TestCase
     {
         return new class implements InvoiceSourceContract
         {
-            public function toInvoiceData(mixed $source, string $egsIdentifier): ZatcaInvoiceData
+            public function toInvoiceInput(mixed $source, string $egsIdentifier): ZatcaInvoiceInput
             {
-                return new ZatcaInvoiceData(
+                return new ZatcaInvoiceInput(
                     egsIdentifier: $egsIdentifier,
                     sourceReference: $this->sourceReference($source),
                     buyerName: 'شركة الاختبار المحدودة',
                     buyerVatNumber: '310123456700003',
                     issueDateTime: new DateTimeImmutable('2026-09-20T10:30:00+03:00'),
                     currency: 'SAR',
-                    lines: [new ZatcaInvoiceLine('Course Enrollment', 1, 100.00, 15.0, 100.00, 15.00)],
-                    totalExclVat: 100.00,
-                    totalVat: 15.00,
-                    totalInclVat: 115.00,
+                    items: [new ZatcaInvoiceItem('Course Enrollment', 1, 115.00)],
                     documentType: ZatcaComplianceDocumentType::StandardInvoice,
                     buyer: new BuyerParty(
                         registrationName: 'شركة الاختبار المحدودة',

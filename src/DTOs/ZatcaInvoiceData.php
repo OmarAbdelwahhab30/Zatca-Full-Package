@@ -6,9 +6,10 @@ use DateTimeImmutable;
 use Zatca\Enums\ZatcaComplianceDocumentType;
 
 /**
- * Host-agnostic invoice input. Produced by the host app's InvoiceSourceContract
- * implementation from its own Order/domain model — the package never reads
- * the host's Order directly.
+ * A fully CALCULATED document: every amount the XML needs. Built by InvoiceCalculator
+ * from the host's ZatcaInvoiceInput (and by the credit/debit note factories), then
+ * checked by InvoiceDataValidator and frozen as the document's snapshot — the package
+ * never reads the host's Order directly, and host apps never build this themselves.
  */
 class ZatcaInvoiceData
 {

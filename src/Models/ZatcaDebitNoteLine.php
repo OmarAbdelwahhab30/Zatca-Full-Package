@@ -14,7 +14,7 @@ class ZatcaDebitNoteLine extends Model
     protected $casts = [
         'item_id' => 'integer',
         'quantity' => 'integer',
-        'unit_price' => 'decimal:2',
+        'unit_price' => 'decimal:6',
         'vat_rate' => 'decimal:2',
         'line_total_excl_vat' => 'decimal:2',
         'vat_amount' => 'decimal:2',

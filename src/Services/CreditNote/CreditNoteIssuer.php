@@ -13,6 +13,8 @@ use Zatca\Models\ZatcaCreditNoteEvent;
 use Zatca\Models\ZatcaCreditNoteLine;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Services\Invoice\InvoiceDataValidator;
+use Zatca\Services\Tax\InvoiceCalculator;
+use Zatca\Support\Money;
 use Zatca\Support\InvoiceDataSnapshot;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -48,6 +50,7 @@ class CreditNoteIssuer
         private readonly CreditNoteDataFactory $dataFactory = new CreditNoteDataFactory,
         private readonly InvoiceDataValidator $validator = new InvoiceDataValidator,
         private readonly CreditNoteDiscountAllocator $allocator = new CreditNoteDiscountAllocator,
+        private readonly InvoiceCalculator $calculator = new InvoiceCalculator,
     ) {}
 
     /**
@@ -188,7 +191,7 @@ class CreditNoteIssuer
                     'source_type' => CreditSource::TYPE_INVOICE_LINE,
                     'description' => $line->description,
                     'quantity' => $line->quantity,
-                    'unit_price' => $line->unitPrice,
+                    'unit_price' => $line->netUnitPrice,
                     'vat_rate' => $line->vatRate,
                     'line_total_excl_vat' => $line->lineTotalExclVat,
                     'vat_amount' => $line->vatAmount,
@@ -220,7 +223,7 @@ class CreditNoteIssuer
                     'source_debit_note_line_id' => $source->debitNoteLineId,
                     'description' => $line->description,
                     'quantity' => $line->quantity,
-                    'unit_price' => $line->unitPrice,
+                    'unit_price' => $line->netUnitPrice,
                     'vat_rate' => $line->vatRate,
                     'line_total_excl_vat' => $line->lineTotalExclVat,
                     'vat_amount' => $line->vatAmount,
@@ -321,13 +324,27 @@ class CreditNoteIssuer
                     throw CreditNoteException::notAdjustable();
                 }
 
-                $netAmount = round($adjustment->netAmount, 2);
-                $vatAmount = round($adjustment->vatAmount, 2);
-                $gross = round($netAmount + $vatAmount, 2);
+                $source = $kind === 'dn_line' ? $ledgerSnapshot->debitSources[$id] : null;
+                $adjustedLine = $source?->line ?? $originalData->lines[$id];
 
-                if ($netAmount < 0 || $vatAmount < 0 || $gross <= 0.0) {
+                // The amount is split at the adjusted item's own frozen rate and VAT
+                // category, and read in the price mode that item was invoiced in — never the
+                // tenant's current settings. A line recorded before price modes were
+                // snapshotted falls back to the configured mode.
+                $amount = Money::halalas($adjustment->amount, 'price adjustment amount');
+
+                if ($amount <= 0) {
                     throw CreditNoteException::zeroValue();
                 }
+
+                [$net, $vat] = InvoiceCalculator::split(
+                    $amount,
+                    (int) round($adjustedLine->vatRate * 100),
+                    $adjustedLine->priceMode ?? $this->calculator->settings()->mode,
+                );
+                $netAmount = Money::amount($net);
+                $vatAmount = Money::amount($vat);
+                $gross = Money::amount($net + $vat);
 
                 // Strictly below the item AND the increases on it: see the method docblock.
                 if ($gross >= $adjustable) {
@@ -354,14 +371,12 @@ class CreditNoteIssuer
                     $claimedIncreases[$increaseId] = true;
                 }
 
-                $source = $kind === 'dn_line' ? $ledgerSnapshot->debitSources[$id] : null;
-
                 $resolved[$adjustment->sourceKey] = [
                     'input' => $adjustment,
                     'kind' => $kind,
                     'id' => $id,
                     'source' => $source,
-                    'adjustedLine' => $source?->line ?? $originalData->lines[$id],
+                    'adjustedLine' => $adjustedLine,
                     'net' => $netAmount,
                     'vat' => $vatAmount,
                     'gross' => $gross,
@@ -398,17 +413,16 @@ class CreditNoteIssuer
                 // current ones. Quantity is always 1, so unit price and line net are the same figure.
                 $line = $entry['adjustedLine']->withAmounts(
                     quantity: 1,
-                    unitPrice: $entry['net'],
+                    netUnitPrice: $entry['net'],
                     lineTotalExclVat: $entry['net'],
                     vatAmount: $entry['vat'],
                     description: $entry['input']->description,
                 );
 
-                // The caller split the WHOLE amount for this item. When part of it is paid
+                // The WHOLE amount for this item was split above. When part of it is paid
                 // by reversing increases — which carry their own signed split — the
                 // adjustment's own line is restated at what is actually taken off the item,
-                // in the same proportion of net to VAT the caller asked for, so the lines
-                // still add up to the amount.
+                // in the same proportion of net to VAT, so the lines still add up to the amount.
                 $adjustmentLines[] = $entry['plan']['ownAmount'] === $entry['gross']
                     ? $line
                     : $this->dataFactory->reprice($line, $entry['plan']['ownAmount'], $creditNote->credit_note_number);
@@ -447,7 +461,7 @@ class CreditNoteIssuer
                     'source_debit_note_line_id' => $entry['source']?->debitNoteLineId,
                     'description' => $line->description,
                     'quantity' => $line->quantity,
-                    'unit_price' => $line->unitPrice,
+                    'unit_price' => $line->netUnitPrice,
                     'vat_rate' => $line->vatRate,
                     'line_total_excl_vat' => $line->lineTotalExclVat,
                     'vat_amount' => $line->vatAmount,
@@ -475,7 +489,7 @@ class CreditNoteIssuer
                     'source_debit_note_line_id' => $reversed->debitNoteLineId,
                     'description' => $reversedLine->description,
                     'quantity' => $reversedLine->quantity,
-                    'unit_price' => $reversedLine->unitPrice,
+                    'unit_price' => $reversedLine->netUnitPrice,
                     'vat_rate' => $reversedLine->vatRate,
                     'line_total_excl_vat' => $reversedLine->lineTotalExclVat,
                     'vat_amount' => $reversedLine->vatAmount,
@@ -504,9 +518,9 @@ class CreditNoteIssuer
      *
      * @param  string  $sourceKey  the item being adjusted: "line:{index}" for a line of the
      *   original invoice, "dn_line:{id}" for an Additional Item line of an accepted debit note.
-     * @param  float  $netAmount  the difference before VAT.
-     * @param  float  $vatAmount  VAT on the difference. Split by the caller under its own price tax
-     *   policy, at the adjusted line's rate — which is what the note's line is taxed at.
+     * @param  int|float|string  $amount  the difference, in the price mode the item was invoiced in
+     *   (VAT-inclusive by default). The package splits it into net and VAT at the item's own frozen
+     *   rate and VAT category.
      * @param  string  $description  the line text that reaches the PDF and the XML.
      * @param  array{type: string, id: int|string}|null  $requestedBy
      *
@@ -515,8 +529,7 @@ class CreditNoteIssuer
     public function issuePriceAdjustment(
         ZatcaInvoice $original,
         string $sourceKey,
-        float $netAmount,
-        float $vatAmount,
+        int|float|string $amount,
         string $description,
         string $reason,
         string $idempotencyKey,
@@ -525,7 +538,7 @@ class CreditNoteIssuer
     ): ZatcaCreditNote {
         return $this->issuePriceAdjustments(
             $original,
-            [new PriceAdjustmentInput($sourceKey, $netAmount, $vatAmount, $description)],
+            [new PriceAdjustmentInput($sourceKey, $amount, $description)],
             $reason,
             $idempotencyKey,
             $requestedBy,

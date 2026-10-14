@@ -181,7 +181,8 @@ class SnapshotGoldenTest extends TestCase
             'ZatcaInvoiceLine' => [ZatcaInvoiceLine::class, [
                 ['description', 'string', false],
                 ['quantity', 'int', false],
-                ['unitPrice', 'float', false],
+                // Renamed from unitPrice before the first release: it is the NET unit price.
+                ['netUnitPrice', 'float', false],
                 ['vatRate', 'float', false],
                 ['lineTotalExclVat', 'float', false],
                 ['vatAmount', 'float', false],

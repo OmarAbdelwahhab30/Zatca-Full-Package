@@ -6,6 +6,7 @@ use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\Enums\ZatcaComplianceDocumentType;
 use Zatca\Enums\ZatcaVatCategory;
 use Zatca\Exceptions\ZatcaException;
+use Zatca\Support\Money;
 
 /**
  * The last gate before an invoice becomes a document.
@@ -104,11 +105,11 @@ class InvoiceDataValidator
                 );
             }
 
-            if ($line->lineTotalExclVat < 0 || $line->vatAmount < 0 || $line->unitPrice < 0) {
+            if ($line->lineTotalExclVat < 0 || $line->vatAmount < 0 || $line->netUnitPrice < 0) {
                 throw new ZatcaException(
                     "[ZATCA] Invoice [{$data->sourceReference}] line {$number} is negative (net "
                     .$this->format($line->lineTotalExclVat).', VAT '.$this->format($line->vatAmount).', unit price '
-                    .$this->format($line->unitPrice).'). A negative line means the amounts fed to this invoice do '
+                    .$this->format($line->netUnitPrice).'). A negative line means the amounts fed to this invoice do '
                     .'not describe the sale, so no document is generated for it.'
                 );
             }
@@ -122,9 +123,9 @@ class InvoiceDataValidator
 
             $this->validateVatCategory($data, "line {$number}", $line->vatCategory, $line->vatRate, $line->vatAmount, $line->vatExemptionReasonCode, $line->vatExemptionReason);
 
-            // BR-KSA-EN16931-11: line net = quantity × unit price.
+            // BR-KSA-EN16931-11: line net = quantity × net unit price (which may carry six decimals).
             $this->assertWithinOneFil(
-                round($line->quantity * $line->unitPrice, 2),
+                round($line->quantity * $line->netUnitPrice, 2),
                 $line->lineTotalExclVat,
                 $data->sourceReference,
                 "line {$number}: quantity × unit price does not equal the line net amount"
@@ -170,6 +171,8 @@ class InvoiceDataValidator
             $data->sourceReference,
             'BR-CO-15: TaxExclusiveAmount plus the VAT total does not equal TaxInclusiveAmount'
         );
+
+        $this->validateCategoryVat($data);
 
         if ($data->totalExclVat < 0 || $data->totalVat < 0 || $data->totalInclVat < 0) {
             throw new ZatcaException(
@@ -365,6 +368,54 @@ class InvoiceDataValidator
 
         if (! is_string($reason) || trim($reason) === '') {
             throw new ZatcaException("{$prefix} is VAT category {$category->value} and needs the exemption reason text (BR-KSA-69).");
+        }
+    }
+
+    /**
+     * BR-S-09 / BR-CO-17: each VAT breakdown's VAT must equal its taxable amount × rate,
+     * within one halala per invoice line — the tolerance ZATCA's own rule allows for
+     * rounding VAT line by line. Line-level rounding stays inside it; many discounts on
+     * few lines could step outside it, and that is refused here, before an ICV is spent.
+     *
+     * A breakdown holding a VAT-only line (net 0, VAT above 0: a Debit Note VAT
+     * Adjustment) is not checked — its VAT is a correction, not taxable × rate.
+     */
+    private function validateCategoryVat(ZatcaInvoiceData $data): void
+    {
+        $groups = [];
+
+        foreach ($data->lines as $line) {
+            $key = $line->vatCategory->value.'|'.$line->vatRate.'|'.$line->vatExemptionReasonCode;
+            $groups[$key] ??= ['rate' => $line->vatRate, 'taxable' => 0, 'vat' => 0, 'vatOnly' => false];
+            $groups[$key]['taxable'] += Money::halalas($line->lineTotalExclVat);
+            $groups[$key]['vat'] += Money::halalas($line->vatAmount);
+            $groups[$key]['vatOnly'] = $groups[$key]['vatOnly'] || ($line->lineTotalExclVat == 0.0 && $line->vatAmount > 0);
+        }
+
+        foreach ($data->allowanceCharges as $allowance) {
+            $key = $allowance->vatCategory->value.'|'.$allowance->vatRate.'|'.$allowance->vatExemptionReasonCode;
+            $groups[$key] ??= ['rate' => $allowance->vatRate, 'taxable' => 0, 'vat' => 0, 'vatOnly' => false];
+            $groups[$key]['taxable'] -= Money::halalas($allowance->amountExclVat);
+            $groups[$key]['vat'] -= Money::halalas($allowance->vatAmount);
+        }
+
+        $tolerance = count($data->lines);
+
+        foreach ($groups as $group) {
+            if ($group['vatOnly']) {
+                continue;
+            }
+
+            $basisPoints = (int) round($group['rate'] * 100);
+            $expected = Money::divide(Money::multiply($group['taxable'], $basisPoints), 10_000);
+
+            if (abs($group['vat'] - $expected) > $tolerance) {
+                throw new ZatcaException(
+                    "[ZATCA] Invoice [{$data->sourceReference}] does not reconcile — BR-S-09: the VAT for the "
+                    .$this->format($group['rate']).'% breakdown is '.Money::format($group['vat'], 2).' but its taxable amount '
+                    .Money::format($group['taxable'], 2).' × rate is '.Money::format($expected, 2).'.'
+                );
+            }
         }
     }
 

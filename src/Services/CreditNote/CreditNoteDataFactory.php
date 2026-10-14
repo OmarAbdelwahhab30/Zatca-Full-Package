@@ -4,8 +4,11 @@ namespace Zatca\Services\CreditNote;
 
 use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\DTOs\ZatcaInvoiceLine;
+use Zatca\Enums\VatPriceMode;
 use Zatca\Enums\ZatcaComplianceDocumentType;
 use Zatca\Exceptions\ZatcaException;
+use Zatca\Services\Tax\InvoiceCalculator;
+use Zatca\Support\Money;
 use DateTimeImmutable;
 
 /**
@@ -176,9 +179,10 @@ class CreditNoteDataFactory
         string $reason,
         DateTimeImmutable $issueDateTime,
     ): ZatcaInvoiceData {
-        $totalExclVat = round(array_sum(array_map(static fn (ZatcaInvoiceLine $l) => $l->lineTotalExclVat, $lines)), 2);
-        $totalVat = round(array_sum(array_map(static fn (ZatcaInvoiceLine $l) => $l->vatAmount, $lines)), 2);
-        $totalInclVat = round($totalExclVat + $totalVat, 2);
+        [$net, $vat] = InvoiceCalculator::totals($lines);
+        $totalExclVat = Money::amount($net);
+        $totalVat = Money::amount($vat);
+        $totalInclVat = Money::amount($net + $vat);
 
         return new ZatcaInvoiceData(
             egsIdentifier: $original->egsIdentifier,
@@ -227,36 +231,37 @@ class CreditNoteDataFactory
      */
     public function reprice(ZatcaInvoiceLine $line, float $creditInclVat, string $creditNoteNumber): ZatcaInvoiceLine
     {
-        $creditInclVat = round($creditInclVat, 2);
+        $credit = Money::halalas($creditInclVat);
 
-        if ($creditInclVat < 0) {
+        if ($credit < 0) {
             throw new ZatcaException(
                 "[ZATCA] Credit Note [{$creditNoteNumber}] would credit a negative amount ("
-                .number_format($creditInclVat, 2, '.', '').") for line [{$line->description}]."
+                .Money::format($credit, 2).") for line [{$line->description}]."
             );
         }
 
-        $invoicedGross = $line->lineTotalInclVat();
+        $invoicedNet = Money::halalas($line->lineTotalExclVat);
+        $invoicedGross = $invoicedNet + Money::halalas($line->vatAmount);
 
-        if ($invoicedGross === $creditInclVat) {
+        if ($invoicedGross === $credit) {
             return $line;
         }
 
         // Same proportion of net to VAT the original line was signed with. Deriving it
-        // from the line itself rather than from the rate covers the exclusive policy
-        // (where gross is net plus VAT) and the inclusive one (where it is not) with
-        // one expression, and degrades to the plain rate formula on a zero-value line.
+        // from the line itself rather than from the rate covers lines priced inclusive
+        // and exclusive with one expression, and degrades to the plain inclusive rate
+        // formula on a zero-value line. Exact integer arithmetic, half-up.
         $net = $invoicedGross > 0
-            ? round($creditInclVat * ($line->lineTotalExclVat / $invoicedGross), 2)
-            : round($creditInclVat / (1 + ($line->vatRate / 100)), 2);
+            ? Money::divide(Money::multiply($credit, $invoicedNet), $invoicedGross)
+            : InvoiceCalculator::split($credit, (int) round($line->vatRate * 100), VatPriceMode::Inclusive)[0];
 
-        // Unit price restated per unit, so quantity × unit price still equals the line net's
-        // (BR-KSA-EN16931-11) when the credited line carries more than one unit.
+        // Net unit price restated per unit (six decimals), so quantity × price still equals
+        // the line net (BR-KSA-EN16931-11) when the credited line carries more than one unit.
         return $line->withAmounts(
             quantity: $line->quantity,
-            unitPrice: round($net / max(1, $line->quantity), 2),
-            lineTotalExclVat: $net,
-            vatAmount: round($creditInclVat - $net, 2),
+            netUnitPrice: InvoiceCalculator::netUnitPrice($net, $line->quantity),
+            lineTotalExclVat: Money::amount($net),
+            vatAmount: Money::amount($credit - $net),
         );
     }
 }

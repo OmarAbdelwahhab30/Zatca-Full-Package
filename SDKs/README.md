@@ -12,7 +12,8 @@ The official download is on ZATCA's developer portal: <https://zatca.gov.sa/en/E
 
 - `composer smoke` (`zatca:sdk-smoke-test`): all 9 checks OK (Java, SDK paths, fingerprint, CSR, hash, signing, QR, validation).
 - The real-SDK tests in `tests/Feature/ProductionInvoiceOrchestratorTest.php`: 2 passed. They generate and sign a Simplified invoice with this SDK.
-- Full suite with this SDK enabled: 734 tests, 2,378 assertions, 1 skipped (a file-permission test that only runs on Linux/macOS).
+- `tests/Feature/VatRealSdkValidationTest.php`: 5 passed. Invoices whose VAT the package calculated (inclusive and exclusive prices, quantities, mixed rates, zero-rated items, discounts) are signed and run through this SDK's validator: XSD, EN16931, KSA, QR and signature checks pass with no amount-rule errors or warnings. A control case confirms a wrong amount is reported.
+- Full suite with this SDK enabled: 834 tests, 2,720 assertions, 1 skipped (a file-permission test that only runs on Linux/macOS).
 
 This proves that signing, hashing and QR work with this SDK. It does **not** prove that ZATCA accepts the result: that needs the onboarding sandbox steps. B2B (Clearance) has still not been checked against the real ZATCA sandbox.
 

@@ -49,27 +49,27 @@ class GenericTerminologyCompatibilityTest extends TestCase
 
     public function test_debit_note_line_input_accepts_item_id_and_the_old_course_id(): void
     {
-        $new = new DebitNoteLineInput('Extra charger', 1, 50.00, 15.0, 50.00, 7.50, itemId: 44);
-        $old = new DebitNoteLineInput('Extra charger', 1, 50.00, 15.0, 50.00, 7.50, null, 44);
+        $new = new DebitNoteLineInput('Extra charger', 1, 57.50, itemId: 44);
+        $old = new DebitNoteLineInput('Extra charger', 1, 57.50, courseId: 44);
 
         foreach ([$new, $old] as $input) {
             $this->assertSame(44, $input->itemId);
             $this->assertSame(44, $input->courseId);
         }
 
-        $this->assertNull((new DebitNoteLineInput('Fee', 1, 10.00, 15.0, 10.00, 1.50))->itemId);
+        $this->assertNull((new DebitNoteLineInput('Fee', 1, 11.50))->itemId);
     }
 
     public function test_debit_note_line_input_refuses_two_different_ids(): void
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        new DebitNoteLineInput('Extra charger', 1, 50.00, 15.0, 50.00, 7.50, courseId: 1, itemId: 2);
+        new DebitNoteLineInput('Extra charger', 1, 57.50, itemId: 2, courseId: 1);
     }
 
     public function test_debit_note_line_input_from_array_reads_either_key(): void
     {
-        $row = ['description' => 'Fee', 'quantity' => 1, 'unit_price' => 10, 'vat_rate' => 15, 'net_amount' => 10, 'vat_amount' => 1.5];
+        $row = ['description' => 'Fee', 'quantity' => 1, 'price' => 11.5];
 
         $this->assertSame(7, DebitNoteLineInput::fromArray($row + ['course_id' => 7])->itemId);
         $this->assertSame(8, DebitNoteLineInput::fromArray($row + ['item_id' => 8])->itemId);

@@ -30,7 +30,8 @@ return new class extends Migration
 
             $table->string('description');
             $table->unsignedInteger('quantity');
-            $table->decimal('unit_price', 14, 2);
+            // Net unit price, up to six decimals (it is quantity × this that equals the line net).
+            $table->decimal('unit_price', 18, 6);
             $table->decimal('vat_rate', 5, 2);
             $table->decimal('line_total_excl_vat', 14, 2);
             $table->decimal('vat_amount', 14, 2);

@@ -16,6 +16,8 @@ use Zatca\Contracts\ZatcaSdkInterface;
 use Zatca\DTOs\BuyerAddress;
 use Zatca\DTOs\BuyerParty;
 use Zatca\DTOs\ZatcaInvoiceData;
+use Zatca\DTOs\ZatcaInvoiceItem;
+use Zatca\DTOs\ZatcaInvoiceInput;
 use Zatca\DTOs\ZatcaInvoiceLine;
 use Zatca\Enums\ZatcaComplianceDocumentType;
 use Zatca\Enums\ZatcaInvoiceStatus;
@@ -140,19 +142,16 @@ class SubmissionRoutingTest extends TestCase
         {
             public function __construct(private readonly bool $standard) {}
 
-            public function toInvoiceData(mixed $source, string $egsIdentifier): ZatcaInvoiceData
+            public function toInvoiceInput(mixed $source, string $egsIdentifier): ZatcaInvoiceInput
             {
-                return new ZatcaInvoiceData(
+                return new ZatcaInvoiceInput(
                     egsIdentifier: $egsIdentifier,
                     sourceReference: $this->sourceReference($source),
                     buyerName: 'Riyadh Office Supplies Co.',
                     buyerVatNumber: null,
                     issueDateTime: new DateTimeImmutable('2026-10-13T10:00:00+03:00'),
                     currency: 'SAR',
-                    lines: [new ZatcaInvoiceLine('Office chair', 1, 400.00, 15.0, 400.00, 60.00)],
-                    totalExclVat: 400.00,
-                    totalVat: 60.00,
-                    totalInclVat: 460.00,
+                    items: [new ZatcaInvoiceItem('Office chair', 1, 460.00)],
                     documentType: $this->standard ? ZatcaComplianceDocumentType::StandardInvoice : ZatcaComplianceDocumentType::Invoice,
                     buyer: $this->standard ? new BuyerParty('Riyadh Office Supplies Co.', '300000000000003', null, new BuyerAddress('Prince Sultan St', '4321', 'Al Rawdah', 'Jeddah', '23434')) : null,
                     supplyDate: $this->standard ? new DateTimeImmutable('2026-10-13') : null,
