@@ -1,7 +1,7 @@
 <?php
 
 // The primary EGS: the one B2C (Simplified) documents are signed under, and the one the
-// seller identity, the admin settings and the price tax policy belong to.
+// seller identity and the admin settings belong to.
 $zatcaPrimaryEgs = env('ZATCA_EGS_IDENTIFIER', 'default');
 
 $zatcaPrimaryEgsConfig = [
@@ -33,12 +33,6 @@ $zatcaPrimaryEgsConfig = [
     // cac:PartyLegalEntity/cbc:RegistrationName. Never fed to the CSR:
     // non-ASCII in a CSR subject is a known ZATCA compliance-failure source.
     'company_name_ar' => env('ZATCA_COMPANY_NAME_AR'),
-
-    // Displayed by the admin ZATCA Settings screen. Not yet consumed by
-    // invoice generation — VAT reaches the XML per-line via
-    // ZatcaInvoiceLine::vatRate, built by the host app's
-    // InvoiceSourceContract implementation (not written yet).
-    'vat_percentage' => (float) env('ZATCA_VAT_PERCENTAGE', 15),
 
     // Structured national address. Maps 1:1 onto the seller's
     // cac:PostalAddress in the invoice XML; joined into one line for the
@@ -81,8 +75,8 @@ return [
     // Jobs already on the queue exit quietly instead of failing, and invoice statuses and
     // submission-attempt counters are left exactly as they were.
     //
-    // Unaffected: payments, enrollment, local application invoices built by
-    // InvoiceBuilder, and invoice emails. Onboarding and the read-only diagnostic
+    // Unaffected: payments, order fulfilment, your app's own local invoices (e.g. built by
+    // an InvoiceBuilder class), and invoice emails. Onboarding and the read-only diagnostic
     // commands also keep working, so an EGS can still be prepared or repaired while the
     // switch is off.
     //
@@ -201,6 +195,26 @@ return [
     // The primary EGS (see $zatcaPrimaryEgs above). Resolve it with
     // EgsRegistry::primary(), never by position in 'egs'.
     'primary_egs' => $zatcaPrimaryEgs,
+
+    // VAT defaults for NEW documents, applied by Zatca\Services\Tax\InvoiceCalculator.
+    // Read only through Zatca\Support\VatSettings (config(), never env(), so config:cache
+    // works). Carried through raw: VatSettings validates them and treats an empty value as
+    // the default.
+    //
+    // percentage: the rate for standard-rated (S) items unless an item sets its own
+    //   vatRate. Above 0, at most 100, at most two decimals. Zero-rated and exempt items
+    //   are always 0%, whatever this says.
+    // mode: what the prices your app supplies mean.
+    //   inclusive — the price already contains VAT (115.00 → net 100.00 + VAT 15.00)
+    //   exclusive — VAT is added on top     (100.00 → net 100.00 + VAT 15.00 = 115.00)
+    //   An invoice may override it (ZatcaInvoiceInput::$priceMode).
+    //
+    // Changing either affects only documents created afterwards. A signed document keeps
+    // its rates in its snapshot, and its credit notes and regenerations use those.
+    'vat' => [
+        'percentage' => env('ZATCA_VAT_PERCENTAGE', 15),
+        'mode' => env('ZATCA_VAT_MODE', 'inclusive'),
+    ],
 
     // EGS registry: the primary EGS, plus the B2B one when configured (see the top of
     // this file). Everything EGS-scoped (credentials, ICV, PIH, certificate state) is

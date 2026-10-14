@@ -168,13 +168,8 @@ XML;
         // allowance) would disagree with the sum of its TaxSubtotal amounts —
         // an internally inconsistent document ZATCA will reject regardless of
         // whether the document-level totals happen to reconcile on their own.
-        $taxCategories = $this->groupByVatRate($invoiceData->lines, $invoiceData->allowanceCharges);
-        $taxCategoryXml = implode("\n", array_map(fn (float $rate) => $this->renderTaxCategory($rate), array_keys($taxCategories)));
-        $taxSubtotalXml = implode("\n", array_map(
-            fn (float $rate, array $amounts) => $this->renderTaxSubtotal($rate, $amounts['taxable'], $amounts['vat']),
-            array_keys($taxCategories),
-            $taxCategories
-        ));
+        $taxCategories = $this->groupByTaxCategory($invoiceData->lines, $invoiceData->allowanceCharges);
+        $taxSubtotalXml = implode("\n", array_map(fn (array $group) => $this->renderTaxSubtotal($group), $taxCategories));
 
         $allowanceChargeXml = implode("\n", array_map(
             fn (ZatcaAllowanceCharge $allowance) => $this->renderAllowanceCharge($allowance),

@@ -5,14 +5,14 @@
     "license": "proprietary",
     "require": {
         "php": "^8.1",
-        "illuminate/support": "^9.0|^10.0",
-        "illuminate/database": "^9.0|^10.0",
-        "illuminate/queue": "^9.0|^10.0",
+        "illuminate/support": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/database": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/queue": "^9.0|^10.0|^11.0|^12.0",
         "guzzlehttp/guzzle": "^7.2",
         "doctrine/dbal": "^3.6",
-        "nesbot/carbon": "^2.0",
+        "nesbot/carbon": "^2.0|^3.0",
         "psr/http-message": "^1.0|^2.0",
-        "symfony/process": "^6.0|^5.4"
+        "symfony/process": "^5.4|^6.0|^7.0"
     },
     "autoload": {
         "psr-4": {
@@ -25,13 +25,17 @@
         }
     },
     "require-dev": {
-        "orchestra/testbench": "^7.0|^8.0",
-        "phpunit/phpunit": "^9.5|^10.0",
+        "orchestra/testbench": "^7.0|^8.0|^9.0|^10.0",
+        "phpunit/phpunit": "^9.5|^10.0|^11.0|^12.0",
         "mockery/mockery": "^1.5"
     },
     "scripts": {
         "test": "vendor/bin/phpunit",
         "smoke": "vendor/bin/testbench zatca:sdk-smoke-test",
+        "test:sandbox": [
+            "@putenv ZATCA_RUN_SANDBOX_TESTS=1",
+            "vendor/bin/phpunit tests/Sandbox --testdox"
+        ],
         "golden:update": [
             "@putenv ZATCA_GOLDEN_UPDATE=1",
             "vendor/bin/phpunit --group golden"
@@ -44,6 +48,6 @@
             ]
         }
     },
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "prefer-stable": true
 }

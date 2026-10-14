@@ -5,6 +5,8 @@ namespace Zatca\Tests\Feature;
 use Zatca\Contracts\InvoiceSourceContract;
 use Zatca\Contracts\ZatcaSdkInterface;
 use Zatca\DTOs\ZatcaInvoiceData;
+use Zatca\DTOs\ZatcaInvoiceItem;
+use Zatca\DTOs\ZatcaInvoiceInput;
 use Zatca\DTOs\ZatcaInvoiceLine;
 use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaEnvironment;
@@ -181,11 +183,11 @@ class ProductionInvoiceOrchestratorIcvSafetyTest extends TestCase
     {
         return new class implements InvoiceSourceContract
         {
-            public function toInvoiceData(mixed $source, string $egsIdentifier): ZatcaInvoiceData
+            public function toInvoiceInput(mixed $source, string $egsIdentifier): ZatcaInvoiceInput
             {
-                $line = new ZatcaInvoiceLine('Course Enrollment', 1, 100.00, 15.0, 100.00, 15.00);
+                $line = new ZatcaInvoiceItem('Course Enrollment', 1, 115.00);
 
-                return new ZatcaInvoiceData(
+                return new ZatcaInvoiceInput(
                     $egsIdentifier,
                     $this->sourceReference($source),
                     null,
@@ -193,9 +195,6 @@ class ProductionInvoiceOrchestratorIcvSafetyTest extends TestCase
                     new DateTimeImmutable,
                     'SAR',
                     [$line],
-                    100.00,
-                    15.00,
-                    115.00,
                 );
             }
 

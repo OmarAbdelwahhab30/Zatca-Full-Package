@@ -119,7 +119,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
 
         $cancellation = $this->cancelLines($original, [0]);
 
-        $this->assertSame(ZatcaCreditNoteReason::CourseCancellation, $cancellation->reason_type);
+        $this->assertSame(ZatcaCreditNoteReason::ItemCancellation, $cancellation->reason_type);
         $this->assertSame(500.00, (float) $cancellation->total_incl_vat);
         $this->assertSame(CreditSource::TYPE_INVOICE_LINE, $cancellation->lines->sole()->source_type);
 
@@ -193,10 +193,10 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $original = $this->reportedInvoice(9106);
 
         $this->assertRefused(CreditNoteException::ZERO_VALUE, fn () => $this->issuer()->issuePriceAdjustment(
-            $original->fresh(), 'line:0', 0.00, 0.00, 'x', 'reason', (string) Str::uuid()
+            $original->fresh(), 'line:0', 0.00, 'x', 'reason', (string) Str::uuid()
         ));
         $this->assertRefused(CreditNoteException::ZERO_VALUE, fn () => $this->issuer()->issuePriceAdjustment(
-            $original->fresh(), 'line:0', -10.00, 5.00, 'x', 'reason', (string) Str::uuid()
+            $original->fresh(), 'line:0', -5.00, 'x', 'reason', (string) Str::uuid()
         ));
 
         $this->assertSame(0, ZatcaCreditNote::count());
@@ -246,10 +246,10 @@ class CreditNotePriceAdjustmentTest extends TestCase
     }
 
     /** A course a debit note added can be adjusted too, and crediting it later takes only what is left. */
-    public function test_an_additional_course_from_a_debit_note_can_be_adjusted(): void
+    public function test_an_additional_item_from_a_debit_note_can_be_adjusted(): void
     {
         $original = $this->reportedInvoice(9110);
-        $debitNote = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 100.00, courseId: 55);
+        $debitNote = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00, itemId: 55);
         $debitLineId = $debitNote->lines->sole()->id;
 
         $this->assertSame(100.00, $this->ledger($original)->adjustableFor('dn_line:'.$debitLineId));
@@ -263,7 +263,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $this->assertNull($line->original_line_index);
         $this->assertSame((int) $debitNote->id, (int) $line->source_debit_note_id);
         $this->assertSame((int) $debitLineId, (int) $line->source_debit_note_line_id);
-        $this->assertSame(55, (int) $line->course_id);
+        $this->assertSame(55, (int) $line->item_id);
 
         $ledger = $this->ledger($original);
         $this->assertSame('available', $ledger->debitLineStates[$debitLineId]);
@@ -396,7 +396,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $original = $this->reportedInvoice(9141);
 
         $this->assertRefused(CreditNoteException::AMOUNT_CHANGED, fn () => $this->issuer()->issuePriceAdjustment(
-            $original->fresh(), 'line:0', 173.91, 26.09, 'x', 'reason', (string) Str::uuid(), null, 150.00
+            $original->fresh(), 'line:0', 200.00, 'x', 'reason', (string) Str::uuid(), null, 150.00
         ));
 
         $this->assertSame(0, ZatcaCreditNote::count());
@@ -535,7 +535,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
     public function test_one_note_can_correct_an_original_course_and_an_added_one(): void
     {
         $original = $this->reportedInvoice(9144, [['Course A', 700.00]]);
-        $addedLineId = (int) $this->debitNote($original, ZatcaDebitNoteReason::AdditionalCourse, 500.00, courseId: 77)
+        $addedLineId = (int) $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 500.00, itemId: 77)
             ->lines->first()->getKey();
         $addedKey = CreditSource::debitNoteLineKey($addedLineId);
 
@@ -575,12 +575,10 @@ class CreditNotePriceAdjustmentTest extends TestCase
         )->fresh(['lines']);
     }
 
-    /** Splits the VAT-inclusive difference at 15%, as a host with an inclusive price policy would. */
+    /** The VAT-inclusive difference; the package splits it at the item's own rate. */
     private function adjustmentInput(string $sourceKey, float $gross): PriceAdjustmentInput
     {
-        $net = round($gross / 1.15, 2);
-
-        return new PriceAdjustmentInput($sourceKey, $net, round($gross - $net, 2), 'تسوية سعر - '.$sourceKey);
+        return new PriceAdjustmentInput($sourceKey, $gross, 'تسوية سعر - '.$sourceKey);
     }
 
     private function issuer(): CreditNoteIssuer
@@ -588,16 +586,13 @@ class CreditNotePriceAdjustmentTest extends TestCase
         return app(CreditNoteIssuer::class);
     }
 
-    /** Splits the VAT-inclusive difference at 15%, as a host with an inclusive price policy would. */
+    /** The VAT-inclusive difference; the package splits it at the item's own rate. */
     private function adjust(ZatcaInvoice $original, string $sourceKey, float $gross, ?string $key = null): ZatcaCreditNote
     {
-        $net = round($gross / 1.15, 2);
-
         return $this->issuer()->issuePriceAdjustment(
             $original->fresh(),
             $sourceKey,
-            $net,
-            round($gross - $net, 2),
+            $gross,
             'تسوية سعر - Course A',
             'Price adjustment reason',
             $key ?? (string) Str::uuid(),
@@ -636,25 +631,17 @@ class CreditNotePriceAdjustmentTest extends TestCase
         ZatcaDebitNoteReason $reason,
         float $gross,
         ?int $referencedIndex = null,
-        ?int $courseId = null,
+        ?int $itemId = null,
         bool $vatOnly = false,
     ): ZatcaDebitNote {
-        $net = $vatOnly ? 0.00 : round($gross / 1.15, 2);
-        $vat = round($gross - $net, 2);
+        $description = $reason === ZatcaDebitNoteReason::AdditionalItem ? 'Course B' : 'Adjustment';
 
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original->fresh(),
             $reason,
-            [new DebitNoteLineInput(
-                description: $reason === ZatcaDebitNoteReason::AdditionalCourse ? 'Course B' : 'Adjustment',
-                quantity: 1,
-                unitPrice: $net,
-                vatRate: 15.0,
-                lineTotalExclVat: $net,
-                vatAmount: $vat,
-                originalLineIndex: $referencedIndex,
-                courseId: $courseId,
-            )],
+            [$vatOnly
+                ? DebitNoteLineInput::vatAdjustment($description, $gross, $referencedIndex)
+                : new DebitNoteLineInput($description, 1, $gross, originalLineIndex: $referencedIndex, itemId: $itemId)],
             'Debit note reason',
             (string) Str::uuid(),
         );
@@ -677,43 +664,30 @@ class CreditNotePriceAdjustmentTest extends TestCase
         {
             public function __construct(private readonly array $lines, private readonly ?array $bundle) {}
 
-            public function toInvoiceData(mixed $source, string $egsIdentifier): \Zatca\DTOs\ZatcaInvoiceData
+            public function toInvoiceInput(mixed $source, string $egsIdentifier): \Zatca\DTOs\ZatcaInvoiceInput
             {
-                $invoiceLines = [];
-                $net = 0.0;
-                $vat = 0.0;
+                // VAT-inclusive prices at the default 15%: the package takes the VAT out.
+                $items = array_map(
+                    static fn (array $line) => new \Zatca\DTOs\ZatcaInvoiceItem($line[0], 1, $line[1]),
+                    $this->lines,
+                );
 
-                foreach ($this->lines as [$description, $gross]) {
-                    $lineNet = round($gross / 1.15, 2);
-                    $lineVat = round($gross - $lineNet, 2);
-                    $invoiceLines[] = new \Zatca\DTOs\ZatcaInvoiceLine($description, 1, $lineNet, 15.0, $lineNet, $lineVat);
-                    $net += $lineNet;
-                    $vat += $lineVat;
-                }
-
-                $allowances = [];
+                $discounts = [];
 
                 if ($this->bundle !== null) {
                     [$discount, $poolKey, $indexes] = $this->bundle;
-                    $discountNet = round($discount / 1.15, 2);
-                    $discountVat = round($discount - $discountNet, 2);
-                    $allowances[] = new \Zatca\DTOs\ZatcaAllowanceCharge('Bundle Discount', $discountNet, 15.0, $discountVat, $poolKey, $indexes);
-                    $net -= $discountNet;
-                    $vat -= $discountVat;
+                    $discounts[] = new \Zatca\DTOs\ZatcaInvoiceDiscount('Bundle Discount', $discount, poolKey: $poolKey, lineIndexes: $indexes);
                 }
 
-                return new \Zatca\DTOs\ZatcaInvoiceData(
+                return new \Zatca\DTOs\ZatcaInvoiceInput(
                     egsIdentifier: $egsIdentifier,
                     sourceReference: $this->sourceReference($source),
                     buyerName: 'Original Buyer',
                     buyerVatNumber: null,
                     issueDateTime: new \DateTimeImmutable('2026-09-01T10:00:00+03:00'),
                     currency: 'SAR',
-                    lines: $invoiceLines,
-                    totalExclVat: round($net, 2),
-                    totalVat: round($vat, 2),
-                    totalInclVat: round($net + $vat, 2),
-                    allowanceCharges: $allowances,
+                    items: $items,
+                    discounts: $discounts,
                 );
             }
 

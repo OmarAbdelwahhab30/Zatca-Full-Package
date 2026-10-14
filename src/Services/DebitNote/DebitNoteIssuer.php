@@ -2,6 +2,7 @@
 
 namespace Zatca\Services\DebitNote;
 
+use Zatca\Enums\VatPriceMode;
 use Zatca\Enums\ZatcaDebitNoteReason;
 use Zatca\Exceptions\DebitNoteException;
 use Zatca\Jobs\GenerateZatcaDebitNoteJob;
@@ -35,16 +36,17 @@ use Illuminate\Support\Str;
  *     mid-transaction.
  *  3. There is consequently NO line-availability check and no active_line_key
  *     backstop. Two admins may issue two debit notes against the same invoice, for
- *     the same course, at the same moment, and both are valid documents. That is
+ *     the same item, at the same moment, and both are valid documents. That is
  *     the business rule, not an oversight: multiple debit notes per invoice are
  *     explicitly allowed. Duplicate-charge prevention is a human review concern,
  *     and the Idempotency-Key covers the only case a machine can judge — the same
  *     request arriving twice.
  *
- * The original invoice, its lines and its snapshot are never read for values and
- * never written to. Even Price/VAT Adjustment, which references an original line
- * index, only records that reference. The same holds for an adjustment of a course
- * an earlier Debit Note added: it records that debit note line's id and nothing more.
+ * The original invoice, its lines and its snapshot are never written to. A Price/VAT
+ * Adjustment line records the original line index it references, and reads only that
+ * line's frozen VAT category and rate, so the charge is taxed like the item it adjusts
+ * (unless it states its own). The same holds for an adjustment of an item an earlier
+ * Debit Note added: it records that debit note line's id and reads its tax treatment.
  */
 class DebitNoteIssuer
 {
@@ -52,7 +54,7 @@ class DebitNoteIssuer
         private readonly DebitNoteEligibilityPolicy $eligibilityPolicy = new DebitNoteEligibilityPolicy,
         private readonly DebitNoteDataFactory $dataFactory = new DebitNoteDataFactory,
         private readonly InvoiceDataValidator $validator = new InvoiceDataValidator,
-        // Reused, not duplicated: which courses accepted debit notes added to this
+        // Reused, not duplicated: which items accepted debit notes added to this
         // original, and which items have been credited, are exactly what the Credit Note
         // flow already decides, and the two flows must never disagree about either.
         private readonly CreditNoteLedger $creditLedger = new CreditNoteLedger,
@@ -65,6 +67,7 @@ class DebitNoteIssuer
      * @param  string  $reason  the KSA-10 / BR-KSA-17 text that goes into the signed XML.
      * @param  array{type: string, id: int|string}|null  $requestedBy  null means no human did —
      *   never guessed.
+     * @param  VatPriceMode|null  $priceMode  what the line prices mean; null = ZATCA_VAT_MODE.
      *
      * @throws DebitNoteException when the original is not eligible, or the lines are empty
      *   or malformed.
@@ -76,6 +79,7 @@ class DebitNoteIssuer
         string $reason,
         string $idempotencyKey,
         ?array $requestedBy = null,
+        ?VatPriceMode $priceMode = null,
     ): ZatcaDebitNote {
         $existing = ZatcaDebitNote::query()->where('idempotency_key', $idempotencyKey)->first();
 
@@ -87,7 +91,7 @@ class DebitNoteIssuer
             throw DebitNoteException::noLines();
         }
 
-        $debitNote = DB::transaction(function () use ($original, $reasonType, $lines, $reason, $idempotencyKey, $requestedBy) {
+        $debitNote = DB::transaction(function () use ($original, $reasonType, $lines, $reason, $idempotencyKey, $requestedBy, $priceMode) {
             // Re-checked inside the lock: two requests with different keys could both have
             // passed the fast-path check above before either committed.
             $existing = ZatcaDebitNote::query()->where('idempotency_key', $idempotencyKey)->lockForUpdate()->first();
@@ -105,7 +109,7 @@ class DebitNoteIssuer
                 throw DebitNoteException::notEligible($verdict->reason);
             }
 
-            $this->assertReferencesAreAdjustable($authoritative, $lines);
+            $referencedDebitLines = $this->assertReferencesAreAdjustable($authoritative, $lines);
 
             $originalData = InvoiceDataSnapshot::fromArray($authoritative->invoice_data_snapshot);
 
@@ -142,6 +146,8 @@ class DebitNoteIssuer
                 $authoritative->source_reference,
                 $reason,
                 $debitNote->issued_at->toDateTimeImmutable(),
+                $referencedDebitLines,
+                $priceMode,
             );
 
             // Arithmetic + KSA-10/BR-KSA-56/BR-KSA-F-06-C13 — the same gate a plain invoice
@@ -149,7 +155,11 @@ class DebitNoteIssuer
             // back everything above; nothing is left half-created.
             $this->validator->validate($debitNoteData);
 
-            foreach ($lines as $line) {
+            // Amounts from the CALCULATED line at the same position — what was signed —
+            // and the references from the input that asked for it.
+            foreach (array_values($lines) as $position => $line) {
+                $calculated = $debitNoteData->lines[$position];
+
                 ZatcaDebitNoteLine::create([
                     'debit_note_id' => $debitNote->getKey(),
                     'original_zatca_invoice_id' => $authoritative->getKey(),
@@ -157,14 +167,14 @@ class DebitNoteIssuer
                     // the original line this points at.
                     'original_line_index' => $line->originalLineIndex,
                     'source_debit_note_line_id' => $line->sourceDebitNoteLineId,
-                    'description' => $line->description,
-                    'quantity' => $line->quantity,
-                    'unit_price' => $line->unitPrice,
-                    'vat_rate' => $line->vatRate,
-                    'line_total_excl_vat' => $line->lineTotalExclVat,
-                    'vat_amount' => $line->vatAmount,
-                    'line_total_incl_vat' => $line->lineTotalInclVat(),
-                    'course_id' => $line->courseId,
+                    'description' => $calculated->description,
+                    'quantity' => $calculated->quantity,
+                    'unit_price' => $calculated->netUnitPrice,
+                    'vat_rate' => $calculated->vatRate,
+                    'line_total_excl_vat' => $calculated->lineTotalExclVat,
+                    'vat_amount' => $calculated->vatAmount,
+                    'line_total_incl_vat' => $calculated->lineTotalInclVat(),
+                    'item_id' => $line->itemId,
                 ]);
             }
 
@@ -178,7 +188,7 @@ class DebitNoteIssuer
             ZatcaDebitNoteEvent::record($debitNote->getKey(), 'requested', $requestedBy, [
                 'reason_type' => $reasonType->value,
                 'line_count' => count($lines),
-                'course_ids' => array_values(array_filter(array_map(fn ($l) => $l->courseId, $lines))),
+                'item_ids' => array_values(array_filter(array_map(fn ($l) => $l->itemId, $lines))),
                 'total_incl_vat' => $debitNoteData->totalInclVat,
             ]);
 
@@ -193,8 +203,8 @@ class DebitNoteIssuer
     /**
      * What a line that adjusts something may reference:
      *
-     *  - A course an earlier Debit Note added must be an Additional Course line of an
-     *    ACCEPTED debit note against this same original — the courses the Credit Note
+     *  - An item an earlier Debit Note added must be an Additional Item line of an
+     *    ACCEPTED debit note against this same original — the items the Credit Note
      *    flow offers for crediting, so both flows agree on what exists — and the line
      *    must not also name an original line.
      *  - Either kind of item must still be 'available' in the Credit Note ledger. One
@@ -209,13 +219,16 @@ class DebitNoteIssuer
      * so a Credit Note cannot claim the item between this check and the insert.
      *
      * @param  DebitNoteLineInput[]  $lines
+     * @return array<int, \Zatca\DTOs\ZatcaInvoiceLine>  debit note line id => its signed line, for
+     *   every referenced earlier Debit Note item, so the new line can keep its tax treatment.
      *
      * @throws DebitNoteException
      */
-    private function assertReferencesAreAdjustable(ZatcaInvoice $original, array $lines): void
+    private function assertReferencesAreAdjustable(ZatcaInvoice $original, array $lines): array
     {
         $ledger = null;
         $referenced = [];
+        $debitLines = [];
 
         foreach ($lines as $line) {
             if ($line->sourceDebitNoteLineId === null && $line->originalLineIndex === null) {
@@ -248,6 +261,8 @@ class DebitNoteIssuer
                     throw DebitNoteException::lineNotAdjustable(CreditSource::debitNoteLineKey($id));
                 }
 
+                $debitLines[$id] = $source->line;
+
                 continue;
             }
 
@@ -257,6 +272,8 @@ class DebitNoteIssuer
                 throw DebitNoteException::lineNotAdjustable(CreditSource::invoiceLineKey($line->originalLineIndex));
             }
         }
+
+        return $debitLines;
     }
 
     /**

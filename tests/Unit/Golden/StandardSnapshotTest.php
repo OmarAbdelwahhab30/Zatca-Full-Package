@@ -12,15 +12,19 @@ use Zatca\Enums\ZatcaComplianceDocumentType as Type;
 use Zatca\Exceptions\ZatcaException;
 use Zatca\Support\InvoiceDataSnapshot;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Blueprint P21: snapshot version 3 for Standard documents.
  *
  * @group golden
  */
+#[Group('golden')]
 class StandardSnapshotTest extends TestCase
 {
     /** @dataProvider standardTypes */
+    #[DataProvider('standardTypes')]
     public function test_standard_documents_round_trip_through_v3(Type $type): void
     {
         $data = self::standard($type);
@@ -71,6 +75,7 @@ class StandardSnapshotTest extends TestCase
     }
 
     /** @dataProvider corruptions */
+    #[DataProvider('corruptions')]
     public function test_an_unusable_v3_snapshot_is_refused(\Closure $corrupt, string $message): void
     {
         $snapshot = $corrupt(InvoiceDataSnapshot::toArray(self::standard(Type::StandardCreditNote)));

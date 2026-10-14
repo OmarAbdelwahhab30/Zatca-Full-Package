@@ -61,13 +61,6 @@ class EgsConfigTest extends TestCase
         $this->assertSame('Test Org', $config->invoiceLegalName());
     }
 
-    /** Unset ZATCA_VAT_PERCENTAGE must not make the rate 0. */
-    public function test_vat_percentage_defaults_to_fifteen(): void
-    {
-        $this->assertSame(15.0, $this->config()->vatPercentage);
-        $this->assertSame(5.0, $this->config(['vat_percentage' => '5'])->vatPercentage);
-    }
-
     /**
      * Regression: ZATCA_COMPANY_NAME_AR=" أساس" in .env kept its leading space,
      * which reached cbc:RegistrationName. The SDK trims the seller name when

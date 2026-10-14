@@ -9,6 +9,7 @@ use Zatca\Exceptions\ZatcaException;
 use Zatca\Support\InvoiceDataSnapshot;
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Round-trip fidelity of the frozen business snapshot.
@@ -82,7 +83,7 @@ class InvoiceDataSnapshotTest extends TestCase
         foreach ($original->lines as $index => $line) {
             $this->assertSame($line->description, $restored->lines[$index]->description);
             $this->assertSame($line->quantity, $restored->lines[$index]->quantity);
-            $this->assertSame($line->unitPrice, $restored->lines[$index]->unitPrice);
+            $this->assertSame($line->netUnitPrice, $restored->lines[$index]->netUnitPrice);
             $this->assertSame($line->vatRate, $restored->lines[$index]->vatRate);
             $this->assertSame($line->lineTotalExclVat, $restored->lines[$index]->lineTotalExclVat);
             $this->assertSame($line->vatAmount, $restored->lines[$index]->vatAmount);
@@ -100,6 +101,7 @@ class InvoiceDataSnapshotTest extends TestCase
      * the host record is the one genuinely dangerous option — it would re-price the invoice —
      * so an unusable snapshot has to be a hard stop.
      */
+    #[DataProvider('unusableSnapshots')]
     public function test_it_refuses_an_unusable_snapshot(?array $snapshot): void
     {
         $this->expectException(ZatcaException::class);
@@ -203,6 +205,7 @@ class InvoiceDataSnapshotTest extends TestCase
     }
 
     /** @dataProvider unusableCreditNoteSnapshots */
+    #[DataProvider('unusableCreditNoteSnapshots')]
     public function test_it_refuses_a_credit_note_snapshot_missing_required_fields(array $snapshot): void
     {
         $this->expectException(ZatcaException::class);

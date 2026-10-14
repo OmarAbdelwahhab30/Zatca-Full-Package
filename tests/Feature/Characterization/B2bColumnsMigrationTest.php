@@ -9,6 +9,7 @@ use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Enums\ZatcaSubmissionModel;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Blueprint P18 (M-P1): the B2B columns are additive and every existing row keeps its
@@ -16,6 +17,7 @@ use Zatca\Tests\TestCase;
  *
  * @group characterization
  */
+#[Group('characterization')]
 class B2bColumnsMigrationTest extends TestCase
 {
     use CreatesInvoiceRows;

@@ -65,7 +65,7 @@ class CrossEgsUniquenessTest extends TestCase
     public function test_a_note_number_documented_on_another_egs_is_refused(): void
     {
         $this->row('CN-000001', 'default');
-        $data = $this->fakeInvoiceSource()->toInvoiceData((object) ['id' => 0], 'b2b');
+        $data = app(\Zatca\Services\Tax\InvoiceCalculator::class)->calculate($this->fakeInvoiceSource()->toInvoiceInput((object) ['id' => 0], 'b2b'));
         $note = new \Zatca\DTOs\ZatcaInvoiceData(
             egsIdentifier: 'b2b',
             sourceReference: 'CN-000001',

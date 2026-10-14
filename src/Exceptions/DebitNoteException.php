@@ -21,14 +21,14 @@ class DebitNoteException extends ZatcaException
     public const INVALID_LINE_REFERENCE = 'invalid_line_reference';
 
     /**
-     * A line references a debit note line that is not an Additional Course line of an
+     * A line references a debit note line that is not an Additional Item line of an
      * accepted debit note against the same original, or references both that and an
      * original line.
      */
     public const INVALID_DEBIT_NOTE_LINE_REFERENCE = 'invalid_debit_note_line_reference';
 
     /**
-     * A line adjusts an item (an original line, or a course a debit note added) that is no
+     * A line adjusts an item (an original line, or an item a debit note added) that is no
      * longer open to adjustment: credited back by an accepted Credit Note, or held by one
      * still in flight.
      */
@@ -71,7 +71,7 @@ class DebitNoteException extends ZatcaException
     public static function invalidDebitNoteLineReference(int $debitNoteLineId): self
     {
         return new self(
-            "[ZATCA] Debit Note references debit note line [{$debitNoteLineId}], which is not a course added by an accepted Debit Note on this original.",
+            "[ZATCA] Debit Note references debit note line [{$debitNoteLineId}], which is not an item added by an accepted Debit Note on this original.",
             self::INVALID_DEBIT_NOTE_LINE_REFERENCE
         );
     }

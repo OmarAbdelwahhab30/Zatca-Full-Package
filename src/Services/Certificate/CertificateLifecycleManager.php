@@ -7,12 +7,12 @@ use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaEnvironment;
 use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Events\ZatcaCertificateExpiring;
-use Zatca\Jobs\RetryZatcaInvoiceJob;
 use Zatca\Models\ZatcaEgsCredential;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Services\Connectors\ConnectorFactory;
 use Zatca\Services\Security\ZatcaSigningKeyProvider;
 use Zatca\State\EgsRegistry;
+use Zatca\Support\SubmissionRetry;
 use Zatca\Support\ZatcaGate;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Config;
@@ -215,8 +215,14 @@ class CertificateLifecycleManager
         ZatcaInvoice::query()
             ->where('egs_identifier', $egsIdentifier)
             ->where('environment', $environment->value)
-            ->whereIn('status', [ZatcaInvoiceStatus::PendingReporting->value, ZatcaInvoiceStatus::Retrying->value])
-            ->each(fn (ZatcaInvoice $invoice) => RetryZatcaInvoiceJob::dispatch($invoice->id));
+            ->whereIn('status', [
+                ZatcaInvoiceStatus::PendingReporting->value,
+                ZatcaInvoiceStatus::Retrying->value,
+                ZatcaInvoiceStatus::PendingClearance->value,
+                ZatcaInvoiceStatus::ClearanceRetrying->value,
+                ZatcaInvoiceStatus::ClearanceInDoubt->value,
+            ])
+            ->each(fn (ZatcaInvoice $invoice) => SubmissionRetry::dispatch($invoice));
     }
 
     private function findCredential(string $egsIdentifier, ZatcaEnvironment $environment, ZatcaCredentialType $type): ?ZatcaEgsCredential

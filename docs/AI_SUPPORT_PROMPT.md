@@ -28,7 +28,7 @@ PART 1 — THE SYSTEM YOU ARE DEBUGGING
 Assume you cannot see the source code. These are the facts about the package.
 Treat them as ground truth. If you need a file, ask for it by path.
 
-Package: "zatca/zatca", PHP namespace Zatca\, PHP 8.1+, Laravel 9/10.
+Package: "zatca/zatca", PHP namespace Zatca\, Laravel 9–12 (12 recommended; 9–11 are Legacy Compatibility with known Laravel security advisories), PHP 8.1+ (8.2+ on Laravel 11/12).
 Installed as a local Composer path repository inside the host application.
 
 SCOPE — what it does and does NOT do:
@@ -145,9 +145,20 @@ INTEGRATION STATUS (verified 2026-08-05 — RE-CHECK before trusting):
     - Is GenerateZatcaInvoiceJob actually dispatched after a successful payment?
     - Is a queue worker running on the "zatca" queue?
     - Are the scheduled commands registered (report-pending, requeue --only-transient,
-      repair-generated-documents, certificate:check, prune-submission-attempts,
-      prune-sdk-files)?
+      certificate:check, prune-submission-attempts, prune-sdk-files)?
   As of the date above, none of these were present in the host app.
+
+VAT (how amounts are produced):
+  - The host's InvoiceSourceContract::toInvoiceInput() returns items with prices
+    and quantities only. The package's InvoiceCalculator calculates net, VAT and
+    totals with config('zatca.vat'): ZATCA_VAT_PERCENTAGE (default 15) and
+    ZATCA_VAT_MODE (default "inclusive": prices include VAT; or "exclusive").
+    An invoice may override the mode; an item may override the rate.
+  - The result is frozen in zatca_invoices.invoice_data_snapshot. Credit notes and
+    regeneration use those frozen rates, never the current settings, so changing
+    the .env values only affects new documents.
+  - A wrong VAT setting fails with a message naming ZATCA_VAT_PERCENTAGE or
+    ZATCA_VAT_MODE; zatca:health-check shows the values in use.
 
 API ENDPOINTS USED (all POST, base URL depends on environment):
   /compliance                  (OTP header)          -> compliance CSID
@@ -171,7 +182,9 @@ DIAGNOSTIC COMMANDS AVAILABLE:
                                                trust the exit code alone)
   php artisan zatca:report-pending            (retries pending/retrying only, never manual_review)
   php artisan zatca:requeue --dry-run         (shows which stuck invoices would be restarted)
-  php artisan zatca:repair-generated-documents (queues draft completion + eligible regeneration)
+  php artisan zatca:recover --id=<id> --dry-run (one sale that broke part-way: shows state and
+                                               the planned step; never regenerates, refuses
+                                               rejected and clearance_in_doubt documents)
   php artisan zatca:prune-sdk-files --dry-run  (safe: shows leftover files, deletes nothing)
   Docs in the repo: packages/zatca/README.md, packages/zatca/docs/OPERATIONS.md,
   packages/zatca/docs/DATABASE.md, packages/zatca/docs/COMPATIBILITY.md.

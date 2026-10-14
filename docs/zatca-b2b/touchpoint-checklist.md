@@ -59,6 +59,7 @@
 | TP-53 | `.github/workflows/asas_prod.yml` (+stg) | `queue:restart` | workers restart (safe by resumable design) | staging observation | revert |
 | TP-54 | `app/Providers/RouteServiceProvider.php` | WATHQ limiters | additive limiter names | limiter tests | revert |
 | TP-55 | `Console/Commands/PruneSubmissionAttempts.php` | prune cleared outcomes too | B2C selection (reported outcomes) unchanged | `PruneSubmissionAttempts` test | revert |
+| TP-56 | `Console/Commands/RecoverZatcaInvoice.php` (package `zatca:recover`) | new dispatch site: one document sent synchronously | routed by the document's own `submission_model` (Report… / Clear…), never by EGS; never regenerates; refuses `clearance_rejected`, rejected `*_manual_review` and (without `--resend-in-doubt`) `clearance_in_doubt` | `RecoverZatcaInvoiceCommandTest`, dispatch-site inventory | remove command |
 
 **Isolation preferred and applied where possible:** new generator family (not a parameterised Simplified class), new clearance job (not a mode of the reporting job), new company sources (decorators), new admin methods (company assignment, settlement) instead of editing the B2C branch of `createTransactions()`, new PDF templates, new delivery service, separate EGS/chain/certificate.
 

@@ -29,6 +29,12 @@ class CreditSource
      */
     public const TYPE_PRICE_ADJUSTMENT = 'price_adjustment';
 
+    /** The host's own product/service id carried by an Additional Item debit note line. */
+    public readonly ?int $itemId;
+
+    /** @deprecated Use $itemId. Always equal to it. */
+    public readonly ?int $courseId;
+
     public function __construct(
         public readonly ZatcaInvoiceLine $line,
         public readonly int $debitNoteId,
@@ -36,9 +42,19 @@ class CreditSource
         public readonly string $debitNoteNumber,
         public readonly ZatcaDebitNoteReason $reasonType,
         public readonly ?int $referencedOriginalLineIndex = null,
-        public readonly ?int $courseId = null,
+        ?int $courseId = null,
         public readonly ?int $referencedDebitNoteLineId = null,
-    ) {}
+        ?int $itemId = null,
+    ) {
+        if ($itemId !== null && $courseId !== null && $itemId !== $courseId) {
+            throw new \InvalidArgumentException(
+                "Give itemId or its deprecated alias courseId, not two different values ({$itemId} vs {$courseId})."
+            );
+        }
+
+        $this->itemId = $itemId ?? $courseId;
+        $this->courseId = $this->itemId;
+    }
 
     public static function invoiceLineKey(int $index): string
     {
@@ -71,24 +87,24 @@ class CreditSource
     }
 
     /**
-     * Only a course a debit note added has a price that can be wrong. A price or VAT
+     * Only an item a debit note added has a price that can be wrong. A price or VAT
      * adjustment line is itself a correction, and `other` is unmodelled — reducing any
      * of those is simply crediting it.
      */
     public function canBePriceAdjusted(): bool
     {
-        return $this->reasonType === ZatcaDebitNoteReason::AdditionalCourse;
+        return $this->reasonType === ZatcaDebitNoteReason::AdditionalItem;
     }
 
     /**
      * The source this line rides on, or null when it stands on its own.
      *
-     * A Debit Note price adjustment charged MORE for a course that is already on this
-     * invoice; it is not a thing the student holds, it is part of what that one course
-     * cost. So crediting the course has to hand that money back too, and the key
+     * A Debit Note price adjustment charged MORE for an item that is already on this
+     * invoice; it is not a thing the customer holds, it is part of what that one item
+     * cost. So crediting the item has to hand that money back too, and the key
      * returned here is what ties the two together (see CreditNoteLedger::resolveSources()).
      *
-     * Only a price adjustment is attached. An Additional Course is a course of its own,
+     * Only a price adjustment is attached. An Additional Item is an item of its own,
      * a VAT Adjustment is credited alone, and `other` names nothing to attach to.
      */
     public function attachedToKey(): ?string

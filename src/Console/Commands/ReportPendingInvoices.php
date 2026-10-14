@@ -3,9 +3,8 @@
 namespace Zatca\Console\Commands;
 
 use Zatca\Enums\ZatcaInvoiceStatus;
-use Zatca\Jobs\RetryZatcaClearanceJob;
-use Zatca\Jobs\RetryZatcaInvoiceJob;
 use Zatca\Models\ZatcaInvoice;
+use Zatca\Support\SubmissionRetry;
 use Zatca\Support\ZatcaGate;
 use Illuminate\Console\Command;
 
@@ -62,14 +61,13 @@ class ReportPendingInvoices extends Command
                 ZatcaInvoiceStatus::ClearanceRetrying->value,
                 ZatcaInvoiceStatus::ClearanceInDoubt->value,
             ])
-            ->get(['id', 'status']);
+            ->get(['id', 'status', 'submission_model']);
 
+        // Routed by the document's submission model, never by its status: a Standard
+        // document left in pending_reporting (signed before PendingClearance existed)
+        // must still be cleared, not reported.
         foreach ($invoices as $invoice) {
-            if ($invoice->status->isClearanceState()) {
-                RetryZatcaClearanceJob::dispatch($invoice->id);
-            } else {
-                RetryZatcaInvoiceJob::dispatch($invoice->id);
-            }
+            SubmissionRetry::dispatch($invoice);
         }
 
         $this->info("Dispatched {$invoices->count()} pending invoice(s) for reporting/clearance.");

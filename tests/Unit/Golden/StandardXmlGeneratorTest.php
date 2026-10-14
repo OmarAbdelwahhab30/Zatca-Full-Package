@@ -15,6 +15,7 @@ use Zatca\Exceptions\ZatcaException;
 use Zatca\Services\Invoice\XmlGenerators\V2\StandardCreditNoteXmlGenerator;
 use Zatca\Services\Invoice\XmlGenerators\V2\StandardInvoiceXmlGenerator;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Blueprint P22-P24: the Standard (Clearance, B2B) XML generator. Structural
@@ -25,6 +26,7 @@ use Zatca\Tests\TestCase;
  *
  * @group golden
  */
+#[Group('golden')]
 class StandardXmlGeneratorTest extends TestCase
 {
     public function test_a_standard_invoice_carries_0100000_and_the_full_buyer(): void

@@ -5,6 +5,8 @@ namespace Zatca\Tests\Concerns;
 use Zatca\Contracts\InvoiceSourceContract;
 use Zatca\Contracts\ZatcaSdkInterface;
 use Zatca\DTOs\ZatcaInvoiceData;
+use Zatca\DTOs\ZatcaInvoiceItem;
+use Zatca\DTOs\ZatcaInvoiceInput;
 use Zatca\DTOs\ZatcaInvoiceLine;
 use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaEnvironment;
@@ -196,15 +198,15 @@ class ScriptedZatcaSdk implements ZatcaSdkInterface
 class FakeInvoiceSource implements InvoiceSourceContract
 {
     /** Incremented whenever the host record is read, so a test can prove it was not. */
-    public int $toInvoiceDataCalls = 0;
+    public int $toInvoiceInputCalls = 0;
 
     public function __construct(private readonly ?string $buyerName = null) {}
 
-    public function toInvoiceData(mixed $source, string $egsIdentifier): ZatcaInvoiceData
+    public function toInvoiceInput(mixed $source, string $egsIdentifier): ZatcaInvoiceInput
     {
-        $this->toInvoiceDataCalls++;
+        $this->toInvoiceInputCalls++;
 
-        return new ZatcaInvoiceData(
+        return new ZatcaInvoiceInput(
             egsIdentifier: $egsIdentifier,
             sourceReference: $this->sourceReference($source),
             buyerName: $this->buyerName ?? 'Original Buyer',
@@ -213,10 +215,7 @@ class FakeInvoiceSource implements InvoiceSourceContract
             // keeps generated documents byte-comparable across calls.
             issueDateTime: new DateTimeImmutable('2026-08-17T10:30:00+03:00'),
             currency: 'SAR',
-            lines: [new ZatcaInvoiceLine('Course Enrollment', 1, 100.00, 15.0, 100.00, 15.00)],
-            totalExclVat: 100.00,
-            totalVat: 15.00,
-            totalInclVat: 115.00,
+            items: [new ZatcaInvoiceItem('Course Enrollment', 1, 115.00)],
         );
     }
 

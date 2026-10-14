@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Schema;
 /**
  * One credited line, copied verbatim from the original invoice's frozen
  * snapshot at `original_line_index` — never recomputed from the host's
- * current Course/Transaction prices (BR-07, scenario 9: a discounted line's
+ * current product/order prices (BR-07, scenario 9: a discounted line's
  * post-discount net/VAT is what gets credited, unconditionally).
  *
  * `active_line_key` is the concurrency backstop for BR-06/BR-11: a unique,
@@ -30,13 +30,14 @@ return new class extends Migration
 
             $table->string('description');
             $table->unsignedInteger('quantity');
-            $table->decimal('unit_price', 14, 2);
+            // Net unit price, up to six decimals (it is quantity × this that equals the line net).
+            $table->decimal('unit_price', 18, 6);
             $table->decimal('vat_rate', 5, 2);
             $table->decimal('line_total_excl_vat', 14, 2);
             $table->decimal('vat_amount', 14, 2);
             $table->decimal('line_total_incl_vat', 14, 2);
 
-            $table->unsignedBigInteger('course_id')->nullable();
+            $table->unsignedBigInteger('item_id')->nullable();
 
             $table->string('active_line_key')->nullable()->unique();
 

@@ -80,11 +80,11 @@ class ZatcaCreditNote extends Model
 
     /**
      * Why this note was issued. NULL is a note issued before reasons existed, and every
-     * one of those was a course cancellation — see the reason_type migration.
+     * one of those was an item cancellation — see the reason_type migration.
      */
     public function creditReason(): ZatcaCreditNoteReason
     {
-        return $this->reason_type ?? ZatcaCreditNoteReason::CourseCancellation;
+        return $this->reason_type ?? ZatcaCreditNoteReason::ItemCancellation;
     }
 
     public function isPriceAdjustment(): bool

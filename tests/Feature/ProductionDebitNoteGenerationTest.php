@@ -120,7 +120,7 @@ class ProductionDebitNoteGenerationTest extends TestCase
 
         return app(DebitNoteDataFactory::class)->make(
             $originalData,
-            [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00, null, 44)],
+            [new DebitNoteLineInput('Extra course', 1, 230.00, courseId: 44)],
             $number,
             $original->source_reference,
             $reason,

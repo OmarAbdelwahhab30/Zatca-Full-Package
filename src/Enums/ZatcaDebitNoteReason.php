@@ -10,8 +10,8 @@ namespace Zatca\Enums;
  */
 enum ZatcaDebitNoteReason: string
 {
-    /** A course/service the student received that was not on the original invoice. */
-    case AdditionalCourse = 'additional_course';
+    /** An item/service the customer received that was not on the original invoice. */
+    case AdditionalItem = 'additional_item';
 
     /** The original was under-priced. Records the shortfall only; the original is never edited. */
     case PriceAdjustment = 'price_adjustment';
@@ -22,20 +22,29 @@ enum ZatcaDebitNoteReason: string
     /** Anything else. The admin must supply the description by hand. */
     case Other = 'other';
 
+    /** @deprecated Use AdditionalItem. Same case, kept so existing code keeps working. */
+    public const AdditionalCourse = self::AdditionalItem;
+
     /**
-     * Whether an accepted note of this kind should grant the student access to a
-     * course. Only Additional Course does — a price or VAT correction changes no
-     * one's entitlement, and `other` is by definition unmodelled.
+     * Whether an accepted note of this kind gives the customer a new item. Only
+     * Additional Item does — a price or VAT correction changes no one's entitlement,
+     * and `other` is by definition unmodelled.
      */
+    public function addsItems(): bool
+    {
+        return $this === self::AdditionalItem;
+    }
+
+    /** @deprecated Use addsItems(). */
     public function grantsCourseAccess(): bool
     {
-        return $this === self::AdditionalCourse;
+        return $this->addsItems();
     }
 
     public function label(): string
     {
         return match ($this) {
-            self::AdditionalCourse => 'additional course or service',
+            self::AdditionalItem => 'additional item or service',
             self::PriceAdjustment => 'price adjustment',
             self::VatAdjustment => 'VAT adjustment',
             self::Other => 'other',

@@ -21,9 +21,9 @@ use Illuminate\Support\Facades\Log;
 /**
  * Dispatched after a host order is confirmed Paid. Never runs inline in a
  * payment callback/webhook — ZATCA signing/API calls always happen off the
- * request cycle. Never blocks enrollment: enrollment has already succeeded
+ * request cycle. Never blocks the sale: the sale has already succeeded
  * by the time this job runs; a failure here only affects invoice/reporting
- * state, never course access.
+ * state, never the customer's access.
  *
  * Carries ONLY scalar reference data (source_type/source_id/egs_identifier)
  * — never the host's model/object itself. The actual record is reloaded

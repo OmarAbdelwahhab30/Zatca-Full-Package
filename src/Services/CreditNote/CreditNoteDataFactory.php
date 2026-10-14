@@ -4,13 +4,16 @@ namespace Zatca\Services\CreditNote;
 
 use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\DTOs\ZatcaInvoiceLine;
+use Zatca\Enums\VatPriceMode;
 use Zatca\Enums\ZatcaComplianceDocumentType;
 use Zatca\Exceptions\ZatcaException;
+use Zatca\Services\Tax\InvoiceCalculator;
+use Zatca\Support\Money;
 use DateTimeImmutable;
 
 /**
  * Builds the ZatcaInvoiceData for a Credit Note from the ORIGINAL invoice's frozen
- * snapshot — never from the host's current Course/Transaction prices. That is what
+ * snapshot — never from the host's current product/order prices. That is what
  * makes scenario 9 (a discounted invoice) work by construction: the copied line
  * already carries its post-discount net/VAT, and this class has no path back to the
  * host record that could recompute it (BR-07).
@@ -21,7 +24,7 @@ use DateTimeImmutable;
  *
  * Standard/Simplified subtype, the structured BuyerParty and the supply date are all
  * INHERITED from the original's own frozen snapshot (never re-resolved from the
- * host's current company/student state, and never decided by this class): a Credit
+ * host's current company/customer state, and never decided by this class): a Credit
  * Note against a Standard (B2B) invoice is itself a Standard Credit Note, and one
  * against a Simplified invoice stays Simplified. See note().
  */
@@ -31,7 +34,7 @@ class CreditNoteDataFactory
      * @param  ZatcaInvoiceData  $original  the authoritative original's snapshot, restored via
      *   InvoiceDataSnapshot::fromArray() — never re-read from the host.
      * @param  int[]  $lineIndexes  zero-based indexes into $original->lines to credit. Whole
-     *   lines only — every Coursefer ZATCA line already has quantity 1, so there is no partial
+     *   lines only — every line is credited whole (quantity included), so there is no partial
      *   quantity to represent.
      * @param  string  $creditNoteNumber  becomes both the row's source_reference and the XML cbc:ID.
      * @param  string  $billingReferenceId  the original document's OWN cbc:ID (its source_reference
@@ -100,7 +103,7 @@ class CreditNoteDataFactory
     /**
      * @param  ZatcaInvoiceLine[]  $reversedLines  Debit Note increases this adjustment had to
      *   reverse to reach its amount, credited in full and stated after the adjustment's own
-     *   line. Empty for every adjustment that fits inside the course's own value, which is
+     *   line. Empty for every adjustment that fits inside the item's own value, which is
      *   the ordinary one.
      */
     public function makeAdjustment(
@@ -124,14 +127,14 @@ class CreditNoteDataFactory
     }
 
     /**
-     * The same note for several courses at once: one adjustment line per course, then
+     * The same note for several items at once: one adjustment line per item, then
      * every Debit Note increase those adjustments had to reverse.
      *
      * The two groups are kept apart in the signature because only the first is checked
      * for being a positive correction — a reversed increase is credited at its own signed
      * value, whatever that is.
      *
-     * @param  ZatcaInvoiceLine[]  $adjustmentLines  one per course, in the order submitted
+     * @param  ZatcaInvoiceLine[]  $adjustmentLines  one per item, in the order submitted
      * @param  ZatcaInvoiceLine[]  $reversedLines  the increases given back, stated after them
      */
     public function makeAdjustments(
@@ -145,7 +148,7 @@ class CreditNoteDataFactory
     ): ZatcaInvoiceData {
         if ($adjustmentLines === []) {
             throw new ZatcaException(
-                "[ZATCA] Credit Note [{$creditNoteNumber}] price adjustment must correct at least one course."
+                "[ZATCA] Credit Note [{$creditNoteNumber}] price adjustment must correct at least one item."
             );
         }
 
@@ -176,9 +179,10 @@ class CreditNoteDataFactory
         string $reason,
         DateTimeImmutable $issueDateTime,
     ): ZatcaInvoiceData {
-        $totalExclVat = round(array_sum(array_map(static fn (ZatcaInvoiceLine $l) => $l->lineTotalExclVat, $lines)), 2);
-        $totalVat = round(array_sum(array_map(static fn (ZatcaInvoiceLine $l) => $l->vatAmount, $lines)), 2);
-        $totalInclVat = round($totalExclVat + $totalVat, 2);
+        [$net, $vat] = InvoiceCalculator::totals($lines);
+        $totalExclVat = Money::amount($net);
+        $totalVat = Money::amount($vat);
+        $totalInclVat = Money::amount($net + $vat);
 
         return new ZatcaInvoiceData(
             egsIdentifier: $original->egsIdentifier,
@@ -201,7 +205,7 @@ class CreditNoteDataFactory
             billingReferenceId: $billingReferenceId,
             adjustmentReason: $reason,
             // Standard only: the ORIGINAL invoice's own frozen buyer/supply date — never
-            // re-resolved from the host's current company/student state. For a Simplified
+            // re-resolved from the host's current company/customer state. For a Simplified
             // original both are already null, so this is a no-op for B2C.
             buyer: $original->buyer,
             supplyDate: $original->supplyDate,
@@ -227,36 +231,37 @@ class CreditNoteDataFactory
      */
     public function reprice(ZatcaInvoiceLine $line, float $creditInclVat, string $creditNoteNumber): ZatcaInvoiceLine
     {
-        $creditInclVat = round($creditInclVat, 2);
+        $credit = Money::halalas($creditInclVat);
 
-        if ($creditInclVat < 0) {
+        if ($credit < 0) {
             throw new ZatcaException(
                 "[ZATCA] Credit Note [{$creditNoteNumber}] would credit a negative amount ("
-                .number_format($creditInclVat, 2, '.', '').") for line [{$line->description}]."
+                .Money::format($credit, 2).") for line [{$line->description}]."
             );
         }
 
-        $invoicedGross = $line->lineTotalInclVat();
+        $invoicedNet = Money::halalas($line->lineTotalExclVat);
+        $invoicedGross = $invoicedNet + Money::halalas($line->vatAmount);
 
-        if ($invoicedGross === $creditInclVat) {
+        if ($invoicedGross === $credit) {
             return $line;
         }
 
         // Same proportion of net to VAT the original line was signed with. Deriving it
-        // from the line itself rather than from the rate covers the exclusive policy
-        // (where gross is net plus VAT) and the inclusive one (where it is not) with
-        // one expression, and degrades to the plain rate formula on a zero-value line.
+        // from the line itself rather than from the rate covers lines priced inclusive
+        // and exclusive with one expression, and degrades to the plain inclusive rate
+        // formula on a zero-value line. Exact integer arithmetic, half-up.
         $net = $invoicedGross > 0
-            ? round($creditInclVat * ($line->lineTotalExclVat / $invoicedGross), 2)
-            : round($creditInclVat / (1 + ($line->vatRate / 100)), 2);
+            ? Money::divide(Money::multiply($credit, $invoicedNet), $invoicedGross)
+            : InvoiceCalculator::split($credit, (int) round($line->vatRate * 100), VatPriceMode::Inclusive)[0];
 
-        return new ZatcaInvoiceLine(
-            description: $line->description,
+        // Net unit price restated per unit (six decimals), so quantity × price still equals
+        // the line net (BR-KSA-EN16931-11) when the credited line carries more than one unit.
+        return $line->withAmounts(
             quantity: $line->quantity,
-            unitPrice: $net,
-            vatRate: $line->vatRate,
-            lineTotalExclVat: $net,
-            vatAmount: round($creditInclVat - $net, 2),
+            netUnitPrice: InvoiceCalculator::netUnitPrice($net, $line->quantity),
+            lineTotalExclVat: Money::amount($net),
+            vatAmount: Money::amount($credit - $net),
         );
     }
 }

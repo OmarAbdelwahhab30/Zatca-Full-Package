@@ -126,7 +126,7 @@ class ZatcaInvoice extends Model
      * still holds what it claimed until it is retried or cancelled.
      *
      * While one does, no further note of either kind may be issued against this
-     * original, so the same course can never be adjusted twice before the first
+     * original, so the same item can never be adjusted twice before the first
      * adjustment settles. See CreditNoteEligibilityPolicy / DebitNoteEligibilityPolicy.
      */
     public function hasAdjustmentInProgress(): bool

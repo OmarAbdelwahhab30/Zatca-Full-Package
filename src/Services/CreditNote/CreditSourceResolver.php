@@ -93,7 +93,7 @@ class CreditSourceResolver
                 debitNoteNumber: (string) $note->debit_note_number,
                 reasonType: $reason,
                 referencedOriginalLineIndex: $row->original_line_index !== null ? (int) $row->original_line_index : null,
-                courseId: $row->course_id !== null ? (int) $row->course_id : null,
+                itemId: $row->item_id !== null ? (int) $row->item_id : null,
                 referencedDebitNoteLineId: $row->source_debit_note_line_id !== null
                     ? (int) $row->source_debit_note_line_id
                     : null,

@@ -10,6 +10,8 @@ use Zatca\Services\CreditNote\CreditNoteEligibilityVerdict;
 use Zatca\Services\DebitNote\DebitNoteEligibilityPolicy;
 use Zatca\Services\DebitNote\DebitNoteEligibilityVerdict;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * The package call sites that compare document types (blueprint P17), one test each.
@@ -17,6 +19,7 @@ use Zatca\Tests\TestCase;
  *
  * @group characterization
  */
+#[Group('characterization')]
 class DocumentKindCallSitesTest extends TestCase
 {
     use CreatesInvoiceRows;
@@ -34,6 +37,7 @@ class DocumentKindCallSitesTest extends TestCase
      *
      * @dataProvider kinds
      */
+    #[DataProvider('kinds')]
     public function test_model_kind_helpers(Type $type, bool $credit, bool $debit): void
     {
         $row = (new ZatcaInvoice)->forceFill(['document_type' => $type]);

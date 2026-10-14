@@ -186,7 +186,6 @@ php artisan zatca:inspect state
      ```php
      $schedule->command('zatca:report-pending')->everyFiveMinutes();
      $schedule->command('zatca:requeue --only-transient')->hourly();
-     $schedule->command('zatca:repair-generated-documents')->everyTenMinutes()->withoutOverlapping();
      $schedule->command('zatca:certificate:check')->daily();
      $schedule->command('zatca:status')->hourly()->emailOutputOnFailure('ops@example.com');
      $schedule->command('zatca:prune-submission-attempts')->weekly();
@@ -280,32 +279,27 @@ It resets `attempt_count` by default — without that the invoice would be sent 
 
 ⚠ Only the `--only-transient` form belongs on the scheduler. Plain `zatca:requeue` retries rejections too, which just burns attempts and hides the real problem.
 
-### Repairing generated documents automatically — `zatca:repair-generated-documents`
+### Recovering one sale after a technical failure — `zatca:recover`
 
-The admin dashboard has manual controls for document regeneration and draft completion, but operators should not need to understand those differences during normal work. Schedule this command instead:
-
-```php
-$schedule->command('zatca:repair-generated-documents')->everyTenMinutes()->withoutOverlapping();
-```
-
-It queues two safe batches:
-
-| Batch | What it fixes | What it does not do |
-|---|---|---|
-| Draft completion | A document row exists but signing stopped before hash/signature/QR were written | Does not create a new document or consume a new ICV |
-| Regeneration | ZATCA read a signed document and rejected it for document-content reasons | Does not delete the rejected document; the replacement is linked to it |
-
-Each run claims at most one batch per repair type, then dispatches queue jobs. `succeeded` means "queued", not "reported"; the normal signing/reporting workers finish the work afterwards. `withoutOverlapping()` matters because signing is serialized per EGS and every regeneration consumes an ICV permanently.
-
-Options for one-off maintenance:
+When a technical problem stopped one sale part-way (the SDK jar was missing, a folder was not writable, a worker died between signing and sending), fix the cause first, then finish that sale:
 
 ```bash
-php artisan zatca:repair-generated-documents
-php artisan zatca:repair-generated-documents --skip-regeneration
-php artisan zatca:repair-generated-documents --skip-completion
+php artisan zatca:recover --source-type="App\Models\Order" --source-id=1042 --dry-run
+php artisan zatca:recover --source-type="App\Models\Order" --source-id=1042
+php artisan zatca:recover --id=41    # starting from a ZATCA document id
 ```
 
-This command is deliberately separate from `zatca:requeue`. Requeue resends the same signed XML after transient failures. Repair either completes an unfinished draft or creates a replacement document for a real rejection.
+It finds the sale's current document and moves it one safe step forward: creates and signs it if it does not exist, signs an unsigned draft with its **same** ICV and UUID, or sends a signed document once more. B2C documents are reported and B2B documents are cleared, chosen from the document itself. It waits for ZATCA's answer and exits `0` only when ZATCA accepted the document.
+
+It refuses, and says why, when:
+- ZATCA rejected the document. Sending it again would fail the same way. Fix the cause and regenerate it.
+- a B2B document is `clearance_in_doubt`. Check on the ZATCA side, then add `--resend-in-doubt`.
+- a B2B EGS is configured and the sale has no document yet. Pass `--egs=` with the EGS your app signs that sale on.
+- the production certificate has expired, or ZATCA is switched off.
+
+**It never regenerates and never spends an extra ICV on a rejected document.** It is a manual tool: never schedule it. Full option list: README → Console commands → `zatca:recover`.
+
+How it differs from `zatca:requeue`: requeue restarts many already-signed documents through the queue. Recover handles one sale end to end, including unsigned drafts and sales with no document yet, and shows the result straight away.
 
 ### Surviving a ZATCA outage
 
@@ -331,7 +325,7 @@ php artisan optimize:clear
 php artisan queue:restart
 ```
 
-Safe to do with work in flight: queued jobs exit quietly rather than failing, claims are released, and no invoice status or `attempt_count` is written. Payments, enrollment, local invoices and invoice emails keep working; onboarding and the diagnostic commands stay available so an EGS can still be repaired while invoicing is off.
+Safe to do with work in flight: queued jobs exit quietly rather than failing, claims are released, and no invoice status or `attempt_count` is written. Payments, order fulfilment, local invoices and invoice emails keep working; onboarding and the diagnostic commands stay available so an EGS can still be repaired while invoicing is off.
 
 Full behaviour, including what invoice PDFs look like while disabled, is in the README's [Disabling ZATCA](../README.md#disabling-zatca) section.
 

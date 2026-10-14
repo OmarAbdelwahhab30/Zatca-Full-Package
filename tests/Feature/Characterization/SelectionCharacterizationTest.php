@@ -14,11 +14,14 @@ use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaEnvironment;
 use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Enums\ZatcaResponseStatus;
+use Zatca\Jobs\RetryZatcaClearanceJob;
 use Zatca\Jobs\RetryZatcaInvoiceJob;
 use Zatca\Services\Certificate\CertificateLifecycleManager;
 use Zatca\Services\Connectors\ConnectorFactory;
 use Zatca\Services\Security\ZatcaCredentialStore;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Which rows each B2C recovery path picks up today.
@@ -34,6 +37,7 @@ use Zatca\Tests\TestCase;
  *
  * @group characterization
  */
+#[Group('characterization')]
 class SelectionCharacterizationTest extends TestCase
 {
     use CreatesInvoiceRows;
@@ -51,9 +55,10 @@ class SelectionCharacterizationTest extends TestCase
     }
 
     /**
-     * `zatca:report-pending` selects by status alone: Pending Reporting and Retrying.
-     * Failed is NOT selected although ZatcaInvoiceStatus::isRetryable() includes it, and
-     * nothing else (supersession, regeneration claim, missing signature) is checked.
+     * `zatca:report-pending` selects Pending Reporting and Retrying for reporting (the
+     * clearance equivalents go to clearance, see the next test). Failed is NOT selected
+     * although ZatcaInvoiceStatus::isRetryable() includes it, and nothing else
+     * (supersession, regeneration claim, missing signature) is checked.
      */
     public function test_report_pending_selects_pending_and_retrying_by_status_only(): void
     {
@@ -61,7 +66,7 @@ class SelectionCharacterizationTest extends TestCase
 
         $expected = [];
         foreach (ZatcaInvoiceStatus::cases() as $status) {
-            $row = $this->invoiceRow($status);
+            $row = $this->realisticRow($status);
             if (in_array($status, [ZatcaInvoiceStatus::PendingReporting, ZatcaInvoiceStatus::Retrying], true)) {
                 $expected[] = $row->id;
             }
@@ -79,6 +84,24 @@ class SelectionCharacterizationTest extends TestCase
         $this->assertSame($expected, $dispatched, 'The command does not order its selection; only the set is pinned.');
     }
 
+    /** Clearance documents are re-sent through clearance, never reporting, whatever their status. */
+    public function test_report_pending_sends_clearance_documents_to_clearance(): void
+    {
+        Bus::fake();
+
+        $expected = [];
+        foreach ([ZatcaInvoiceStatus::PendingClearance, ZatcaInvoiceStatus::ClearanceRetrying, ZatcaInvoiceStatus::ClearanceInDoubt] as $status) {
+            $expected[] = $this->realisticRow($status)->id;
+        }
+        // A Standard document signed before pending_clearance existed sits in pending_reporting.
+        $expected[] = $this->invoiceRow(ZatcaInvoiceStatus::PendingReporting, ['submission_model' => 'clearance', 'document_type' => 'standard_invoice'])->id;
+
+        $this->artisan('zatca:report-pending')->assertSuccessful();
+
+        $this->assertSame([], $this->dispatchedRetryIds());
+        $this->assertSame($expected, $this->dispatchedClearanceIds());
+    }
+
     /** The retry job carries the configured connection and queue, set in its constructor. */
     public function test_report_pending_jobs_use_the_configured_connection_and_queue(): void
     {
@@ -93,6 +116,7 @@ class SelectionCharacterizationTest extends TestCase
     }
 
     /** @dataProvider requeueExclusions */
+    #[DataProvider('requeueExclusions')]
     public function test_requeue_by_id_still_refuses(string $case, array $overrides): void
     {
         Bus::fake();
@@ -141,10 +165,14 @@ class SelectionCharacterizationTest extends TestCase
         Config::set('zatca.egs.other', Config::get('zatca.egs.default'));
 
         $expected = [];
+        $expectedClearance = [];
         foreach (ZatcaInvoiceStatus::cases() as $status) {
-            $row = $this->invoiceRow($status);
+            $row = $this->realisticRow($status);
             if (in_array($status, [ZatcaInvoiceStatus::PendingReporting, ZatcaInvoiceStatus::Retrying], true)) {
                 $expected[] = $row->id;
+            }
+            if ($status->isClearanceRetryable()) {
+                $expectedClearance[] = $row->id;
             }
         }
         $this->invoiceRow(ZatcaInvoiceStatus::PendingReporting, ['egs_identifier' => 'other']);
@@ -153,6 +181,7 @@ class SelectionCharacterizationTest extends TestCase
         $this->renewDefaultProductionCertificate();
 
         $this->assertSame($expected, $this->dispatchedRetryIds());
+        $this->assertSame($expectedClearance, $this->dispatchedClearanceIds());
     }
 
     private function renewDefaultProductionCertificate(): void
@@ -188,6 +217,24 @@ class SelectionCharacterizationTest extends TestCase
             ZatcaCertificateState::Valid,
             app(CertificateLifecycleManager::class)->renew('default', ZatcaCredentialType::Production)
         );
+    }
+
+    /** A row whose submission model matches its status, as the package itself writes them. */
+    private function realisticRow(ZatcaInvoiceStatus $status): \Zatca\Models\ZatcaInvoice
+    {
+        return $this->invoiceRow($status, $status->isClearanceState()
+            ? ['submission_model' => 'clearance', 'document_type' => 'standard_invoice']
+            : []);
+    }
+
+    /** @return array<int, int> ids of dispatched RetryZatcaClearanceJob, ascending */
+    private function dispatchedClearanceIds(): array
+    {
+        return Bus::dispatched(RetryZatcaClearanceJob::class)
+            ->map(fn (RetryZatcaClearanceJob $job) => (fn () => $this->zatcaInvoiceId)->call($job))
+            ->sort()
+            ->values()
+            ->all();
     }
 
     /** @return array<int, int> ids of dispatched RetryZatcaInvoiceJob, in dispatch order */
