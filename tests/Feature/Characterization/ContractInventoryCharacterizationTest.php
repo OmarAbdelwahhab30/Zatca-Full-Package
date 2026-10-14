@@ -12,6 +12,7 @@ use Zatca\State\EgsRegistry;
 use Zatca\State\ProductionInvoiceCounterManager;
 use Zatca\State\ProductionPreviousInvoiceHashManager;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Small shared contracts B2B builds on: the status vocabulary and its whitelists,
@@ -20,6 +21,7 @@ use Zatca\Tests\TestCase;
  *
  * @group characterization
  */
+#[Group('characterization')]
 class ContractInventoryCharacterizationTest extends TestCase
 {
     /**

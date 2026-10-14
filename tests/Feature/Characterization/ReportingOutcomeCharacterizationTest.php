@@ -21,6 +21,8 @@ use Zatca\Models\ZatcaSubmissionAttempt;
 use Zatca\Services\Connectors\ConnectorFactory;
 use Zatca\Tests\Concerns\BuildsProductionInvoices;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Pins what one B2C reporting attempt does today, end to end through the real
@@ -36,6 +38,7 @@ use Zatca\Tests\TestCase;
  *
  * @group characterization
  */
+#[Group('characterization')]
 class ReportingOutcomeCharacterizationTest extends TestCase
 {
     use BuildsProductionInvoices;
@@ -70,6 +73,7 @@ class ReportingOutcomeCharacterizationTest extends TestCase
     }
 
     /** @dataProvider outcomes */
+    #[DataProvider('outcomes')]
     public function test_reporting_outcome(int $httpStatus, string $body, int $priorAttempts, ZatcaInvoiceStatus $expected, string $attemptOutcome, bool $needsAttention): void
     {
         $invoice = $this->invoiceRow(ZatcaInvoiceStatus::PendingReporting, ['attempt_count' => $priorAttempts]);
@@ -181,6 +185,7 @@ class ReportingOutcomeCharacterizationTest extends TestCase
     }
 
     /** @dataProvider terminalStatuses */
+    #[DataProvider('terminalStatuses')]
     public function test_an_accepted_invoice_is_never_sent_again(ZatcaInvoiceStatus $status): void
     {
         $invoice = $this->invoiceRow($status);
@@ -208,6 +213,7 @@ class ReportingOutcomeCharacterizationTest extends TestCase
      *
      * @dataProvider nonTerminalStatuses
      */
+    #[DataProvider('nonTerminalStatuses')]
     public function test_any_non_terminal_status_is_sent_when_a_job_runs(ZatcaInvoiceStatus $status): void
     {
         $invoice = $this->invoiceRow($status);

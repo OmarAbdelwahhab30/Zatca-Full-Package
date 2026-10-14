@@ -19,14 +19,25 @@ This document specifies all system, server, software, and configuration requirem
 ## 1. System & OS Requirements
 
 * **Operating System:** Ubuntu 20.04 / 22.04 LTS or Debian 11+ (recommended).
-* **PHP Version:** PHP 8.1, 8.2, or 8.3.
+* **PHP Version:** depends on your Laravel version (Laravel's own rule):
+
+  | Laravel | Level | PHP |
+  |---|---|---|
+  | **12** | **Recommended** | 8.2 or newer (tested on 8.2, 8.3 and 8.4) |
+  | 11 | Legacy Compatibility | 8.2 or newer (tested on 8.2 and 8.3) |
+  | 10 | Legacy Compatibility | 8.1 or newer (tested on 8.2 and 8.3) |
+  | 9 | Legacy Compatibility | 8.1 or newer (tested on 8.1 and 8.3) |
+
+  Laravel 9, 10 and 11 no longer get security fixes from Laravel, and Composer blocks them by default. Use Laravel 12 on new servers. See [`COMPATIBILITY.md`](COMPATIBILITY.md) and the README section "Laravel compatibility" before deploying a legacy version.
 * **Required PHP Extensions:**
-  * `ext-dom`
-  * `ext-xml`
   * `ext-openssl`
+  * `ext-dom`
   * `ext-mbstring`
-  * `ext-bcmath`
+  * `ext-ctype`
   * `ext-json`
+  * the PDO driver for your database (for example `ext-pdo_mysql`)
+
+  The package itself does not use `ext-bcmath` or `ext-xml`. Having them installed does no harm.
 * **System Utilities:** `curl`, `unzip`, `cron`, `supervisor`.
 
 ---
@@ -102,14 +113,13 @@ sudo supervisorctl start zatca-worker:*
 
 ## 5. Cron Job & Laravel Scheduler
 
-The Laravel Scheduler handles certificate status checks, warning notifications, transient retry jobs (`zatca:requeue --only-transient`), and automatic generated-document repair (`zatca:repair-generated-documents`).
+The Laravel Scheduler handles certificate status checks, warning notifications, pending reports (`zatca:report-pending`), and transient retry jobs (`zatca:requeue --only-transient`).
 
 The application schedule should include:
 
 ```php
 $schedule->command('zatca:report-pending')->everyFiveMinutes();
 $schedule->command('zatca:requeue --only-transient')->hourly();
-$schedule->command('zatca:repair-generated-documents')->everyTenMinutes()->withoutOverlapping();
 $schedule->command('zatca:certificate:check')->daily();
 $schedule->command('zatca:status')->hourly();
 $schedule->command('zatca:prune-submission-attempts')->weekly();

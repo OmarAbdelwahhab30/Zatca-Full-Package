@@ -186,7 +186,6 @@ php artisan zatca:inspect state
      ```php
      $schedule->command('zatca:report-pending')->everyFiveMinutes();
      $schedule->command('zatca:requeue --only-transient')->hourly();
-     $schedule->command('zatca:repair-generated-documents')->everyTenMinutes()->withoutOverlapping();
      $schedule->command('zatca:certificate:check')->daily();
      $schedule->command('zatca:status')->hourly()->emailOutputOnFailure('ops@example.com');
      $schedule->command('zatca:prune-submission-attempts')->weekly();
@@ -279,33 +278,6 @@ It resets `attempt_count` by default — without that the invoice would be sent 
 **It never re-signs anything.** The stored signed XML, UUID, ICV and PIH are sent again exactly as they are. And it refuses to touch an invoice ZATCA already accepted, even if you pass its ID explicitly.
 
 ⚠ Only the `--only-transient` form belongs on the scheduler. Plain `zatca:requeue` retries rejections too, which just burns attempts and hides the real problem.
-
-### Repairing generated documents automatically — `zatca:repair-generated-documents`
-
-The admin dashboard has manual controls for document regeneration and draft completion, but operators should not need to understand those differences during normal work. Schedule this command instead:
-
-```php
-$schedule->command('zatca:repair-generated-documents')->everyTenMinutes()->withoutOverlapping();
-```
-
-It queues two safe batches:
-
-| Batch | What it fixes | What it does not do |
-|---|---|---|
-| Draft completion | A document row exists but signing stopped before hash/signature/QR were written | Does not create a new document or consume a new ICV |
-| Regeneration | ZATCA read a signed document and rejected it for document-content reasons | Does not delete the rejected document; the replacement is linked to it |
-
-Each run claims at most one batch per repair type, then dispatches queue jobs. `succeeded` means "queued", not "reported"; the normal signing/reporting workers finish the work afterwards. `withoutOverlapping()` matters because signing is serialized per EGS and every regeneration consumes an ICV permanently.
-
-Options for one-off maintenance:
-
-```bash
-php artisan zatca:repair-generated-documents
-php artisan zatca:repair-generated-documents --skip-regeneration
-php artisan zatca:repair-generated-documents --skip-completion
-```
-
-This command is deliberately separate from `zatca:requeue`. Requeue resends the same signed XML after transient failures. Repair either completes an unfinished draft or creates a replacement document for a real rejection.
 
 ### Surviving a ZATCA outage
 

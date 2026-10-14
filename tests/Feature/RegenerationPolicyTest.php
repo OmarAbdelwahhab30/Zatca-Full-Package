@@ -27,6 +27,7 @@ use Zatca\Services\Regeneration\RegenerationPolicy;
 use Zatca\Services\Regeneration\RegenerationVerdict;
 use Zatca\Tests\Concerns\BuildsProductionInvoices;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * One case per reason a document may or may not be regenerated.
@@ -64,6 +65,7 @@ class RegenerationPolicyTest extends TestCase
     }
 
     /** @dataProvider clientRejectionStatuses */
+    #[DataProvider('clientRejectionStatuses')]
     public function test_every_document_rejection_status_is_regenerable(int $httpStatus): void
     {
         $this->assertTrue($this->policy->verdict($this->rejectedInvoice(1100 + $httpStatus, $httpStatus))->eligible);
@@ -88,6 +90,7 @@ class RegenerationPolicyTest extends TestCase
      * Covers "accepted with warnings → do nothing" as well as a plain acceptance: both are
      * final, and reporting a second document for either would duplicate the sale at ZATCA.
      */
+    #[DataProvider('terminalSuccessStatuses')]
     public function test_an_accepted_document_is_never_regenerable(string $status): void
     {
         $invoice = $this->rejectedInvoice(2001);
@@ -114,6 +117,7 @@ class RegenerationPolicyTest extends TestCase
      * judged, so the fix is resending the same signed bytes — regenerating would spend a
      * slot to send an identical document.
      */
+    #[DataProvider('transientFailureStatuses')]
     public function test_a_transient_failure_says_retry_instead(int $httpStatus): void
     {
         $verdict = $this->policy->verdict($this->rejectedInvoice(3000 + $httpStatus, $httpStatus));
@@ -138,6 +142,7 @@ class RegenerationPolicyTest extends TestCase
      * 401/403 are 4xx but are not rejections of the document. A perfect replacement would
      * earn exactly the same refusal, so the credentials are what must change.
      */
+    #[DataProvider('authFailureStatuses')]
     public function test_an_authentication_failure_says_fix_credentials(int $httpStatus): void
     {
         $verdict = $this->policy->verdict($this->rejectedInvoice(4000 + $httpStatus, $httpStatus));
@@ -375,6 +380,7 @@ class RegenerationPolicyTest extends TestCase
      * a network failure or a persistent server error was never judged by ZATCA, so
      * the fix is retrying, not spending a fresh ICV slot on an identical document.
      */
+    #[DataProvider('clearanceTransientFailureStatuses')]
     public function test_a_standard_document_with_a_transient_clearance_failure_says_retry_instead(int $httpStatus): void
     {
         $verdict = $this->policy->verdict($this->rejectedStandardInvoice(9600 + $httpStatus, $httpStatus));

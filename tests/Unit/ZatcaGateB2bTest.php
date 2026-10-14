@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Log;
 use Zatca\Support\B2bReadiness;
 use Zatca\Support\ZatcaGate;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Blueprint P13: the B2B switch. Fail-closed, and dependent on the global switch.
@@ -22,6 +23,7 @@ class ZatcaGateB2bTest extends TestCase
     }
 
     /** @dataProvider rawValues */
+    #[DataProvider('rawValues')]
     public function test_only_an_explicit_on_turns_b2b_on(mixed $raw, bool $expected): void
     {
         Config::set('zatca.enabled', true);
@@ -56,6 +58,7 @@ class ZatcaGateB2bTest extends TestCase
     }
 
     /** @dataProvider switches */
+    #[DataProvider('switches')]
     public function test_b2b_requires_the_global_switch(mixed $zatca, mixed $b2b, bool $expected): void
     {
         Config::set('zatca.enabled', $zatca);

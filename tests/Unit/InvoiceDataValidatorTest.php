@@ -12,6 +12,7 @@ use Zatca\Exceptions\ZatcaException;
 use Zatca\Services\Invoice\InvoiceDataValidator;
 use Zatca\Tests\TestCase;
 use DateTimeImmutable;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 class InvoiceDataValidatorTest extends TestCase
 {
@@ -219,6 +220,7 @@ class InvoiceDataValidatorTest extends TestCase
     }
 
     /** @dataProvider malformedVatNumbers */
+    #[DataProvider('malformedVatNumbers')]
     public function test_it_refuses_a_malformed_buyer_vat_number(string $vatNumber): void
     {
         $this->expectException(ZatcaException::class);
@@ -258,6 +260,7 @@ class InvoiceDataValidatorTest extends TestCase
     }
 
     /** @dataProvider missingSaudiAddressFields */
+    #[DataProvider('missingSaudiAddressFields')]
     public function test_it_refuses_a_saudi_buyer_address_missing_a_mandatory_field(string $field, string $label): void
     {
         $address = $this->address();
@@ -287,6 +290,7 @@ class InvoiceDataValidatorTest extends TestCase
     }
 
     /** @dataProvider malformedPostalCodes */
+    #[DataProvider('malformedPostalCodes')]
     public function test_it_refuses_a_malformed_saudi_postal_code(string $postalCode): void
     {
         $this->expectException(ZatcaException::class);

@@ -5,6 +5,7 @@ namespace Zatca\Tests\Unit;
 use Illuminate\Support\Facades\Config;
 use Zatca\State\EgsRegistry;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Blueprint P14: the optional B2B EGS inherits the seller identity from the primary EGS,
@@ -100,6 +101,7 @@ class EgsCompositionTest extends TestCase
     }
 
     /** @dataProvider missingPrimary */
+    #[DataProvider('missingPrimary')]
     public function test_primary_falls_back_to_the_first_egs(?string $primary): void
     {
         Config::set('zatca.primary_egs', $primary);

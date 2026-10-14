@@ -9,6 +9,7 @@ use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Jobs\RetryZatcaInvoiceJob;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Readers first (blueprint P16): a zatca_invoices row carrying any new document type
@@ -16,6 +17,7 @@ use Zatca\Tests\TestCase;
  *
  * @group characterization
  */
+#[Group('characterization')]
 class VocabularyHydrationTest extends TestCase
 {
     use CreatesInvoiceRows;
