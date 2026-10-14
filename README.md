@@ -6,6 +6,8 @@ You give it your order. It builds the e-invoice, signs it, adds the QR code, sen
 
 > **Status:** B2C (simplified invoices, credit notes and debit notes, sent by **Reporting**) is the main, tested flow.
 > B2B (standard invoices sent by **Clearance**) is built and covered by tests, but it has **not been checked against the real ZATCA sandbox yet**. Run the B2B sandbox checks in [Known limitations](#known-limitations) before you turn B2B on in production.
+>
+> **Tested ZATCA SDK:** Java SDK **3.4.8** (`238-R3.4.8`). A clean copy ships with the package in [`SDKs/`](SDKs/) and passes `composer smoke` and the real-SDK tests. See [`SDKs/README.md`](SDKs/README.md).
 
 ---
 
@@ -154,7 +156,7 @@ You never edit an accepted invoice. You issue a note that points to it. A note a
 | Laravel | **12** is recommended. 9, 10 and 11 still work (Legacy Compatibility). See [Laravel compatibility](#laravel-compatibility) below. |
 | PHP extensions | `openssl`, `dom`, `mbstring`, `ctype`, `json`, plus your database's PDO driver |
 | Java | Java 11 (the ZATCA SDK supports Java 11 to 15). `java` must be on the `PATH` of the user that runs PHP and your queue workers. |
-| ZATCA Java SDK | Version **3.4.8**, downloaded from ZATCA's developer portal |
+| ZATCA Java SDK | Version **3.4.8**, the version the package is tested with. Download it from [ZATCA's developer portal](https://zatca.gov.sa/en/E-Invoicing/SystemsDevelopers/ComplianceEnablementToolbox/Pages/DownloadSDK.aspx), or use the copy that ships with the package in [`SDKs/`](SDKs/) |
 | Database | Any database Laravel supports (MySQL, PostgreSQL, SQLite in tests) |
 | Queue | Any real Laravel queue driver (`database`, `redis`…). `sync` works for quick tests only. |
 | Scheduler | Laravel scheduler (cron) for the retry sweep and certificate checks |
@@ -189,7 +191,7 @@ Composer dependencies are installed for you: `guzzlehttp/guzzle`, `doctrine/dbal
 
 Every run gave 2,370 assertions and no PHPUnit warnings or deprecations. Full version details are in [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 
-The 3 skipped tests are the ones that drive the real ZATCA Java SDK. They skip unless you point them at an SDK install (see [Running the package tests](#18-running-the-package-tests)). So these results show the package code works on each Laravel version. They **do not** prove that real SDK signing works on each version. Run `composer smoke` and the onboarding sandbox steps on your own Laravel version before you go live.
+Of the 3 skipped tests, 2 drive the real ZATCA Java SDK and skip unless you point them at an SDK install (see [Running the package tests](#18-running-the-package-tests)). The third checks Unix file permissions and skips on Windows, where these runs were made. So these results show the package code works on each Laravel version. They **do not** prove that real SDK signing works on each version. Real signing was checked separately with the bundled SDK 3.4.8 on Laravel 10 / PHP 8.3 (see [`SDKs/README.md`](SDKs/README.md)). Run `composer smoke` and the onboarding sandbox steps on your own Laravel version before you go live.
 
 The package's own tests run on PHPUnit 9 to 12. Each data provider and group is written twice: as a PHP attribute (`#[DataProvider]`, `#[Group]`) for PHPUnit 10+, and as a docblock tag (`@dataProvider`, `@group`) for PHPUnit 9, which Laravel 9 needs. Keep both when you add a test.
 
@@ -227,7 +229,9 @@ sudo apt-get install -y openjdk-11-jre-headless
 java -version
 ```
 
-Download the ZATCA SDK (v3.4.8) from the ZATCA developer portal and unzip it somewhere outside `public/`, for example `/var/www/zatca-sdk`. The folder must contain `Apps/`, `Configuration/` and `Data/`. The jar file is in `Apps/`.
+Download the ZATCA SDK (v3.4.8) from [ZATCA's developer portal](https://zatca.gov.sa/en/E-Invoicing/SystemsDevelopers/ComplianceEnablementToolbox/Pages/DownloadSDK.aspx) and unzip it somewhere outside `public/`, for example `/var/www/zatca-sdk`. The folder must contain `Apps/`, `Configuration/` and `Data/`. The jar file is in `Apps/`.
+
+Or skip the download: the exact SDK version the package is tested with ships with the package, under [`SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/`](SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/). After Step 2 it is at `vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8`, and you can point `ZATCA_SDK_ROOT` and `ZATCA_SDK_EXECUTABLE` there. The jar's SHA-256 is in [`SDKs/README.md`](SDKs/README.md).
 
 ### Step 2: Install the package
 
@@ -1811,7 +1815,7 @@ Onboard the B2B EGS in the sandbox, clear a few invoices, credit notes and debit
 
 **Other**
 - Laravel 12 is recommended. Laravel 9, 10 and 11 work but no longer get security fixes from Laravel, and need an explicit Composer override to install. See [Laravel compatibility](#laravel-compatibility).
-- Real ZATCA SDK signing is not covered by the automated suite (those 3 tests skip by default). It is not verified on every Laravel version.
+- Real ZATCA SDK signing is not covered by the default automated suite (the 2 real-SDK tests skip unless an SDK is configured). It was checked with SDK 3.4.8 on Laravel 10 / PHP 8.3 only, not on every Laravel version.
 - Certificate renewal through the API is turned off. Renew by onboarding again.
 - No PDF generation.
 
@@ -1856,10 +1860,22 @@ composer test
 
 The suite uses Orchestra Testbench and SQLite and never calls ZATCA or the real SDK. On PHP 8.2+, `composer install` picks Laravel 12. To run the suite against an older Laravel version, install into a separate copy of the package with `composer update --with "orchestra/testbench:^9.0" -W` (Laravel 11; use `^8.0` for 10 and `^7.0` for 9). Laravel 9–11 need the security override described in [Laravel compatibility](#laravel-compatibility), so keep that copy throwaway and never ship its settings.
 
-To also test the real SDK on your machine, set `ZATCA_SDK_EXECUTABLE` and `ZATCA_SDK_ROOT` and run:
+To also test the real SDK on your machine, set `ZATCA_SDK_EXECUTABLE` and `ZATCA_SDK_ROOT` and run `composer smoke` and `composer test`. To use the SDK bundled in this repository:
+
+```bash
+export ZATCA_SDK_ROOT="$PWD/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8"
+```
+
+```bash
+export ZATCA_SDK_EXECUTABLE="$ZATCA_SDK_ROOT/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar"
+```
 
 ```bash
 composer smoke
+```
+
+```bash
+composer test
 ```
 
 More operational detail is in [`docs/OPERATIONS.md`](docs/OPERATIONS.md), [`docs/SERVER_REQUIREMENTS.md`](docs/SERVER_REQUIREMENTS.md), [`docs/DATABASE.md`](docs/DATABASE.md) and [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
