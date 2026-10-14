@@ -106,6 +106,7 @@ One row per `zatca:onboard test-*` call, `document_type` distinguishing `simplif
 | `zatca:certificate:renew` | `zatca_egs_credentials` | Updates the certificate (only if auto-renewal is enabled) |
 | `zatca:report-pending` | `zatca_invoices`<br>`zatca_submission_attempts` | Retries sending → updates status, adds attempt rows |
 | `zatca:requeue` | `zatca_invoices` | Sets stuck invoices back to `retrying` and resets `attempt_count`. Never touches an invoice ZATCA accepted. |
+| `zatca:recover` | `zatca_invoices`<br>`zatca_egs_states`<br>`zatca_submission_attempts` | For one sale: creates the document if none exists (reserves an ICV, advances the hash chain), or signs its unsigned draft (same ICV), then sends it once and records the attempt. Sets and clears `generation_claimed_at` while signing a draft, and writes `last_error` if that signing fails. Never regenerates, never deletes. `--dry-run` writes nothing. |
 
 ### Commands that DELETE
 

@@ -170,6 +170,9 @@ DIAGNOSTIC COMMANDS AVAILABLE:
                                                trust the exit code alone)
   php artisan zatca:report-pending            (retries pending/retrying only, never manual_review)
   php artisan zatca:requeue --dry-run         (shows which stuck invoices would be restarted)
+  php artisan zatca:recover --id=<id> --dry-run (one sale that broke part-way: shows state and
+                                               the planned step; never regenerates, refuses
+                                               rejected and clearance_in_doubt documents)
   php artisan zatca:prune-sdk-files --dry-run  (safe: shows leftover files, deletes nothing)
   Docs in the repo: packages/zatca/README.md, packages/zatca/docs/OPERATIONS.md,
   packages/zatca/docs/DATABASE.md, packages/zatca/docs/COMPATIBILITY.md.

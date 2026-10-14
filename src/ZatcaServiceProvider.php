@@ -9,6 +9,7 @@ use Zatca\Console\Commands\InspectZatca;
 use Zatca\Console\Commands\Onboard;
 use Zatca\Console\Commands\PruneSdkFiles;
 use Zatca\Console\Commands\PruneSubmissionAttempts;
+use Zatca\Console\Commands\RecoverZatcaInvoice;
 use Zatca\Console\Commands\RenewCertificate;
 use Zatca\Console\Commands\ReportPendingInvoices;
 use Zatca\Console\Commands\RequeueInvoices;
@@ -102,6 +103,7 @@ class ZatcaServiceProvider extends ServiceProvider
                 PruneSdkFiles::class,
                 SdkSmokeTest::class,
                 CheckSourceUniqueness::class,
+                RecoverZatcaInvoice::class,
             ]);
         }
     }
