@@ -49,7 +49,7 @@ class DebitNoteIssuerTest extends TestCase
         $debitNote = $this->issuer()->issue(
             $original,
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Course D', 1, 200.00, 15.0, 200.00, 30.00, null, itemId: 44)],
+            [new DebitNoteLineInput('Course D', 1, 230.00, itemId: 44)],
             'إضافة دورة تدريبية لم تكن ضمن الفاتورة الأصلية',
             (string) Str::uuid(),
         );
@@ -81,7 +81,7 @@ class DebitNoteIssuerTest extends TestCase
         $debitNote = $this->issuer()->issue(
             $original,
             ZatcaDebitNoteReason::VatAdjustment,
-            [new DebitNoteLineInput('تسوية ضريبة القيمة المضافة', 1, 0.00, 15.0, 0.00, 7.50, originalLineIndex: 0)],
+            [DebitNoteLineInput::vatAdjustment('تسوية ضريبة القيمة المضافة', 7.50, originalLineIndex: 0)],
             'تصحيح ضريبة القيمة المضافة المحتسبة على الفاتورة الأصلية',
             (string) Str::uuid(),
         );
@@ -125,7 +125,7 @@ class DebitNoteIssuerTest extends TestCase
 
         $this->assertRefusedReference(
             $original,
-            new DebitNoteLineInput('x', 1, 50.00, 15.0, 50.00, 7.50, originalLineIndex: 0),
+            new DebitNoteLineInput('x', 1, 57.50, originalLineIndex: 0),
             DebitNoteEligibilityVerdict::ADJUSTMENT_IN_PROGRESS,
         );
 
@@ -195,7 +195,7 @@ class DebitNoteIssuerTest extends TestCase
             $this->issuer()->issue(
                 $original,
                 ZatcaDebitNoteReason::Other,
-                [new DebitNoteLineInput('bad', 1, -10.00, 15.0, -10.00, -1.50)],
+                [new DebitNoteLineInput('bad', 1, -11.50)],
                 'x',
                 (string) Str::uuid(),
             );
@@ -259,7 +259,7 @@ class DebitNoteIssuerTest extends TestCase
         $adjustment = $this->issuer()->issue(
             $original->fresh(),
             ZatcaDebitNoteReason::PriceAdjustment,
-            [new DebitNoteLineInput('تسوية سعر - Course D', 1, 50.00, 15.0, 50.00, 7.50, sourceDebitNoteLineId: $added->id)],
+            [new DebitNoteLineInput('تسوية سعر - Course D', 1, 57.50, sourceDebitNoteLineId: $added->id)],
             'x',
             (string) Str::uuid(),
         );
@@ -277,7 +277,7 @@ class DebitNoteIssuerTest extends TestCase
     {
         $original = $this->reportedOriginal(7013);
         $pending = $this->additionalItem($original, itemId: 44, accept: false);
-        $reference = new DebitNoteLineInput('x', 1, 50.00, 15.0, 50.00, 7.50, sourceDebitNoteLineId: $pending->id);
+        $reference = new DebitNoteLineInput('x', 1, 57.50, sourceDebitNoteLineId: $pending->id);
 
         // While it is pending nothing may be issued against the invoice at all.
         $this->assertRefusedReference($original, $reference, DebitNoteEligibilityVerdict::ADJUSTMENT_IN_PROGRESS);
@@ -294,7 +294,7 @@ class DebitNoteIssuerTest extends TestCase
         $adjustment = $this->issueSimple($original, 'x', 100.00, 15.00, originalLineIndex: 0);
         $adjustment->update(['accepted_at' => now()]);
 
-        $this->assertRefusedReference($original, new DebitNoteLineInput('x', 1, 50.00, 15.0, 50.00, 7.50, sourceDebitNoteLineId: $adjustment->lines()->first()->id));
+        $this->assertRefusedReference($original, new DebitNoteLineInput('x', 1, 57.50, sourceDebitNoteLineId: $adjustment->lines()->first()->id));
     }
 
     public function test_a_reference_to_a_course_added_to_another_invoice_is_refused(): void
@@ -303,7 +303,7 @@ class DebitNoteIssuerTest extends TestCase
         $added = $this->additionalItem($other, itemId: 44);
         $original = $this->reportedOriginal(7016);
 
-        $this->assertRefusedReference($original, new DebitNoteLineInput('x', 1, 50.00, 15.0, 50.00, 7.50, sourceDebitNoteLineId: $added->id));
+        $this->assertRefusedReference($original, new DebitNoteLineInput('x', 1, 57.50, sourceDebitNoteLineId: $added->id));
     }
 
     public function test_a_line_may_not_reference_both_an_original_line_and_an_added_course(): void
@@ -311,7 +311,7 @@ class DebitNoteIssuerTest extends TestCase
         $original = $this->reportedOriginal(7017);
         $added = $this->additionalItem($original, itemId: 44);
 
-        $this->assertRefusedReference($original, new DebitNoteLineInput('x', 1, 50.00, 15.0, 50.00, 7.50, originalLineIndex: 0, sourceDebitNoteLineId: $added->id));
+        $this->assertRefusedReference($original, new DebitNoteLineInput('x', 1, 57.50, originalLineIndex: 0, sourceDebitNoteLineId: $added->id));
     }
 
     /** Bug #33280: a line an accepted Credit Note refunded cannot be charged more for. */
@@ -322,7 +322,7 @@ class DebitNoteIssuerTest extends TestCase
 
         $this->assertRefusedReference(
             $original,
-            new DebitNoteLineInput('x', 1, 50.00, 15.0, 50.00, 7.50, originalLineIndex: 0),
+            new DebitNoteLineInput('x', 1, 57.50, originalLineIndex: 0),
             DebitNoteException::LINE_NOT_ADJUSTABLE,
         );
     }
@@ -332,7 +332,7 @@ class DebitNoteIssuerTest extends TestCase
     {
         $original = $this->reportedOriginal(7019);
         $pending = $this->creditNote($original, [0]);
-        $line = new DebitNoteLineInput('x', 1, 50.00, 15.0, 50.00, 7.50, originalLineIndex: 0);
+        $line = new DebitNoteLineInput('x', 1, 57.50, originalLineIndex: 0);
 
         $this->assertRefusedReference($original, $line, DebitNoteEligibilityVerdict::ADJUSTMENT_IN_PROGRESS);
 
@@ -351,11 +351,11 @@ class DebitNoteIssuerTest extends TestCase
         $original = $this->reportedOriginal(7020);
         $this->creditNote($original, [0])->update(['accepted_at' => now()]);
         $added = $this->additionalItem($original, itemId: 44);
-        $adjustAdded = new DebitNoteLineInput('x', 1, 50.00, 15.0, 50.00, 7.50, sourceDebitNoteLineId: $added->id);
+        $adjustAdded = new DebitNoteLineInput('x', 1, 57.50, sourceDebitNoteLineId: $added->id);
 
         $this->assertRefusedReference(
             $original,
-            new DebitNoteLineInput('x', 1, 50.00, 15.0, 50.00, 7.50, originalLineIndex: 0),
+            new DebitNoteLineInput('x', 1, 57.50, originalLineIndex: 0),
             DebitNoteException::LINE_NOT_ADJUSTABLE,
         );
         $this->issuer()->issue($original->fresh(), ZatcaDebitNoteReason::PriceAdjustment, [$adjustAdded], 'x', (string) Str::uuid())
@@ -381,15 +381,7 @@ class DebitNoteIssuerTest extends TestCase
             ZatcaDebitNoteReason::PriceAdjustment,
             [
                 $this->line(20.00, 3.00, 0),
-                new DebitNoteLineInput(
-                    'Adjustment',
-                    1,
-                    40.00,
-                    15.0,
-                    40.00,
-                    6.00,
-                    sourceDebitNoteLineId: (int) $added->getKey(),
-                ),
+                new DebitNoteLineInput('Adjustment', 1, 46.00, sourceDebitNoteLineId: (int) $added->getKey()),
             ],
             'x',
             (string) Str::uuid(),
@@ -467,7 +459,7 @@ class DebitNoteIssuerTest extends TestCase
         $debitNote = $this->issuer()->issue(
             $original->fresh(),
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Course D', 1, 200.00, 15.0, 200.00, 30.00, itemId: $itemId)],
+            [new DebitNoteLineInput('Course D', 1, 230.00, itemId: $itemId)],
             'x',
             (string) Str::uuid(),
         );
@@ -486,7 +478,9 @@ class DebitNoteIssuerTest extends TestCase
 
     private function line(float $net, float $vat, ?int $originalLineIndex = null): DebitNoteLineInput
     {
-        return new DebitNoteLineInput('Adjustment', 1, $net, 15.0, $net, $vat, $originalLineIndex);
+        return $net == 0.0
+            ? DebitNoteLineInput::vatAdjustment('Adjustment', $vat, $originalLineIndex)
+            : new DebitNoteLineInput('Adjustment', 1, round($net + $vat, 2), originalLineIndex: $originalLineIndex);
     }
 
     private function issueSimple(ZatcaInvoice $original, string $reason, float $net, float $vat, ?int $originalLineIndex = null): ZatcaDebitNote

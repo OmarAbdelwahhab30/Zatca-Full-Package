@@ -148,6 +148,18 @@ INTEGRATION STATUS (verified 2026-08-05 — RE-CHECK before trusting):
       certificate:check, prune-submission-attempts, prune-sdk-files)?
   As of the date above, none of these were present in the host app.
 
+VAT (how amounts are produced):
+  - The host's InvoiceSourceContract::toInvoiceInput() returns items with prices
+    and quantities only. The package's InvoiceCalculator calculates net, VAT and
+    totals with config('zatca.vat'): ZATCA_VAT_PERCENTAGE (default 15) and
+    ZATCA_VAT_MODE (default "inclusive": prices include VAT; or "exclusive").
+    An invoice may override the mode; an item may override the rate.
+  - The result is frozen in zatca_invoices.invoice_data_snapshot. Credit notes and
+    regeneration use those frozen rates, never the current settings, so changing
+    the .env values only affects new documents.
+  - A wrong VAT setting fails with a message naming ZATCA_VAT_PERCENTAGE or
+    ZATCA_VAT_MODE; zatca:health-check shows the values in use.
+
 API ENDPOINTS USED (all POST, base URL depends on environment):
   /compliance                  (OTP header)          -> compliance CSID
   /compliance/invoices         (basic auth)          -> compliance test invoice

@@ -659,59 +659,33 @@ class CreditNoteBundleDiscountTest extends TestCase
      */
     private function source(array $lines, array $allowances): \Zatca\Contracts\InvoiceSourceContract
     {
-        $split = static function (float $gross): array {
-            $net = round($gross / 1.15, 2);
-
-            return ['net' => $net, 'vat' => round($gross - $net, 2)];
-        };
-
-        return new class($lines, $allowances, $split) implements \Zatca\Contracts\InvoiceSourceContract
+        return new class($lines, $allowances) implements \Zatca\Contracts\InvoiceSourceContract
         {
             public function __construct(
                 private readonly array $lines,
                 private readonly array $allowances,
-                private readonly \Closure $split,
             ) {}
 
-            public function toInvoiceData(mixed $source, string $egsIdentifier): \Zatca\DTOs\ZatcaInvoiceData
+            public function toInvoiceInput(mixed $source, string $egsIdentifier): \Zatca\DTOs\ZatcaInvoiceInput
             {
-                $split = $this->split;
-                $lines = [];
-                $net = 0.0;
-                $vat = 0.0;
-
-                foreach ($this->lines as [$description, $gross]) {
-                    $parts = $split($gross);
-                    $lines[] = new \Zatca\DTOs\ZatcaInvoiceLine(
-                        $description, 1, $parts['net'], 15.0, $parts['net'], $parts['vat']
-                    );
-                    $net += $parts['net'];
-                    $vat += $parts['vat'];
-                }
-
-                $allowances = [];
-
-                foreach ($this->allowances as [$gross, $poolKey, $lineIndexes]) {
-                    $parts = $split($gross);
-                    $allowances[] = new \Zatca\DTOs\ZatcaAllowanceCharge(
-                        'Bundle Discount', $parts['net'], 15.0, $parts['vat'], $poolKey, $lineIndexes
-                    );
-                    $net -= $parts['net'];
-                    $vat -= $parts['vat'];
-                }
-
-                return new \Zatca\DTOs\ZatcaInvoiceData(
+                // VAT-inclusive prices and discounts at the default 15%: the package takes the VAT out.
+                return new \Zatca\DTOs\ZatcaInvoiceInput(
                     egsIdentifier: $egsIdentifier,
                     sourceReference: $this->sourceReference($source),
                     buyerName: 'Original Buyer',
                     buyerVatNumber: null,
                     issueDateTime: new \DateTimeImmutable('2026-09-01T10:00:00+03:00'),
                     currency: 'SAR',
-                    lines: $lines,
-                    totalExclVat: round($net, 2),
-                    totalVat: round($vat, 2),
-                    totalInclVat: round($net + $vat, 2),
-                    allowanceCharges: $allowances,
+                    items: array_map(
+                        static fn (array $line) => new \Zatca\DTOs\ZatcaInvoiceItem($line[0], 1, $line[1]),
+                        $this->lines,
+                    ),
+                    discounts: array_map(
+                        static fn (array $allowance) => new \Zatca\DTOs\ZatcaInvoiceDiscount(
+                            'Bundle Discount', $allowance[0], poolKey: $allowance[1], lineIndexes: $allowance[2]
+                        ),
+                        $this->allowances,
+                    ),
                 );
             }
 

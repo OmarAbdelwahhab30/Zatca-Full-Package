@@ -183,15 +183,15 @@ Composer dependencies are installed for you: `guzzlehttp/guzzle`, `doctrine/dbal
 
 | Laravel | Framework | Testbench | PHPUnit | Carbon | PHP versions run | Result on each PHP version |
 |---|---|---|---|---|---|---|
-| 9 | 9.52.22 | 7.58 | 9.6 | 2.73 | 8.1, 8.3 | 734 tests passed, 3 skipped |
-| 10 | 10.50.3 | 8.39 | 10.5 | 2.73 | 8.2, 8.3 | 734 tests passed, 3 skipped |
-| 11 | 11.57.0 | 9.18 | 11.5 | 3.14 | 8.2, 8.3 | 734 tests passed, 3 skipped |
-| 12 | 12.70.0 | 10.12 | 11.5 | 3.14 | 8.2, 8.3, 8.4 | 734 tests passed, 3 skipped |
-| 12 | 12.70.0 | 10.12 | 12.5 | 3.14 | 8.3 | 734 tests passed, 3 skipped |
+| 9 | 9.52.22 | 7.58 | 9.6 | 2.73 | 8.1, 8.3 | 834 tests passed, 8 skipped |
+| 10 | 10.50.3 | 8.39 | 10.5 | 2.73 | 8.2, 8.3 | 834 tests passed, 8 skipped |
+| 11 | 11.57.0 | 9.18 | 11.5 | 3.14 | 8.2, 8.3 | 834 tests passed, 8 skipped |
+| 12 | 12.70.0 | 10.12 | 11.5 | 3.14 | 8.2, 8.3, 8.4 | 834 tests passed, 8 skipped |
+| 12 | 12.70.0 | 10.12 | 12.5 | 3.14 | 8.3 | 834 tests passed, 8 skipped |
 
-Every run gave 2,370 assertions and no PHPUnit warnings or deprecations. Full version details are in [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
+Every run gave 2,706 assertions and no PHPUnit warnings or deprecations. Full version details are in [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 
-Of the 3 skipped tests, 2 drive the real ZATCA Java SDK and skip unless you point them at an SDK install (see [Running the package tests](#18-running-the-package-tests)). The third checks Unix file permissions and skips on Windows, where these runs were made. So these results show the package code works on each Laravel version. They **do not** prove that real SDK signing works on each version. Real signing was checked separately with the bundled SDK 3.4.8 on Laravel 10 / PHP 8.3 (see [`SDKs/README.md`](SDKs/README.md)). Run `composer smoke` and the onboarding sandbox steps on your own Laravel version before you go live.
+Of the 8 skipped tests, 7 drive the real ZATCA Java SDK and skip unless you point them at an SDK install (see [Running the package tests](#18-running-the-package-tests)). The other one checks Unix file permissions and skips on Windows, where these runs were made. So these results show the package code works on each Laravel version. They **do not** prove that real SDK signing works on each version. Real signing, and the SDK validator on invoices whose VAT the package calculated, were checked separately with the bundled SDK 3.4.8 on Laravel 10 / PHP 8.3 (see [`SDKs/README.md`](SDKs/README.md)). Run `composer smoke` and the onboarding sandbox steps on your own Laravel version before you go live.
 
 The package's own tests run on PHPUnit 9 to 12. Each data provider and group is written twice: as a PHP attribute (`#[DataProvider]`, `#[Group]`) for PHPUnit 10+, and as a docblock tag (`@dataProvider`, `@group`) for PHPUnit 9, which Laravel 9 needs. Keep both when you add a test.
 
@@ -334,6 +334,10 @@ ZATCA_SDK_PROCESS_TIMEOUT=60
 # ---- Environment: sandbox | simulation | production ----
 ZATCA_ENVIRONMENT=sandbox
 
+# ---- VAT (both optional) ----
+ZATCA_VAT_PERCENTAGE=15                # default rate for standard-rated items
+ZATCA_VAT_MODE=inclusive               # inclusive: your prices include VAT | exclusive: VAT is added on top
+
 # ---- Your EGS (B2C) ----
 ZATCA_EGS_IDENTIFIER=default           # any short name; you pass it to jobs and commands
 ZATCA_INVOICE_TYPE=0100                # 0100 = this device issues simplified (B2C) documents
@@ -367,6 +371,43 @@ ZATCA_QUEUE_NAME=zatca
 ```
 
 The example values above are fake. `399999999900003` is ZATCA's sample VAT number. Use your own real values.
+
+<a id="vat-settings"></a>
+### VAT settings
+
+The package calculates VAT for you. You give it prices and quantities. It works out each line's net amount, its VAT and the invoice totals.
+
+| `.env` key | Default | What it means |
+|---|---|---|
+| `ZATCA_VAT_PERCENTAGE` | `15` | The rate for standard-rated items. Above 0, at most 100, at most 2 decimals. An item can set its own rate (see [Invoice items](#invoice-items)). |
+| `ZATCA_VAT_MODE` | `inclusive` | What your prices mean. `inclusive`: the price already contains VAT. `exclusive`: VAT is added on top of the price. |
+
+Both are optional. Leave them out and you get 15%, with VAT-inclusive prices.
+
+| Item price | `inclusive` (default) | `exclusive` |
+|---|---|---|
+| 115.00 | net 100.00 + VAT 15.00 = **115.00** | net 115.00 + VAT 17.25 = **132.25** |
+| 100.00 | net 86.96 + VAT 13.04 = **100.00** | net 100.00 + VAT 15.00 = **115.00** |
+
+To use VAT-exclusive prices:
+
+```dotenv
+ZATCA_VAT_MODE=exclusive
+```
+
+Then refresh the cached config and restart the workers (they keep the old config in memory):
+
+```bash
+php artisan config:cache
+```
+
+```bash
+php artisan queue:restart
+```
+
+- The package reads these through `config('zatca.vat')`, never `env()`, so `config:cache` works.
+- An invalid value (for example `ZATCA_VAT_MODE=gross` or `ZATCA_VAT_PERCENTAGE=15.555`) stops invoice generation with a message naming the key. `zatca:health-check` shows the values in use and fails on an invalid one.
+- A change applies to **new** documents only. A signed invoice keeps its rates forever: its credit notes and any regeneration use the rates frozen in it, not the current settings.
 
 ### Optional: a second EGS for B2B
 
@@ -402,7 +443,6 @@ ZATCA_B2B_ENVIRONMENT=                 # optional, defaults to ZATCA_ENVIRONMENT
 | `ZATCA_CREDENTIAL_ENCRYPTER` | `laravel` | Label only. To use Vault or KMS, bind your own encrypter (see [Custom bindings](#custom-bindings)). |
 | `ZATCA_PRUNE_ATTEMPTS_AFTER_DAYS` | `180` | Age after which old attempt rows of accepted invoices are deleted. |
 | `ZATCA_PRUNE_SDK_FILES_AFTER_DAYS` | `7` | Age after which leftover SDK temp files are deleted. |
-| `ZATCA_VAT_PERCENTAGE` | `15` | **Shown by `zatca:health-check` only.** It is **not** used to build invoices. VAT comes from each invoice line. |
 
 In `config/zatca.php` only (no `.env` key): `certificate.alert_days` (`[60, 30, 7]`; only the largest value is used, as the "expiring soon" threshold) and `retries.generation.backoff_seconds`.
 
@@ -429,8 +469,8 @@ Your app                          Package (queue: "zatca")                      
 Order paid
   └─ dispatch GenerateZatcaInvoiceJob
                                   1. load your order (fresh from DB)
-                                  2. call YOUR toInvoiceData()
-                                  3. check totals add up
+                                  2. call YOUR toInvoiceInput()  (items, quantities, prices)
+                                  3. calculate VAT and totals, check they add up
                                   4. reserve counter (ICV), UUID, previous hash
                                   5. build XML  → save as "draft"
                                   6. sign with SDK, make QR → "pending_reporting" (B2C) / "pending_clearance" (B2B)
@@ -445,7 +485,7 @@ Order paid
 **Done for every invoice:** steps 1 to 8 above. All of them are automatic once you dispatch the job.
 
 **You write only:**
-1. A class that implements `Zatca\Contracts\InvoiceSourceContract` (turns your order into `ZatcaInvoiceData`).
+1. A class that implements `Zatca\Contracts\InvoiceSourceContract` (describes your order as a `ZatcaInvoiceInput`: items, quantities and prices. No VAT arithmetic).
 2. One line binding it in a service provider.
 3. A `dispatch()` call after a sale.
 
@@ -551,14 +591,15 @@ The package doesn't care what your tables look like. These examples assume:
 
 ```php
 // orders:       id, customer_name, buyer_type ('person'|'company'), company_id (nullable), paid_at
-// order_items:  id, order_id, name, quantity (int), unit_price (decimal, excl. VAT), vat_rate (e.g. 15)
+// order_items:  id, order_id, name, quantity (int), price (decimal, the price you charge — incl. VAT by default),
+//               vat_rate (nullable: only for an item taxed at a rate other than ZATCA_VAT_PERCENTAGE)
 // companies:    id, legal_name, vat_number (nullable), cr_number (nullable),
 //               street, building_number, district, city, postal_code, additional_number, country_code
 ```
 
-#### B. The mapper: turn an order into invoice data
+#### B. The mapper: describe the order
 
-This is the only real code you write. It works for **both** B2C and B2B.
+This is the only real code you write. It works for **both** B2C and B2B. You give the package items, quantities and prices. It calculates the net amounts, VAT and totals itself, with `ZATCA_VAT_PERCENTAGE` and `ZATCA_VAT_MODE` (see [VAT settings](#vat-settings)).
 
 ```php
 <?php
@@ -572,8 +613,8 @@ use Zatca\Contracts\InvoiceSourceContract;
 use Zatca\DTOs\BuyerAddress;
 use Zatca\DTOs\BuyerOtherId;
 use Zatca\DTOs\BuyerParty;
-use Zatca\DTOs\ZatcaInvoiceData;
-use Zatca\DTOs\ZatcaInvoiceLine;
+use Zatca\DTOs\ZatcaInvoiceInput;
+use Zatca\DTOs\ZatcaInvoiceItem;
 use Zatca\Enums\ZatcaComplianceDocumentType;
 
 class OrderInvoiceSource implements InvoiceSourceContract
@@ -588,27 +629,18 @@ class OrderInvoiceSource implements InvoiceSourceContract
     }
 
     /** @param  Order  $order */
-    public function toInvoiceData(mixed $order, string $egsIdentifier): ZatcaInvoiceData
+    public function toInvoiceInput(mixed $order, string $egsIdentifier): ZatcaInvoiceInput
     {
-        $lines = [];
+        $items = [];
 
         foreach ($order->items as $item) {
-            $net = round($item->quantity * $item->unit_price, 2);
-            $vat = round($net * $item->vat_rate / 100, 2);
-
-            $lines[] = new ZatcaInvoiceLine(
+            $items[] = new ZatcaInvoiceItem(
                 description: $item->name,
                 quantity: (int) $item->quantity,
-                unitPrice: (float) $item->unit_price,
-                vatRate: (float) $item->vat_rate,
-                lineTotalExclVat: $net,
-                vatAmount: $vat,
+                price: $item->price,              // as you charge it; no VAT arithmetic here
+                vatRate: $item->vat_rate,         // null → ZATCA_VAT_PERCENTAGE
             );
         }
-
-        // Totals MUST equal the sum of the lines, or the package refuses the invoice.
-        $totalExclVat = round(array_sum(array_map(fn ($l) => $l->lineTotalExclVat, $lines)), 2);
-        $totalVat = round(array_sum(array_map(fn ($l) => $l->vatAmount, $lines)), 2);
 
         // Saudi local time. Use the moment of the sale, not "now", so retries keep the same date.
         $issuedAt = DateTimeImmutable::createFromInterface($order->paid_at)
@@ -616,17 +648,14 @@ class OrderInvoiceSource implements InvoiceSourceContract
 
         $isCompany = $order->buyer_type === 'company';
 
-        return new ZatcaInvoiceData(
+        return new ZatcaInvoiceInput(
             egsIdentifier: $egsIdentifier,
             sourceReference: $this->sourceReference($order),
             buyerName: $isCompany ? $order->company->legal_name : $order->customer_name,
             buyerVatNumber: $isCompany ? $order->company->vat_number : null,
             issueDateTime: $issuedAt,
             currency: 'SAR',
-            lines: $lines,
-            totalExclVat: $totalExclVat,
-            totalVat: $totalVat,
-            totalInclVat: round($totalExclVat + $totalVat, 2),
+            items: $items,
             documentType: $isCompany
                 ? ZatcaComplianceDocumentType::StandardInvoice   // B2B → Clearance
                 : ZatcaComplianceDocumentType::Invoice,          // B2C → Reporting
@@ -690,12 +719,12 @@ $b2bEgs = config('zatca.b2b.egs_identifier');    // e.g. "b2b" (null if not conf
 
 ### 9.2 Scenario 1: B2C invoice (Reporting)
 
-**Situation:** Sara buys 2 headphones at 150.00 SAR and 1 charger at 50.00 SAR (all prices excl. VAT, 15% VAT).
+**Situation:** Sara buys 2 headphones at 172.50 SAR each and 1 charger at 57.50 SAR. These are shelf prices with VAT included (the default `ZATCA_VAT_MODE=inclusive`, 15%). Your mapper passes just these prices; the package calculates the rest:
 
-| Line | Item | Qty | Unit | Net | VAT | Total |
+| Line | Item | Qty | Price you pass | Net (calculated) | VAT (calculated) | Total |
 |---|---|---|---|---|---|---|
-| 0 | Wireless headphones | 2 | 150.00 | 300.00 | 45.00 | 345.00 |
-| 1 | USB-C charger | 1 | 50.00 | 50.00 | 7.50 | 57.50 |
+| 0 | Wireless headphones | 2 | 172.50 | 300.00 | 45.00 | 345.00 |
+| 1 | USB-C charger | 1 | 57.50 | 50.00 | 7.50 | 57.50 |
 | | **Totals** | | | **350.00** | **52.50** | **402.50** |
 
 **Send it** right after the payment is saved:
@@ -769,19 +798,19 @@ public function handle(\Zatca\Events\ZatcaInvoiceNeedsAttention $event): void
 }
 ```
 
-**Optional: a document-level discount.** Say Sara had a 50.00 SAR coupon. Lines stay at full price, the discount goes in `allowanceCharges`, and the totals are **after** the discount:
+**Optional: a document-level discount.** Say Sara had a 57.50 SAR coupon. Items stay at full price and the discount goes in `discounts`, in the same price mode as the items. The package takes the VAT out of it and calculates the totals after the discount:
 
 ```php
-use Zatca\DTOs\ZatcaAllowanceCharge;
+use Zatca\DTOs\ZatcaInvoiceDiscount;
 
-// in toInvoiceData():
-allowanceCharges: [
-    new ZatcaAllowanceCharge(reason: 'Coupon SAVE50', amountExclVat: 50.00, vatRate: 15.0, vatAmount: 7.50),
+// in toInvoiceInput(), next to items:
+discounts: [
+    new ZatcaInvoiceDiscount(reason: 'Coupon SAVE50', amount: 57.50),   // net 50.00 + VAT 7.50
 ],
-totalExclVat: 300.00,   // 350.00 - 50.00
-totalVat: 45.00,        // 52.50 - 7.50
-totalInclVat: 345.00,
+// Totals (calculated): net 300.00, VAT 45.00, total 345.00 (= 402.50 − 57.50).
 ```
+
+The discount takes the VAT rate and category of the items it covers when they all share one. On an invoice with mixed rates, set `vatRate:` (or `vatCategory:`) on the discount, or list the items it covers with `lineIndexes: [0, 1]`. `lineIndexes` (and an optional `poolKey`) also tell a later credit note how much of the discount belongs to each item.
 
 ### 9.3 Scenario 2: B2C credit note (Reporting)
 
@@ -839,7 +868,7 @@ $creditNote->latestZatcaInvoice;                             // the ZatcaInvoice
 
 Listen to `Zatca\Events\ZatcaCreditNoteAccepted` to refund money, restock items and so on.
 
-**Crediting part of a line (price adjustment):** Sara keeps both headphones but gets 20.00 SAR off because of a scratch:
+**Crediting part of a line (price adjustment):** Sara keeps both headphones but gets 23.00 SAR back because of a scratch:
 
 ```php
 use Zatca\Services\CreditNote\CreditSource;
@@ -847,19 +876,20 @@ use Zatca\Services\CreditNote\CreditSource;
 $creditNote = app(CreditNoteIssuer::class)->issuePriceAdjustment(
     original: $original,
     sourceKey: CreditSource::invoiceLineKey(0),   // "line:0" = the headphones line
-    netAmount: 20.00,
-    vatAmount: 3.00,                               // at the line's own VAT rate
+    amount: 23.00,                                 // net 20.00 + VAT 3.00, split by the package
     description: 'Discount for scratched headphones',
     reason: 'Price reduced after delivery: cosmetic damage',
     idempotencyKey: (string) Str::uuid(),
 );
 ```
 
-The adjustment must stay **below** what is left of that line. Reducing a line to zero is a return, so use `issue()` for that. To adjust several lines in one note, use `issuePriceAdjustments()` with an array of `Zatca\Services\CreditNote\PriceAdjustmentInput`.
+`amount` is read in the price mode the line was **invoiced** in (VAT-inclusive here) and split at that line's own VAT rate. Both are frozen in the original invoice, so changing `ZATCA_VAT_PERCENTAGE` or `ZATCA_VAT_MODE` later never changes how an old invoice is credited.
+
+The adjustment must stay **below** what is left of that line. Reducing a line to zero is a return, so use `issue()` for that. To adjust several lines in one note, use `issuePriceAdjustments()` with an array of `new PriceAdjustmentInput($sourceKey, $amount, $description)` (`Zatca\Services\CreditNote\PriceAdjustmentInput`).
 
 ### 9.4 Scenario 3: B2C debit note (Reporting)
 
-**Situation:** Al Noor forgot to charge Sara for gift wrapping (20.00 SAR + 3.00 VAT).
+**Situation:** Al Noor forgot to charge Sara for gift wrapping (23.00 SAR with VAT).
 
 ```php
 use Illuminate\Support\Str;
@@ -877,10 +907,7 @@ $debitNote = app(DebitNoteIssuer::class)->issue(
         new DebitNoteLineInput(
             description: 'Gift wrapping',
             quantity: 1,
-            unitPrice: 20.00,
-            vatRate: 15.0,
-            lineTotalExclVat: 20.00,
-            vatAmount: 3.00,
+            price: 23.00,             // in ZATCA_VAT_MODE, like an invoice item → net 20.00 + VAT 3.00
             itemId: 501,              // optional: your own product id, returned to you on acceptance
         ),
     ],
@@ -898,8 +925,8 @@ $debitNote->total_incl_vat;      // 23.00
 | Reason | Use it when | Line rules |
 |---|---|---|
 | `AdditionalItem` | Something was delivered but not invoiced | New line. Set `itemId` if you want it back in your listener. |
-| `PriceAdjustment` | A line on the original was under-priced | Set `originalLineIndex` (or `sourceDebitNoteLineId` for an item added by an earlier debit note) |
-| `VatAdjustment` | VAT was under-charged | Set `originalLineIndex`. `lineTotalExclVat` may be `0.00`. |
+| `PriceAdjustment` | A line on the original was under-priced | Set `originalLineIndex` (or `sourceDebitNoteLineId` for an item added by an earlier debit note). The line is taxed like that item (its frozen rate and category) unless you set `vatRate:`. |
+| `VatAdjustment` | VAT was under-charged | `DebitNoteLineInput::vatAdjustment('VAT correction', vatAmount: 7.50, originalLineIndex: 0)`: no net amount, only the VAT you name. |
 | `Other` | Anything else | Free description |
 
 **What happens next (automatic):** `GenerateZatcaDebitNoteJob` builds a simplified debit note (383), signs it and reports it. Read it the same way as a credit note (`$debitNote->isAccepted()`, `DebitNoteStatusResolver`, `latestZatcaInvoice`). Listen to `Zatca\Events\ZatcaDebitNoteAccepted` to charge the customer.
@@ -908,9 +935,9 @@ $debitNote->total_incl_vat;      // 23.00
 
 > B2B has not been verified against the real ZATCA sandbox yet. Do the checks in [Known limitations](#known-limitations) first.
 
-**Situation:** Riyadh Office Supplies Co. (VAT `300000000000003`) buys 20 office chairs at 400.00 and 2 desks at 1,500.00.
+**Situation:** Riyadh Office Supplies Co. (VAT `300000000000003`) buys 20 office chairs at 400.00 and 2 desks at 1,500.00. Company prices are quoted **before VAT**, so the mapper marks company invoices as exclusive (one optional line, shown below).
 
-| Line | Item | Qty | Unit | Net | VAT 15% |
+| Line | Item | Qty | Price you pass (excl. VAT) | Net | VAT 15% |
 |---|---|---|---|---|---|
 | 0 | Office chair | 20 | 400.00 | 8,000.00 | 1,200.00 |
 | 1 | Office desk | 2 | 1,500.00 | 3,000.00 | 450.00 |
@@ -923,7 +950,15 @@ $debitNote->total_incl_vat;      // 23.00
 - It must use the **B2B EGS**.
 - The package does **not** check `ZATCA_B2B_ENABLED` for you, so check readiness yourself.
 
-The mapper from [9.1](#91-shared-setup-do-this-once) already handles all of this when `buyer_type` is `company`. You only dispatch with the B2B EGS:
+The mapper from [9.1](#91-shared-setup-do-this-once) already handles all of this when `buyer_type` is `company`. If, like here, company prices exclude VAT while shop prices include it, add one argument to the `ZatcaInvoiceInput` it returns:
+
+```php
+use Zatca\Enums\VatPriceMode;
+
+priceMode: $isCompany ? VatPriceMode::Exclusive : null,   // null = ZATCA_VAT_MODE
+```
+
+Then dispatch with the B2B EGS:
 
 ```php
 use Zatca\Jobs\GenerateZatcaInvoiceJob;
@@ -998,8 +1033,7 @@ $original = ZatcaInvoice::where('source_reference', 'INV-2001')->firstOrFail();
 $creditNote = app(CreditNoteIssuer::class)->issuePriceAdjustment(
     original: $original,
     sourceKey: CreditSource::invoiceLineKey(0),   // the chairs line
-    netAmount: 2000.00,                            // 5 × 400.00
-    vatAmount: 300.00,
+    amount: 2000.00,                               // 5 × 400.00, excl. VAT like the invoice → + 300.00 VAT
     description: 'Return of 5 damaged office chairs',
     reason: 'Goods returned: 5 chairs damaged in delivery',
     idempotencyKey: (string) Str::uuid(),
@@ -1018,6 +1052,7 @@ Read the result like Scenario 2, plus `->latestZatcaInvoice->cleared_xml_base64`
 
 ```php
 use Illuminate\Support\Str;
+use Zatca\Enums\VatPriceMode;
 use Zatca\Enums\ZatcaDebitNoteReason;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Services\DebitNote\DebitNoteIssuer;
@@ -1032,15 +1067,13 @@ $debitNote = app(DebitNoteIssuer::class)->issue(
         new DebitNoteLineInput(
             description: 'Price correction: office desk (2 × 100.00)',
             quantity: 2,
-            unitPrice: 100.00,
-            vatRate: 15.0,
-            lineTotalExclVat: 200.00,
-            vatAmount: 30.00,
-            originalLineIndex: 1,       // the desks line on INV-2001
+            price: 100.00,
+            originalLineIndex: 1,       // the desks line on INV-2001: taxed at its frozen 15%
         ),
     ],
     reason: 'Agreed price was 1,600.00 per desk',
     idempotencyKey: (string) Str::uuid(),
+    priceMode: VatPriceMode::Exclusive, // company prices exclude VAT; null = ZATCA_VAT_MODE
 );
 // → DN-000002, 230.00 SAR, standard debit note, sent by Clearance
 ```
@@ -1052,7 +1085,8 @@ $debitNote = app(DebitNoteIssuer::class)->issue(
 | `App\Models\Order`, `items`, `company` | Your own models and relations |
 | `'INV-'.$source->id` | Your own unique invoice number |
 | `paid_at` | The moment the sale happened |
-| `vat_rate` per item | Your own VAT logic. For 0% items use a zero-rated or exempt line (see [VAT categories](#vat-categories)). |
+| `price` per item | Your selling price, in `ZATCA_VAT_MODE` (VAT-inclusive by default) |
+| `vat_rate` per item | `null` for the normal rate. Set it only for an item taxed differently. For 0% items use `ZatcaInvoiceItem::zeroRated()` / `exempt()` (see [VAT categories](#vat-categories)). |
 | `buyer_type === 'company'` | However you know the buyer is a company |
 | `auth()->id()` in `requestedBy` | Whoever triggered the note (or leave `null`) |
 | `Str::uuid()` idempotency keys | A UUID you **store** on your refund/charge request, so a retry or double-click reuses it |
@@ -1061,7 +1095,7 @@ $debitNote = app(DebitNoteIssuer::class)->issue(
 
 ## 10. Invoice fields explained
 
-**You provide** these in `ZatcaInvoiceData` (through your mapper):
+**You provide** these in `ZatcaInvoiceInput` (through your mapper). No amounts other than prices: the package calculates net amounts, VAT and totals.
 
 | Field | Meaning | Required? | Notes |
 |---|---|---|---|
@@ -1071,61 +1105,97 @@ $debitNote = app(DebitNoteIssuer::class)->issue(
 | `buyerVatNumber` | Buyer's VAT number | No | Kept for your records. B2B uses `buyer->vatNumber`. |
 | `issueDateTime` | Invoice date and time | Yes | Written exactly as given, so use Saudi time (`Asia/Riyadh`). |
 | `currency` | Currency code | Yes | Must be `SAR`. Anything else is refused. |
-| `lines` | Array of `ZatcaInvoiceLine` | Yes, at least 1 | |
-| `totalExclVat` | Total before VAT | Yes | = sum of line nets − discounts |
-| `totalVat` | Total VAT | Yes | = sum of line VAT − discount VAT |
-| `totalInclVat` | Total with VAT | Yes | = `totalExclVat + totalVat` |
+| `items` | Array of `ZatcaInvoiceItem` | Yes, at least 1 | See below |
+| `discounts` | Document-level discounts | No | Array of `ZatcaInvoiceDiscount` |
+| `priceMode` | What the prices on this invoice mean | No | `VatPriceMode::Inclusive` / `Exclusive`. `null` = `ZATCA_VAT_MODE` |
 | `documentType` | `Invoice` (B2C) or `StandardInvoice` (B2B) | Default `Invoice` | Decides Reporting or Clearance |
-| `allowanceCharges` | Document-level discounts | No | Array of `ZatcaAllowanceCharge` |
 | `buyer` | Company buyer (`BuyerParty`) | **B2B: yes** | Ignored for B2C |
 | `supplyDate` | Delivery or supply date | **B2B: yes** | Ignored for B2C |
-| `billingReferenceId`, `adjustmentReason` | Original invoice and reason | Notes only | Filled by the package for credit and debit notes. Don't set them for invoices. |
 
-**Each line (`ZatcaInvoiceLine`):**
+<a id="invoice-items"></a>
+**Each item (`ZatcaInvoiceItem`):**
 
 | Field | Meaning | Rule |
 |---|---|---|
 | `description` | Item name | Any text (escaped for XML for you) |
 | `quantity` | How many | Whole number, at least 1 |
-| `unitPrice` | Price of one unit, **excl. VAT** | Not negative |
-| `vatRate` | VAT %, e.g. `15.0` | Not negative |
-| `lineTotalExclVat` | Line net | Normally `quantity × unitPrice`, rounded to 2 decimals |
-| `vatAmount` | Line VAT | Normally `lineTotalExclVat × vatRate / 100`, rounded to 2 decimals |
-| `vatCategory` | VAT category | Optional. `ZatcaVatCategory::Standard` (default), `ZeroRated` or `Exempt` |
-| `vatExemptionReasonCode`, `vatExemptionReason` | ZATCA reason code and text | Required for zero-rated and exempt lines |
+| `price` | Price of ONE unit, as you charge it | Not negative. VAT-inclusive or exclusive per the price mode. Up to 6 decimals. |
+| `vatRate` | VAT % for this item only, e.g. `5` | Optional. `null` = `ZATCA_VAT_PERCENTAGE`. 0–100, at most 2 decimals. Standard-rated items only. |
+| `vatCategory` | VAT category | Optional. `ZatcaVatCategory::Standard` (default). Use `ZatcaInvoiceItem::zeroRated()` / `exempt()` for 0% items. |
+| `vatExemptionReasonCode`, `vatExemptionReason` | ZATCA reason code and text | Required for zero-rated and exempt items |
 
-The package checks your numbers before it uses a counter number. Totals must match the lines. Each line's net must equal `quantity × unitPrice`, and its VAT must equal `net × vatRate / 100`. One fil (0.01) of rounding difference is allowed. A line with net `0.00` and only VAT (a VAT correction) is allowed. The package never changes your numbers. It only refuses wrong ones. Lines are grouped by VAT category and rate in the XML automatically.
+**Each discount (`ZatcaInvoiceDiscount`):** `reason`, `amount` (in the same price mode as the items), and optionally `vatRate`, `vatCategory` with its exemption code and text, `lineIndexes` (the items it covers) and `poolKey` (your own name for that group, e.g. `bundle:7`).
 
-<a id="vat-categories"></a>
-#### VAT categories (zero-rated and exempt items)
+<a id="how-vat-is-calculated"></a>
+#### How VAT is calculated
 
-Most items are standard-rated (15%), and you don't need to do anything for those. For a 0% item, say why it is 0%:
+All in exact decimal arithmetic (no floating point), rounding half-up to the halala:
+
+1. **Per line, not per unit:** line amount = quantity × price, rounded once. Ten items at 100.00 are 1,000.00.
+2. **Exclusive:** net = line amount; VAT = net × rate, rounded.
+   **Inclusive:** total = line amount; net = total ÷ (1 + rate), rounded; VAT = total − net. So net + VAT is always exactly what the customer paid.
+3. **Zero-rated / exempt:** no VAT, net = line amount, in either mode.
+4. **The XML unit price** (`PriceAmount`) is the NET unit price, line net ÷ quantity, with up to 6 decimals when needed, so that quantity × price matches the line net (ZATCA rule BR-KSA-EN16931-11). A price that fits 2 decimals is written with 2.
+5. **A discount** is calculated like a one-unit line, at its own rate.
+6. **Totals** are the sums of the rounded lines and discounts.
+
+| Items (15%) | Mode | Net | VAT | Total | XML unit price |
+|---|---|---|---|---|---|
+| 1 × 115.00 | inclusive | 100.00 | 15.00 | 115.00 | 100.00 |
+| 1 × 100.00 | exclusive | 100.00 | 15.00 | 115.00 | 100.00 |
+| 1 × 100.00 | inclusive | 86.96 | 13.04 | 100.00 | 86.96 |
+| 10 × 100.00 | inclusive | 869.57 | 130.43 | 1,000.00 | 86.957 |
+| 3 × 33.33 | inclusive | 86.95 | 13.04 | 99.99 | 28.983333 |
+| 3 × 33.33 | exclusive | 99.99 | 15.00 | 114.99 | 33.33 |
+
+With inclusive prices the VAT is what remains after the net is rounded, so it can differ by one halala from net × rate. ZATCA's rules allow this; the package's own check before signing does too.
+
+**Before a counter number is used,** the package checks the calculated invoice: lines and totals reconcile (BR-CO-10/14/15), each VAT breakdown matches its taxable amount × rate within ZATCA's tolerance (BR-S-09), nothing is negative, and every VAT category has what it needs. You can also call the calculator yourself, for example to show totals before checkout:
 
 ```php
-use Zatca\DTOs\ZatcaInvoiceLine;
-use Zatca\Enums\ZatcaVatCategory;
+use Zatca\Services\Tax\InvoiceCalculator;
 
-// Export of goods: zero-rated
-new ZatcaInvoiceLine(
-    description: 'Export shipment',
-    quantity: 1,
-    unitPrice: 200.00,
-    vatRate: 0.0,
-    lineTotalExclVat: 200.00,
-    vatAmount: 0.00,
-    vatCategory: ZatcaVatCategory::ZeroRated,
-    vatExemptionReasonCode: 'VATEX-SA-32',
-    vatExemptionReason: 'Export of goods',
-);
+// $input = your mapper's ZatcaInvoiceInput, e.g. Sara's order from Scenario 1
+$calculated = app(InvoiceCalculator::class)->calculate($input);   // ZatcaInvoiceData
+$calculated->totalExclVat;             // 350.00
+$calculated->totalVat;                 // 52.50
+$calculated->totalInclVat;             // 402.50
+$calculated->lines[0]->netUnitPrice;   // 150.0 (the headphones' net unit price, as in the XML)
+$calculated->lines[0]->suppliedPrice;  // "172.50" (what you passed)
+```
+
+`ZatcaInvoiceData` and `ZatcaInvoiceLine` are the **calculated** form the package works with internally (validation, XML, snapshots, notes). You don't build them.
+
+<a id="vat-categories"></a>
+#### VAT categories, mixed rates and per-item rates
+
+Most items are standard-rated at `ZATCA_VAT_PERCENTAGE`, and you don't need to do anything for those. One invoice can mix rates and categories; the XML gets one VAT breakdown per rate and category automatically.
+
+```php
+use Zatca\DTOs\ZatcaInvoiceItem;
+
+$items = [
+    // Standard, at ZATCA_VAT_PERCENTAGE (15%)
+    new ZatcaInvoiceItem('Headphones', 1, 172.50),
+
+    // Standard, at its own rate (overrides the default for this item only)
+    new ZatcaInvoiceItem('Reduced-rate item', 2, 52.50, vatRate: 5),
+
+    // Zero-rated: never gets VAT, needs ZATCA's reason
+    ZatcaInvoiceItem::zeroRated('Export shipment', 1, 200.00, 'VATEX-SA-32', 'Export of goods'),
+
+    // Exempt: never gets VAT, needs ZATCA's reason
+    ZatcaInvoiceItem::exempt('Life insurance', 1, 500.00, 'VATEX-SA-29', 'Financial services'),
+];
 ```
 
 | Category | Rate | Needs a reason? | Example codes |
 |---|---|---|---|
-| `Standard` (`S`) | above 0, e.g. 15 | No | – |
-| `ZeroRated` (`Z`) | 0 | Yes | `VATEX-SA-32` export of goods, `VATEX-SA-33` export of services, `VATEX-SA-35` medicines |
-| `Exempt` (`E`) | 0 | Yes | `VATEX-SA-29` financial services, `VATEX-SA-30` residential rent |
+| `Standard` (`S`) | `ZATCA_VAT_PERCENTAGE`, or the item's `vatRate` | No | – |
+| `ZeroRated` (`Z`) | always 0 | Yes | `VATEX-SA-32` export of goods, `VATEX-SA-33` export of services, `VATEX-SA-35` medicines |
+| `Exempt` (`E`) | always 0 | Yes | `VATEX-SA-29` financial services, `VATEX-SA-30` residential rent |
 
-Use ZATCA's official list of reason codes. The package checks the `VATEX-SA-...` format and that the reason text is filled in. A 0% line marked `Standard` is refused. Discounts (`ZatcaAllowanceCharge`) and debit note lines (`DebitNoteLineInput`) accept the same three fields. Credit and debit notes keep the category of the line they adjust.
+Use ZATCA's official list of reason codes. The package checks the `VATEX-SA-...` format and that the reason text is filled in. A zero-rated or exempt item given a rate is refused, and so is a standard item at 0%. Discounts (`ZatcaInvoiceDiscount`) and debit note lines (`DebitNoteLineInput`) accept the same category fields. Credit notes always keep the rate and category of the line they credit, and a debit note line that adjusts an item keeps that item's rate and category unless you set its own.
 
 **The package generates these. Never set them yourself:**
 
@@ -1764,13 +1834,15 @@ Read the changelog. If a release adds migrations, run `zatca:check-source-unique
 | Compliance test shows `ERROR` | Seller data or address is wrong | Read the printed errors, fix `.env`, run `zatca:health-check`, retry the step |
 | Production CSID fails | Compliance steps incomplete | Run all three `test-*` steps with PASS first |
 | `ZatcaCredentialsMissingException` / job fails at once | No production certificate for this EGS and environment | Finish onboarding in the current environment |
-| `does not reconcile — BR-CO-10/14/15` | Totals don't equal the sum of the lines | Compute totals from the rounded line values (see the mapper) |
-| `quantity × unit price does not equal the line net amount` | `lineTotalExclVat` was not computed from quantity and unit price | Compute `round(quantity × unitPrice, 2)` |
-| `VAT amount does not equal the line net × 15%` | VAT computed on the wrong base or rate | Compute `round(net × vatRate / 100, 2)` per line |
-| `standard-rated (S) with a 0% rate` | A 0% item without a VAT category | Mark it `ZeroRated` or `Exempt` with a `VATEX-SA-...` code and reason |
-| `needs a ZATCA exemption reason code` / `reason text` | A `Z`/`E` line without its reason | Fill `vatExemptionReasonCode` and `vatExemptionReason` |
+| `ZATCA_VAT_PERCENTAGE must be a number` / `ZATCA_VAT_MODE must be "inclusive" or "exclusive"` | Invalid VAT setting in `.env` | Fix it (or remove it for the default), then `php artisan config:cache` |
+| `does not reconcile — BR-S-09` | Many discounts on few items push a VAT breakdown outside ZATCA's rounding tolerance | Merge the discounts into one, or give each its own `lineIndexes` |
+| `item N has quantity 0` / `negative price` | Bad item data | Quantity at least 1, price not negative. Use credit notes for refunds. |
+| `has more than two decimals (BR-KSA-DEC-02)` / `must be between 0 and 100` | An item's `vatRate` is not a valid ZATCA rate | Use a rate like `15` or `5` |
+| `standard-rated (S) with a 0% rate` | A 0% item without a VAT category | Use `ZatcaInvoiceItem::zeroRated()` or `exempt()` with a `VATEX-SA-...` code and reason |
+| `cannot have a 15% rate. Zero-rated and exempt items are always 0%` | A zero-rated/exempt item with a `vatRate` | Remove `vatRate` from that item |
+| `needs a ZATCA exemption reason code` / `reason text` | A `Z`/`E` item without its reason | Pass the code and reason to `zeroRated()` / `exempt()` |
 | `only SAR is supported` | `currency` is not `SAR` | Invoice in SAR |
-| `has no lines` / `negative` | Empty or negative invoice data | Don't invoice zero-line orders. Use credit notes for refunds. |
+| `has no items` / `has no lines` / `negative` | Empty or negative invoice data | Don't invoice orders without items. Use credit notes for refunds. |
 | Invoice in `manual_review` with BR-KSA codes | ZATCA rejected the content (for example line math, VAT number) | Fix the mapper or data, then [regenerate](#re-issuing-a-rejected-invoice-regeneration) |
 | `buyer VAT number must be 15 digits...` | Invalid buyer VAT | Ask the buyer for the correct VAT, or use `BuyerOtherId` (CR number) |
 | `Standard document ... has no buyer / no supply date` | B2B data missing | Set `buyer` and `supplyDate` in the mapper |
@@ -1805,8 +1877,9 @@ Onboard the B2B EGS in the sandbox, clear a few invoices, credit notes and debit
 - `Z` and `E` are supported. Out-of-scope (`O`) is not, because ZATCA limits how it can be mixed with other categories on one document.
 - Every amount is in **SAR**. Other currencies are refused.
 - `quantity` is a whole number. Fractions (1.5 kg) are not supported.
-- No line-level discounts. Only document-level discounts (`ZatcaAllowanceCharge`).
-- `ZATCA_VAT_PERCENTAGE` is display-only. Each line's `vatRate` is what counts.
+- No line-level discounts. Only document-level discounts (`ZatcaInvoiceDiscount`).
+- One price mode per invoice (`priceMode`), not per item.
+- The net unit price in the XML (`PriceAmount`) can have up to 6 decimals, so that quantity × price matches the line net. ZATCA's SDK 3.4.8 rules accept this (tested with the SDK's own validator), but ZATCA's live servers have not been tried with it yet. Check it in the sandbox.
 - Payment means is always code `10` (cash).
 
 **Notes**
@@ -1845,6 +1918,21 @@ The database uses the new names too:
 | `course_ids` in the debit note "requested" event detail | `item_ids` |
 
 These were changed inside the original migrations, because the package had not run in production. **Any database that already ran the old migrations (local, staging) must be rebuilt** with `php artisan migrate:fresh`. Never do that on production.
+
+### VAT calculation moved into the package (breaking, before the first release)
+
+The package now calculates VAT from prices (see [VAT settings](#vat-settings)). There are no aliases for these: the old signatures took amounts the package now calculates.
+
+| Before | Now |
+|---|---|
+| `InvoiceSourceContract::toInvoiceData(): ZatcaInvoiceData` | `toInvoiceInput(): ZatcaInvoiceInput` |
+| `ZatcaInvoiceLine` / `ZatcaAllowanceCharge` built by your app, with net, VAT and totals | `ZatcaInvoiceItem` / `ZatcaInvoiceDiscount` with prices. The package builds the calculated DTOs. |
+| `ZatcaInvoiceLine::$unitPrice` | `$netUnitPrice` (plus `$suppliedPrice` and `$priceMode`) |
+| `new DebitNoteLineInput($desc, $qty, $unitPrice, $vatRate, $net, $vat, ...)` | `new DebitNoteLineInput($desc, $qty, $price, vatRate: ..., originalLineIndex: ...)`, and `DebitNoteLineInput::vatAdjustment()` for VAT-only lines. `fromArray()` reads `price` (and `vat_only`). |
+| `issuePriceAdjustment(..., $netAmount, $vatAmount, ...)` and `new PriceAdjustmentInput($key, $net, $vat, $desc)` | one `$amount`: `issuePriceAdjustment(..., $amount, ...)`, `new PriceAdjustmentInput($key, $amount, $desc)` |
+| `config('zatca.egs.*.vat_percentage')`, `EgsConfig::$vatPercentage` | `config('zatca.vat.percentage')` and `config('zatca.vat.mode')` |
+
+The `unit_price` column of `zatca_credit_note_lines` and `zatca_debit_note_lines` now has 6 decimals (`decimal(18,6)`), also changed in the original migrations: rebuild local and staging databases as above.
 
 ---
 

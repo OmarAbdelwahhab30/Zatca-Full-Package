@@ -32,7 +32,7 @@ class ComplianceTestInvoiceDataFactory
         $line = new ZatcaInvoiceLine(
             description: $description,
             quantity: 1,
-            unitPrice: 100.00,
+            netUnitPrice: 100.00,
             vatRate: 15.0,
             lineTotalExclVat: 100.00,
             vatAmount: 15.00,

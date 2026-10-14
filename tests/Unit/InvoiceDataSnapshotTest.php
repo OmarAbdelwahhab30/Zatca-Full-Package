@@ -83,7 +83,7 @@ class InvoiceDataSnapshotTest extends TestCase
         foreach ($original->lines as $index => $line) {
             $this->assertSame($line->description, $restored->lines[$index]->description);
             $this->assertSame($line->quantity, $restored->lines[$index]->quantity);
-            $this->assertSame($line->unitPrice, $restored->lines[$index]->unitPrice);
+            $this->assertSame($line->netUnitPrice, $restored->lines[$index]->netUnitPrice);
             $this->assertSame($line->vatRate, $restored->lines[$index]->vatRate);
             $this->assertSame($line->lineTotalExclVat, $restored->lines[$index]->lineTotalExclVat);
             $this->assertSame($line->vatAmount, $restored->lines[$index]->vatAmount);

@@ -18,6 +18,7 @@ use Zatca\Exceptions\ZatcaDisabledException;
 use Zatca\Exceptions\ZatcaException;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Services\Invoice\InvoiceDataValidator;
+use Zatca\Services\Tax\InvoiceCalculator;
 use Zatca\Services\Invoice\XmlGeneratorFactory;
 use Zatca\Services\SDK\SignedInvoiceXmlReader;
 use Zatca\Services\Security\ZatcaSigningKeyProvider;
@@ -82,6 +83,7 @@ class ProductionInvoiceOrchestrator
         private readonly SignedInvoiceXmlReader $xmlReader,
         private readonly InvoiceDataValidator $invoiceDataValidator,
         private readonly ZatcaGate $gate = new ZatcaGate,
+        private readonly InvoiceCalculator $invoiceCalculator = new InvoiceCalculator,
     ) {}
 
     /**
@@ -184,7 +186,7 @@ class ProductionInvoiceOrchestrator
      *  1. generate() resolves an existing row by sourceReference() and returns it. For
      *     a known source that is always the original, so a replacement would never be
      *     created at all.
-     *  2. generate() calls $source->toInvoiceData(), re-reading the host record. The
+     *  2. generate() calls $source->toInvoiceInput(), re-reading the host record. The
      *     host's prices, items or buyer details may have moved since the sale; a
      *     document built from them would not be a regeneration of this invoice but a
      *     different invoice wearing its number.
@@ -354,11 +356,12 @@ class ProductionInvoiceOrchestrator
             throw ZatcaCredentialsMissingException::forEgs($egsIdentifier, ZatcaCredentialType::Production);
         }
 
-        // Checked before an ICV slot is spent on it. The host's figures are taken
-        // exactly as given — nothing here re-prices or re-rounds them — but an invoice
-        // whose own lines do not add up to its own totals, or that carries a negative
-        // line, stops here rather than becoming a document that cannot be withdrawn.
-        $invoiceData = $source->toInvoiceData($sourceRecord, $egsIdentifier);
+        // The host supplies prices and quantities; VAT, line totals and document totals
+        // are calculated here, once, with the configured rate and price mode, and frozen
+        // into the snapshot below. Then checked before an ICV slot is spent on it: an
+        // invoice that does not reconcile, or carries a negative line, stops here rather
+        // than becoming a document that cannot be withdrawn.
+        $invoiceData = $this->invoiceCalculator->calculate($source->toInvoiceInput($sourceRecord, $egsIdentifier));
         $this->invoiceDataValidator->validate($invoiceData);
 
         $uuid = (string) Str::uuid();
@@ -422,7 +425,7 @@ class ProductionInvoiceOrchestrator
      * original invoice's.
      *
      * Deliberately not merged into reserveDraft() — that method calls
-     * $source->toInvoiceData() and re-reads the host record; here the data is already
+     * $source->toInvoiceInput() and re-reads the host record; here the data is already
      * built by the note's own DataFactory from a frozen snapshot, and there is no
      * InvoiceSourceContract at all.
      *

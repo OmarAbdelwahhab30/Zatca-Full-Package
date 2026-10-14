@@ -5,6 +5,7 @@ namespace Zatca\Services\Invoice\XmlGenerators\Concerns;
 use Zatca\DTOs\ZatcaAllowanceCharge;
 use Zatca\DTOs\ZatcaInvoiceLine;
 use Zatca\Enums\ZatcaVatCategory;
+use Zatca\Support\Money;
 
 /**
  * UBL rendering shared by every document profile (Simplified and Standard):
@@ -119,8 +120,19 @@ trait RendersUblLinesAndTax
             $this->esc($line->description),
             $line->vatCategory->value,
             $line->vatRate,
-            $this->money($line->unitPrice)
+            $this->price($line->netUnitPrice)
         );
+    }
+
+    /**
+     * BT-146 net unit price. Two decimals when that is exact (every price that already was),
+     * up to six otherwise, so InvoicedQuantity × PriceAmount reproduces the line net
+     * (BR-KSA-EN16931-11) when VAT was taken out of an inclusive price. The SDK's rules put
+     * no decimal limit on PriceAmount; the amounts themselves always have two.
+     */
+    private function price(float $value): string
+    {
+        return Money::trimmed(Money::toScaled($value, Money::PRICE_SCALE), Money::PRICE_SCALE);
     }
 
     private function renderAllowanceCharge(ZatcaAllowanceCharge $allowance): string

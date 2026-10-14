@@ -17,7 +17,7 @@ Do not mix ZATCA versions outside the table in section 1. Do not treat a flow as
 
 ## 2. Document flows and how far each is verified
 
-"Package tests" means the automated suite (`composer test`). It does not call ZATCA, and the 2 tests that drive the real Java SDK skip unless you point them at an SDK install (for example the copy in [`SDKs/`](../SDKs/README.md)). So "package tests" proves the package logic and the XML it builds, not that ZATCA accepts it.
+"Package tests" means the automated suite (`composer test`). It does not call ZATCA, and the 7 tests that drive the real Java SDK skip unless you point them at an SDK install (for example the copy in [`SDKs/`](../SDKs/README.md)). So "package tests" proves the package logic and the XML it builds, not that ZATCA accepts it.
 
 | Flow | Submission | Status | Verified by |
 |---|---|---|---|
@@ -48,13 +48,13 @@ Laravel 9–11 are kept so existing apps keep working while they plan an upgrade
 
 | Laravel | Framework | Testbench | PHPUnit | PHP versions run | Result on each PHP version |
 |---|---|---|---|---|---|
-| 9 | 9.52.22 | 7.58 | 9.6 | 8.1, 8.3 | 734 passed, 3 skipped |
-| 10 | 10.50.3 | 8.39 | 10.5 | 8.2, 8.3 | 734 passed, 3 skipped |
-| 11 | 11.57.0 | 9.18 | 11.5 | 8.2, 8.3 | 734 passed, 3 skipped |
-| 12 | 12.70.0 | 10.12 | 11.5 | 8.2, 8.3, 8.4 | 734 passed, 3 skipped |
-| 12 | 12.70.0 | 10.12 | 12.5 | 8.3 | 734 passed, 3 skipped |
+| 9 | 9.52.22 | 7.58 | 9.6 | 8.1, 8.3 | 834 passed, 8 skipped |
+| 10 | 10.50.3 | 8.39 | 10.5 | 8.2, 8.3 | 834 passed, 8 skipped |
+| 11 | 11.57.0 | 9.18 | 11.5 | 8.2, 8.3 | 834 passed, 8 skipped |
+| 12 | 12.70.0 | 10.12 | 11.5 | 8.2, 8.3, 8.4 | 834 passed, 8 skipped |
+| 12 | 12.70.0 | 10.12 | 12.5 | 8.3 | 834 passed, 8 skipped |
 
-Every run gave 2,370 assertions and no PHPUnit warnings or deprecations. The 3 skipped tests are the 2 real-SDK tests plus a Unix file-permission test that skips on Windows, where these runs were made. Real SDK signing was **not** part of these runs. It was checked separately with the bundled SDK 3.4.8 on Laravel 10 / PHP 8.3: `composer smoke` all OK, and the full suite with the SDK enabled gave 734 tests, 2,378 assertions, 1 skipped. Run `composer smoke` and the onboarding sandbox steps on your own setup before going live.
+Every run gave 2,706 assertions and no PHPUnit warnings or deprecations. The 8 skipped tests are the 7 real-SDK tests plus a Unix file-permission test that skips on Windows, where these runs were made. Real SDK signing was **not** part of these runs. It was checked separately with the bundled SDK 3.4.8 on Laravel 10 / PHP 8.3: `composer smoke` all OK, and the full suite with the SDK enabled gave 834 tests, 2,720 assertions, 1 skipped. That includes `VatRealSdkValidationTest`: invoices whose VAT the package calculated (inclusive and exclusive, quantities, mixed rates, zero-rated, discounts) signed and checked with the SDK's own validator, with no amount-rule errors or warnings. Run `composer smoke` and the onboarding sandbox steps on your own setup before going live.
 
 **PHPUnit:** the package allows PHPUnit 9 to 12. Composer picks the version from your Laravel and PHP versions: Laravel 9 gets 9, Laravel 10 gets 10, Laravel 11 gets 11, and Laravel 12 gets 12 on PHP 8.3+ or 11 on PHP 8.2. The tests carry both PHP attributes (`#[DataProvider]`, `#[Group]`, read by PHPUnit 10+) and the matching docblock tags (`@dataProvider`, `@group`, read by PHPUnit 9). Keep both when you add a test, or Laravel 9 runs lose their data providers.
 

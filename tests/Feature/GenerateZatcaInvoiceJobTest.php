@@ -7,6 +7,8 @@ use Zatca\Contracts\InvoiceSourceResolverContract;
 use Zatca\Contracts\ZatcaSdkInterface;
 use Zatca\DTOs\InvoiceSourceReference;
 use Zatca\DTOs\ZatcaInvoiceData;
+use Zatca\DTOs\ZatcaInvoiceItem;
+use Zatca\DTOs\ZatcaInvoiceInput;
 use Zatca\DTOs\ZatcaInvoiceLine;
 use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaEnvironment;
@@ -140,11 +142,11 @@ class GenerateZatcaInvoiceJobTest extends TestCase
     {
         return new class implements InvoiceSourceContract
         {
-            public function toInvoiceData(mixed $source, string $egsIdentifier): ZatcaInvoiceData
+            public function toInvoiceInput(mixed $source, string $egsIdentifier): ZatcaInvoiceInput
             {
-                $line = new ZatcaInvoiceLine('Item', 1, 100.00, 15.0, 100.00, 15.00);
+                $line = new ZatcaInvoiceItem('Item', 1, 115.00);
 
-                return new ZatcaInvoiceData($egsIdentifier, $this->sourceReference($source), null, null, new DateTimeImmutable, 'SAR', [$line], 100.00, 15.00, 115.00);
+                return new ZatcaInvoiceInput($egsIdentifier, $this->sourceReference($source), null, null, new DateTimeImmutable, 'SAR', [$line]);
             }
 
             public function sourceReference(mixed $source): string

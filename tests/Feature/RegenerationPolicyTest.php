@@ -9,6 +9,8 @@ use Zatca\Contracts\ZatcaSdkInterface;
 use Zatca\DTOs\BuyerAddress;
 use Zatca\DTOs\BuyerParty;
 use Zatca\DTOs\ZatcaInvoiceData;
+use Zatca\DTOs\ZatcaInvoiceItem;
+use Zatca\DTOs\ZatcaInvoiceInput;
 use Zatca\DTOs\ZatcaInvoiceLine;
 use Zatca\Enums\ZatcaCertificateState;
 use Zatca\Enums\ZatcaComplianceDocumentType;
@@ -326,19 +328,16 @@ class RegenerationPolicyTest extends TestCase
     {
         return new class implements InvoiceSourceContract
         {
-            public function toInvoiceData(mixed $source, string $egsIdentifier): ZatcaInvoiceData
+            public function toInvoiceInput(mixed $source, string $egsIdentifier): ZatcaInvoiceInput
             {
-                return new ZatcaInvoiceData(
+                return new ZatcaInvoiceInput(
                     egsIdentifier: $egsIdentifier,
                     sourceReference: $this->sourceReference($source),
                     buyerName: 'Standard Buyer LLC',
                     buyerVatNumber: '310123456700003',
                     issueDateTime: new DateTimeImmutable('2026-08-17T10:30:00+03:00'),
                     currency: 'SAR',
-                    lines: [new ZatcaInvoiceLine('Course Enrollment', 1, 100.00, 15.0, 100.00, 15.00)],
-                    totalExclVat: 100.00,
-                    totalVat: 15.00,
-                    totalInclVat: 115.00,
+                    items: [new ZatcaInvoiceItem('Course Enrollment', 1, 115.00)],
                     documentType: ZatcaComplianceDocumentType::StandardInvoice,
                     buyer: new BuyerParty(
                         registrationName: 'Standard Buyer LLC',

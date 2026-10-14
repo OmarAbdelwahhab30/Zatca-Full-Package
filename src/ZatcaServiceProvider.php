@@ -40,6 +40,8 @@ use Zatca\State\CompliancePreviousInvoiceHashManager;
 use Zatca\State\EgsRegistry;
 use Zatca\State\ProductionInvoiceCounterManager;
 use Zatca\State\ProductionPreviousInvoiceHashManager;
+use Zatca\Services\Tax\InvoiceCalculator;
+use Zatca\Support\VatSettings;
 use Zatca\Support\ZatcaGate;
 use Illuminate\Support\ServiceProvider;
 
@@ -52,6 +54,12 @@ class ZatcaServiceProvider extends ServiceProvider
         // The global kill switch. Resolved by jobs, commands, the orchestrator and the
         // host's admin service — every ZATCA entry point asks this one object.
         $this->app->singleton(ZatcaGate::class);
+
+        // VAT: read from config('zatca.vat') at the moment of use. The calculator is bound
+        // explicitly so the container never autowires it with a default (15%, inclusive)
+        // VatSettings that would ignore the config.
+        $this->app->bind(VatSettings::class, fn () => VatSettings::fromConfig());
+        $this->app->bind(InvoiceCalculator::class, fn () => new InvoiceCalculator);
 
         $this->app->singleton(EgsRegistry::class);
 
