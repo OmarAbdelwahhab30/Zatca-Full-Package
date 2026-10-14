@@ -5,7 +5,7 @@ A Laravel package that sends your invoices to **ZATCA** (the Saudi tax authority
 You give it your order. It builds the e-invoice, signs it, adds the QR code, sends it to ZATCA, retries when ZATCA is down, and saves everything in your database.
 
 > **Status:** B2C (simplified invoices, credit notes and debit notes, sent by **Reporting**) is the main, tested flow.
-> B2B (standard invoices sent by **Clearance**) is built and covered by tests, but it has **not been checked against the real ZATCA sandbox yet**. Run the B2B sandbox checks in [Known limitations](#known-limitations) before you turn B2B on in production.
+> B2B (standard invoices sent by **Clearance**) is built, covered by tests, and passes in **ZATCA's developer-portal sandbox**: onboarding, invoices, credit notes and debit notes are all cleared with no warnings (`composer test:sandbox`). It has **not been run in ZATCA's simulation environment yet**, and the sandbox cannot prove everything (see [Known limitations](#known-limitations)). Do that before you turn B2B on in production.
 >
 > **Tested ZATCA SDK:** Java SDK **3.4.8** (`238-R3.4.8`). A clean copy ships with the package in [`SDKs/`](SDKs/) and passes `composer smoke` and the real-SDK tests. See [`SDKs/README.md`](SDKs/README.md).
 
@@ -119,7 +119,7 @@ You never edit an accepted invoice. You issue a note that points to it. A note a
 
 **Invoicing**
 - B2C simplified invoice, credit note and debit note, sent by Reporting.
-- B2B standard invoice, credit note and debit note, sent by Clearance (verify in the ZATCA sandbox first, see [Known limitations](#known-limitations)).
+- B2B standard invoice, credit note and debit note, sent by Clearance (passes in the developer-portal sandbox; rehearse in simulation before production, see [Known limitations](#known-limitations)).
 - Several lines per invoice, several VAT rates per invoice, and document-level discounts.
 - Standard-rated (`S`), zero-rated (`Z`) and exempt (`E`) items, with ZATCA exemption reason codes.
 - Full or partial credit notes. Credit notes for part of a line's value (price adjustments). Debit notes for added items, price corrections and VAT corrections.
@@ -190,6 +190,8 @@ Composer dependencies are installed for you: `guzzlehttp/guzzle`, `doctrine/dbal
 | 12 | 12.70.0 | 10.12 | 12.5 | 3.14 | 8.3 | 834 tests passed, 8 skipped |
 
 Every run gave 2,706 assertions and no PHPUnit warnings or deprecations. Full version details are in [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
+
+Since that matrix, the suite has grown to 847 tests (the onboarding failure cases and the fixes found in the sandbox). The new count was run on Laravel 10 / PHP 8.2 only. The matrix above has not been re-run yet.
 
 Of the 8 skipped tests, 7 drive the real ZATCA Java SDK and skip unless you point them at an SDK install (see [Running the package tests](#18-running-the-package-tests)). The other one checks Unix file permissions and skips on Windows, where these runs were made. So these results show the package code works on each Laravel version. They **do not** prove that real SDK signing works on each version. Real signing, and the SDK validator on invoices whose VAT the package calculated, were checked separately with the bundled SDK 3.4.8 on Laravel 10 / PHP 8.3 (see [`SDKs/README.md`](SDKs/README.md)). Run `composer smoke` and the onboarding sandbox steps on your own Laravel version before you go live.
 
@@ -423,7 +425,7 @@ ZATCA_B2B_ORG_UNIT_NAME=               # optional, defaults to ZATCA_ORG_UNIT_NA
 ZATCA_B2B_ENVIRONMENT=                 # optional, defaults to ZATCA_ENVIRONMENT
 ```
 
-`ZATCA_B2B_INVOICE_TYPE` is the CSR's 4-digit "invoice type". The first digit means "standard" and the second means "simplified". So `1000` means standard only, and `1100` means both. Which value ZATCA accepts for a separate B2B device is **not confirmed yet** in this project's sandbox tests, so check it during sandbox onboarding.
+`ZATCA_B2B_INVOICE_TYPE` is the CSR's 4-digit "invoice type". The first digit means "standard" and the second means "simplified". So `1000` means standard only, and `1100` means both. The developer-portal sandbox accepts `1000` for the separate B2B device (the sandbox suite onboards it). The sandbox is lenient, so confirm the value in simulation onboarding too.
 
 ### All other options
 
@@ -453,7 +455,7 @@ After any `.env` change in production, run `php artisan config:cache` and `php a
 
 | `ZATCA_ENVIRONMENT` | ZATCA name | Use it for | Legal invoices? |
 |---|---|---|---|
-| `sandbox` | Developer portal | Building and testing your code. ZATCA's docs give a fixed test OTP for it. | No |
+| `sandbox` | Developer portal | Building and testing your code. Use the test VAT number `399999999900003` and the test OTP `123345`. It is lenient: it accepts any OTP, issues a production certificate even before the compliance checks, and that certificate is a shared one that does not match your key. | No |
 | `simulation` | Simulation portal | A full rehearsal with your real company data and a real OTP from the simulation portal. | No |
 | `production` | Core | Real invoices. | **Yes** |
 
@@ -933,7 +935,7 @@ $debitNote->total_incl_vat;      // 23.00
 
 ### 9.5 Scenario 4: B2B invoice (Clearance)
 
-> B2B has not been verified against the real ZATCA sandbox yet. Do the checks in [Known limitations](#known-limitations) first.
+> B2B passes in ZATCA's developer-portal sandbox, but has not been run in simulation yet. Read [Known limitations](#known-limitations) first.
 
 **Situation:** Riyadh Office Supplies Co. (VAT `300000000000003`) buys 20 office chairs at 400.00 and 2 desks at 1,500.00. Company prices are quoted **before VAT**, so the mapper marks company invoices as exclusive (one optional line, shown below).
 
@@ -993,7 +995,7 @@ $invoice->cleared_xml_base64;   // ZATCA's stamped copy: this is the legal invoi
 $qr = app(SignedInvoiceXmlReader::class)->extractQrCode(base64_decode($invoice->cleared_xml_base64));
 ```
 
-Which XML and QR ZATCA expects you to give a B2B buyer is still an open item in this project (gate G-06). Taking them from `cleared_xml_base64` follows ZATCA's description of Clearance, but confirm it in the sandbox.
+In the developer-portal sandbox, `cleared_xml_base64` is the same document (same UUID) with a QR code added, as ZATCA describes Clearance. Whether that is exactly what you must give the buyer is still an open item in this project (gate G-06), so confirm it in simulation.
 
 **Expected response (fake example).** The cleaned body goes into `last_zatca_response` with the same keys as Reporting. ZATCA's `clearanceStatus` goes into the `clearance_status` column, and ZATCA's `clearedInvoice` goes into `cleared_xml_base64`:
 
@@ -1811,7 +1813,7 @@ Read the changelog. If a release adds migrations, run `zatca:check-source-unique
 - [ ] `APP_KEY` is backed up somewhere safe, and database backups are on
 - [ ] Alerts are wired for `ZatcaInvoiceNeedsAttention` / `zatca:status`
 - [ ] A calendar reminder to re-onboard before the certificate expires
-- [ ] `ZATCA_B2B_ENABLED=false` unless B2B has passed the sandbox checks in [Known limitations](#known-limitations)
+- [ ] `ZATCA_B2B_ENABLED=false` unless B2B has passed `composer test:sandbox` and a simulation rehearsal (see [Known limitations](#known-limitations))
 - [ ] One real sale reported successfully
 
 ---
@@ -1832,6 +1834,8 @@ Read the changelog. If a release adds migrations, run `zatca:check-source-unique
 | CSR generation fails | Bad or empty CSR fields, or non-English characters in `ZATCA_ORG_NAME` | Fill every CSR field, and keep the English name in `ZATCA_ORG_NAME` |
 | `Compliance CSID request failed` / invalid OTP | The OTP expired, is from the wrong portal, or was already used | Create a new OTP in the portal for the **same** environment |
 | Compliance test shows `ERROR` | Seller data or address is wrong | Read the printed errors, fix `.env`, run `zatca:health-check`, retry the step |
+| `No Compliance CSID on record ... Run zatca:onboard compliance first` | A `test-*` step was run before the compliance step | Run `zatca:onboard compliance --otp=...` first. No counter value was used. |
+| `No compliant ... invoice on record ... Run zatca:onboard test-invoice first` | A note check was run before the invoice check | Run `zatca:onboard test-invoice` first |
 | Production CSID fails | Compliance steps incomplete | Run all three `test-*` steps with PASS first |
 | `ZatcaCredentialsMissingException` / job fails at once | No production certificate for this EGS and environment | Finish onboarding in the current environment |
 | `ZATCA_VAT_PERCENTAGE must be a number` / `ZATCA_VAT_MODE must be "inclusive" or "exclusive"` | Invalid VAT setting in `.env` | Fix it (or remove it for the default), then `php artisan config:cache` |
@@ -1845,13 +1849,16 @@ Read the changelog. If a release adds migrations, run `zatca:check-source-unique
 | `has no items` / `has no lines` / `negative` | Empty or negative invoice data | Don't invoice orders without items. Use credit notes for refunds. |
 | Invoice in `manual_review` with BR-KSA codes | ZATCA rejected the content (for example line math, VAT number) | Fix the mapper or data, then [regenerate](#re-issuing-a-rejected-invoice-regeneration) |
 | `buyer VAT number must be 15 digits...` | Invalid buyer VAT | Ask the buyer for the correct VAT, or use `BuyerOtherId` (CR number) |
+| Warning `BR-KSA-F-13` ("Other Seller/Buyer ID ... invalid value") | A seller or buyer ID (for example a CR number) contains 8 equal digits (`00000000`) or 8 sequential digits (`12345678`). ZATCA treats it as a fake ID. | Use the real number. The invoice is accepted with a warning, but fix the data. |
 | `Standard document ... has no buyer / no supply date` | B2B data missing | Set `buyer` and `supplyDate` in the mapper |
 | Credit note: `not eligible` | Original not accepted yet, another note is in progress, or the original is fully credited | Check `CreditNoteEligibilityPolicy::verdict()->reason` |
 | Missing original invoice reference | Not possible from this API | Notes always take the reference from `$original`, so pass the right `ZatcaInvoice` |
 | Wrong previous hash / counter problems | The database was restored or edited, or two environments are mixed | Never edit `zatca_egs_states`. Check `zatca:inspect state`. Contact ZATCA if the chain broke. |
 | Stuck in `pending_reporting` | No queue worker, or no scheduler | Run `queue:work --queue=zatca` and the cron |
 | Many `manual_review` after a ZATCA outage | Retry budget used up | `zatca:requeue --only-transient` (schedule it hourly) |
-| Signing works in sandbox, fails in production | Production not onboarded, a different OTP or portal, or wrong environment value | Onboard again in production. Credentials are per environment. |
+| Signing works in sandbox, fails in production | Production not onboarded, a different OTP or portal, or wrong environment value. Also, the sandbox does not check the production signature (its production certificate is shared), so a signing problem can stay hidden there. | Onboard again in production. Credentials are per environment. Rehearse in simulation first. |
+| `composer test:sandbox` skips every test | `ZATCA_SDK_ROOT` / `ZATCA_SDK_EXECUTABLE` not set or wrong | Set both (see [Sandbox tests](#sandbox-tests)) |
+| `composer test:sandbox` fails at `generate-credentials` (the first SDK step) | Java is missing from the PATH, or the version is outside what the SDK supports (11 up to, not including, 15) | Install Java 11 and put it first on the PATH |
 | Permission denied in `storage/app/private/zatca` | Wrong owner | `chown -R www-data:www-data storage` |
 | `.env` change has no effect | Config cache or old workers | `php artisan config:cache` and `php artisan queue:restart` |
 
@@ -1862,16 +1869,26 @@ Read the changelog. If a release adds migrations, run `zatca:check-source-unique
 
 These come from the current code. They are not documentation mistakes.
 
-**B2B Clearance: verify in the ZATCA sandbox before going live**
+**What the developer-portal sandbox proved, and what it cannot**
 
-The B2B code and its routing are tested, but these points have not been confirmed against the real ZATCA sandbox yet (project gates G-02 to G-07):
-1. Which CSR invoice type (`ZATCA_B2B_INVOICE_TYPE`, `1000` or `1100`) ZATCA accepts for a separate B2B device.
-2. Clearance request headers (`Accept-Version`) and real response bodies, including warnings and `NOT_CLEARED`.
-3. Which hash continues the chain after a cleared invoice.
-4. Which XML and QR to give the buyer (the package stores ZATCA's `cleared_xml_base64`).
-5. What ZATCA returns when a timed-out (`clearance_in_doubt`) document is sent again.
+`composer test:sandbox` (see [Sandbox tests](#sandbox-tests)) runs onboarding and every B2C and B2B document against ZATCA's real developer-portal sandbox. All of them are accepted with no warnings. That confirms:
+- The API contract: endpoints, `Accept-Version: V2`, `Clearance-Status`, request bodies (including `uuid`), and Basic auth.
+- The XML passes ZATCA's checks: XSD, EN 16931 and KSA rules, for all six documents.
+- The B2B EGS onboards with `ZATCA_B2B_INVOICE_TYPE=1000`, and its compliance documents come back `CLEARED`.
+- ZATCA's cleared copy keeps the same UUID and adds a QR code.
 
-Onboard the B2B EGS in the sandbox, clear a few invoices, credit notes and debit notes, and check each point before you set `ZATCA_B2B_ENABLED=true` in production.
+The sandbox is lenient, so these still need ZATCA's **simulation** environment, with your real company data and OTP (project gates G-02 to G-07):
+1. **The production signature.** The sandbox's production certificate is shared and does not match your key, yet the sandbox accepts the invoice anyway. So the sandbox does not check it.
+2. **Refusals.** The sandbox accepts any OTP and issues a production certificate even before the compliance checks. These refusals are covered by local tests instead (`OnboardCommandFailuresTest`).
+3. Whether ZATCA really accepts `1000` (or wants `1100`) for a separate B2B device.
+4. Which hash continues the chain after a cleared invoice, and rejected documents in the chain. The sandbox accepted the package's chain, but may not check it strictly.
+5. Real `NOT_CLEARED` and warning responses for Clearance.
+6. Which XML and QR to give the B2B buyer (the package stores ZATCA's `cleared_xml_base64`).
+7. What ZATCA returns when a timed-out (`clearance_in_doubt`) document is sent again.
+
+Run `composer test:sandbox`, then onboard both EGSs in simulation and clear a few invoices, credit notes and debit notes there, before you set `ZATCA_B2B_ENABLED=true` in production.
+
+The package does not check that the three compliance checks passed before it asks for the production certificate. It relies on ZATCA to refuse. Real ZATCA does refuse, but the sandbox does not.
 
 **Tax and amounts**
 - `Z` and `E` are supported. Out-of-scope (`O`) is not, because ZATCA limits how it can be mixed with other categories on one document.
@@ -1879,7 +1896,7 @@ Onboard the B2B EGS in the sandbox, clear a few invoices, credit notes and debit
 - `quantity` is a whole number. Fractions (1.5 kg) are not supported.
 - No line-level discounts. Only document-level discounts (`ZatcaInvoiceDiscount`).
 - One price mode per invoice (`priceMode`), not per item.
-- The net unit price in the XML (`PriceAmount`) can have up to 6 decimals, so that quantity × price matches the line net. ZATCA's SDK 3.4.8 rules accept this (tested with the SDK's own validator), but ZATCA's live servers have not been tried with it yet. Check it in the sandbox.
+- The net unit price in the XML (`PriceAmount`) can have up to 6 decimals, so that quantity × price matches the line net. ZATCA's SDK 3.4.8 rules accept this (tested with the SDK's own validator), and so does the developer-portal sandbox (for example 2 × 19.99 VAT-inclusive, a net unit price of 17.385). Simulation and production have not been tried with it yet.
 - Payment means is always code `10` (cash).
 
 **Notes**
@@ -1888,7 +1905,7 @@ Onboard the B2B EGS in the sandbox, clear a few invoices, credit notes and debit
 
 **Other**
 - Laravel 12 is recommended. Laravel 9, 10 and 11 work but no longer get security fixes from Laravel, and need an explicit Composer override to install. See [Laravel compatibility](#laravel-compatibility).
-- Real ZATCA SDK signing is not covered by the default automated suite (the 2 real-SDK tests skip unless an SDK is configured). It was checked with SDK 3.4.8 on Laravel 10 / PHP 8.3 only, not on every Laravel version.
+- Real ZATCA SDK signing is not covered by the default automated suite (the 7 real-SDK tests skip unless an SDK is configured, and the sandbox tests are opt-in). It was checked with SDK 3.4.8 on Laravel 10 only (PHP 8.3 for the real-SDK tests, PHP 8.2 for the sandbox tests), not on every Laravel version.
 - Certificate renewal through the API is turned off. Renew by onboarding again.
 - No PDF generation.
 
@@ -1946,7 +1963,7 @@ composer install
 composer test
 ```
 
-The suite uses Orchestra Testbench and SQLite and never calls ZATCA or the real SDK. On PHP 8.2+, `composer install` picks Laravel 12. To run the suite against an older Laravel version, install into a separate copy of the package with `composer update --with "orchestra/testbench:^9.0" -W` (Laravel 11; use `^8.0` for 10 and `^7.0` for 9). Laravel 9–11 need the security override described in [Laravel compatibility](#laravel-compatibility), so keep that copy throwaway and never ship its settings.
+The suite uses Orchestra Testbench and SQLite and never calls ZATCA or the real SDK. It has 847 tests, 8 of them skipped (7 real-SDK tests plus a Unix-only test). The 13 [sandbox tests](#sandbox-tests) are separate. On PHP 8.2+, `composer install` picks Laravel 12. To run the suite against an older Laravel version, install into a separate copy of the package with `composer update --with "orchestra/testbench:^9.0" -W` (Laravel 11; use `^8.0` for 10 and `^7.0` for 9). Laravel 9–11 need the security override described in [Laravel compatibility](#laravel-compatibility), so keep that copy throwaway and never ship its settings.
 
 To also test the real SDK on your machine, set `ZATCA_SDK_EXECUTABLE` and `ZATCA_SDK_ROOT` and run `composer smoke` and `composer test`. To use the SDK bundled in this repository:
 
@@ -1965,6 +1982,67 @@ composer smoke
 ```bash
 composer test
 ```
+
+<a id="sandbox-tests"></a>
+### Sandbox tests (`composer test:sandbox`)
+
+These tests send real requests to **ZATCA's developer-portal sandbox** (`https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal`). They use the package exactly as an app does:
+- the `zatca:*` artisan commands for onboarding
+- an Eloquent order with its own `InvoiceSourceContract`
+- `GenerateZatcaInvoiceJob`, `CreditNoteIssuer` and `DebitNoteIssuer` on a sync queue
+
+Nothing is mocked. They are **opt-in** and are not part of `composer test`.
+
+**What you need**
+- Java 11 (the SDK supports 11 up to, not including, 15) on the PATH: `java -version`.
+- The ZATCA SDK. The copy bundled in [`SDKs/`](SDKs/) works.
+- Internet access to `gw-fatoora.zatca.gov.sa`.
+- Nothing from your company. The tests use ZATCA's test VAT number `399999999900003` and test OTP `123345`, and create fresh EGSs every time.
+
+**Run them**
+
+```bash
+export ZATCA_SDK_ROOT="$PWD/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8"
+```
+
+```bash
+export ZATCA_SDK_EXECUTABLE="$ZATCA_SDK_ROOT/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar"
+```
+
+```bash
+composer test:sandbox
+```
+
+`composer test:sandbox` sets `ZATCA_RUN_SANDBOX_TESTS=1` for you. Without it, or without the SDK paths, every sandbox test is skipped. A full run takes about 3 to 4 minutes, because each test onboards new EGSs.
+
+**What they check** (13 tests, in [`tests/Sandbox/`](tests/Sandbox/))
+
+| | B2C (Reporting) | B2B (Clearance) |
+|---|---|---|
+| Onboarding, step by step | `B2c/OnboardingTest` | `B2b/OnboardingTest` |
+| Repeating a compliance step | `B2c/OnboardingTest` | `B2b/OnboardingTest` |
+| Both EGSs side by side | | `B2b/OnboardingTest` |
+| Invoices (ICV and hash chain) | `B2c/InvoiceReportingTest` | `B2b/InvoiceClearanceTest` |
+| Full and partial credit notes | `B2c/CreditNoteTest` | `B2b/CreditNoteTest` |
+| Debit note | `B2c/DebitNoteTest` | `B2b/DebitNoteTest` |
+
+- **Onboarding** is checked after each of the six steps:
+  - the CSR contents
+  - the key, encrypted at rest
+  - the certificate issued for that key
+  - the OTP and auth headers
+  - each compliance document's ICV, hash chain and type code
+  - the production certificate reusing the same key
+- **Every document** must come back `REPORTED` or `CLEARED` with **no warnings**. A warning fails the test, because it marks data the package got wrong. The `BR-KSA-F-13` bug was found this way.
+- They also check:
+  - the endpoint and `Clearance-Status` header (B2C never goes to Clearance, and B2B never goes to Reporting)
+  - the totals
+  - the `BillingReference` on notes
+  - ZATCA's cleared copy of B2B documents
+
+**Safety.** The HTTP client in these tests refuses any address other than the developer-portal sandbox, so a test can never reach simulation or production. Tokens, secrets, CSRs and invoices are never printed.
+
+**Not covered by the sandbox.** The sandbox accepts any OTP. It also issues a production certificate even before the compliance checks, and that certificate is a shared one that does not match your key. So these tests do not prove the production signature, and they cannot test refusals. The refusals and wrong-order cases are covered by `tests/Feature/OnboardCommandFailuresTest.php` in the normal suite instead. Proving the signature needs a rehearsal in ZATCA's **simulation** environment (see [Known limitations](#known-limitations)).
 
 More operational detail is in [`docs/OPERATIONS.md`](docs/OPERATIONS.md), [`docs/SERVER_REQUIREMENTS.md`](docs/SERVER_REQUIREMENTS.md), [`docs/DATABASE.md`](docs/DATABASE.md) and [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 

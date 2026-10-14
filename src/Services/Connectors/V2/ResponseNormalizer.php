@@ -51,10 +51,11 @@ class ResponseNormalizer implements ResponseNormalizerInterface
 
     public function normalizeComplianceInvoice(ResponseInterface $response): ZatcaApiResult
     {
-        return $this->normalizeValidationShaped($response, 'POST /compliance/invoices', fn (array $v, ?string $reportingStatus) => new ComplianceInvoicePayload(
+        return $this->normalizeValidationShaped($response, 'POST /compliance/invoices', fn (array $v, ?string $reportingStatus, array $body) => new ComplianceInvoicePayload(
             reportingStatus: (string) $reportingStatus,
             validationWarnings: array_column($v['warningMessages'] ?? [], 'message'),
-            validationErrors: array_column($v['errorMessages'] ?? [], 'message'),
+            validationErrors: array_column($this->errorMessagesOf($v), 'message'),
+            clearanceStatus: isset($body['clearanceStatus']) && is_string($body['clearanceStatus']) ? $body['clearanceStatus'] : null,
         ));
     }
 
