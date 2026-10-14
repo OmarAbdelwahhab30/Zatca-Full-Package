@@ -15,11 +15,13 @@ use Zatca\Services\Security\ZatcaSanitizer;
 use Zatca\Services\Security\ZatcaSigningKeyProvider;
 use Zatca\State\EgsRegistry;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /** Proves the package boots and wires all its bindings on a bare Laravel app — not just inside the host. */
 class ServiceProviderTest extends TestCase
 {
     /** @dataProvider bindingsProvider */
+    #[DataProvider('bindingsProvider')]
     public function test_it_resolves_every_core_binding(string $abstract): void
     {
         $this->assertInstanceOf($abstract, $this->app->make($abstract));

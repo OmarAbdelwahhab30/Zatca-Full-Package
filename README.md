@@ -150,8 +150,8 @@ You never edit an accepted invoice. You issue a note that points to it. A note a
 
 | What | Version / note |
 |---|---|
-| PHP | 8.1 or newer |
-| Laravel | **9 or 10** (`illuminate/*` `^9.0 \| ^10.0`). Laravel 11 and 12 are not supported yet. |
+| PHP | 8.1 or newer for Laravel 9 and 10. 8.2 or newer for Laravel 11 and 12 (Laravel's own rule). |
+| Laravel | **12** is recommended. 9, 10 and 11 still work (Legacy Compatibility). See [Laravel compatibility](#laravel-compatibility) below. |
 | PHP extensions | `openssl`, `dom`, `mbstring`, `ctype`, `json`, plus your database's PDO driver |
 | Java | Java 11 (the ZATCA SDK supports Java 11 to 15). `java` must be on the `PATH` of the user that runs PHP and your queue workers. |
 | ZATCA Java SDK | Version **3.4.8**, downloaded from ZATCA's developer portal |
@@ -160,6 +160,56 @@ You never edit an accepted invoice. You issue a note that points to it. A note a
 | Scheduler | Laravel scheduler (cron) for the retry sweep and certificate checks |
 
 Composer dependencies are installed for you: `guzzlehttp/guzzle`, `doctrine/dbal`, `symfony/process`, `nesbot/carbon`.
+
+### Laravel compatibility
+
+"Works" and "safe" are two different questions. The table answers both.
+
+- **Technical compatibility:** the package installs and its test suite passes on that Laravel version.
+- **Security support:** Laravel itself still ships security fixes for that version.
+
+| Laravel | Level | Technical compatibility | Security support from Laravel | Installs with Composer's default settings? |
+|---|---|---|---|---|
+| **12** | **Recommended** | ✅ Tested | ✅ Yes | ✅ Yes |
+| 11 | Legacy Compatibility | ✅ Tested | ❌ No. Known advisories with no fixed 11.x release | ❌ No (see below) |
+| 10 | Legacy Compatibility | ✅ Tested | ❌ No. Known advisories with no fixed 10.x release | ❌ No (see below) |
+| 9 | Legacy Compatibility | ✅ Tested | ❌ No. Known advisories with no fixed 9.x release | ❌ No (see below) |
+
+**Use Laravel 12 for new production projects.** Laravel 9, 10 and 11 stay supported by this package so that existing apps keep working while they plan their upgrade. They are not removed just because Laravel stopped maintaining them.
+
+**What was tested (2026-10-14, SQLite):** the full package suite ran in a clean install for each Laravel version, on each PHP version listed.
+
+| Laravel | Framework | Testbench | PHPUnit | Carbon | PHP versions run | Result on each PHP version |
+|---|---|---|---|---|---|---|
+| 9 | 9.52.22 | 7.58 | 9.6 | 2.73 | 8.1, 8.3 | 703 tests passed, 3 skipped |
+| 10 | 10.50.3 | 8.39 | 10.5 | 2.73 | 8.2, 8.3 | 703 tests passed, 3 skipped |
+| 11 | 11.57.0 | 9.18 | 11.5 | 3.14 | 8.2, 8.3 | 703 tests passed, 3 skipped |
+| 12 | 12.70.0 | 10.12 | 11.5 | 3.14 | 8.2, 8.3, 8.4 | 703 tests passed, 3 skipped |
+| 12 | 12.70.0 | 10.12 | 12.5 | 3.14 | 8.3 | 703 tests passed, 3 skipped |
+
+Every run gave 2,220 assertions and no PHPUnit warnings or deprecations. Full version details are in [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
+
+The 3 skipped tests are the ones that drive the real ZATCA Java SDK. They skip unless you point them at an SDK install (see [Running the package tests](#18-running-the-package-tests)). So these results show the package code works on each Laravel version. They **do not** prove that real SDK signing works on each version. Run `composer smoke` and the onboarding sandbox steps on your own Laravel version before you go live.
+
+The package's own tests run on PHPUnit 9 to 12. Each data provider and group is written twice: as a PHP attribute (`#[DataProvider]`, `#[Group]`) for PHPUnit 10+, and as a docblock tag (`@dataProvider`, `@group`) for PHPUnit 9, which Laravel 9 needs. Keep both when you add a test.
+
+**Known Laravel security advisories (checked 2026-10-14 with `composer audit`):** the newest release of each legacy version still has these open. They are bugs in Laravel, not in this package.
+
+| Advisory | Severity | Laravel 9 | Laravel 10 | Laravel 11 |
+|---|---|---|---|---|
+| CRLF injection in the default `email` validation rule (CVE-2026-48019) | High | ✅ affected | ✅ affected | ✅ affected |
+| Temporary signed URL path confusion | Medium | ✅ affected | ✅ affected | ✅ affected |
+| XSS on the debug error page (CVE-2026-102279) | Low | ✅ affected | ✅ affected | ✅ affected |
+| File validation bypass (CVE-2025-27515) | Medium | ✅ affected | — | — |
+
+Laravel 12.70.0 had no open advisories on the same date. New advisories can appear at any time; run `composer audit` in your own app to see the current list.
+
+**Installing on Laravel 9, 10 or 11.** Composer 2.9 and newer refuses to install a package version that has an open security advisory. Because every 9.x, 10.x and 11.x release has one, `composer require` in a Laravel 9–11 app will fail with *"these were not loaded, because they are affected by security advisories"*. This package cannot change that, and it does not turn the check off for you. If your app must stay on Laravel 9–11 for now, your app's owner has to decide to accept the risk and override the check in **the app's own** `composer.json`:
+
+- Prefer ignoring only the advisory IDs that Composer printed, under `config.audit.ignore`, after reading what each one means for your app.
+- Avoid turning blocking off completely (`config.audit.block-insecure: false`). It also hides advisories in every other package.
+
+Treat this as temporary and plan the move to Laravel 12.
 
 ---
 
@@ -1512,7 +1562,7 @@ It takes no options and is read-only. It lists sales that have documents on more
 
 ### First-time setup (once per server)
 
-1. **Server:** PHP 8.1+ with `openssl`, `dom`, `mbstring`, `ctype`, `json` and your PDO driver, Java 11, the ZATCA SDK folder, Supervisor (or similar), and cron.
+1. **Server:** PHP 8.1+ (8.2+ on Laravel 11 and 12) with `openssl`, `dom`, `mbstring`, `ctype`, `json` and your PDO driver, Java 11, the ZATCA SDK folder, Supervisor (or similar), and cron.
 2. **Network:** the server must reach `https://gw-fatoora.zatca.gov.sa` on port 443. Allow it in your firewall or proxy.
 3. **Install:**
 
@@ -1646,7 +1696,8 @@ Read the changelog. If a release adds migrations, run `zatca:check-source-unique
 
 | Problem | Reason | Fix |
 |---|---|---|
-| `composer require` fails on Laravel 11/12 | The package supports Laravel 9 and 10 only | Use Laravel 9 or 10 |
+| `composer require` fails on Laravel 9, 10 or 11 with "affected by security advisories" | Every release of those Laravel versions has open security advisories, and Composer blocks them by default | Upgrade the app to Laravel 12 (recommended), or have the app's owner accept the risk as described in [Laravel compatibility](#laravel-compatibility) |
+| `composer require` fails on Laravel 11 or 12 with a PHP version error | Laravel 11 and 12 need PHP 8.2 or newer | Upgrade PHP to 8.2+ |
 | `Call to undefined function openssl_x509_parse` (or similar) | Missing PHP extension | Install or enable `openssl` / `dom` / `mbstring` |
 | `ZATCA_SDK_EXECUTABLE [...] does not point to an existing SDK jar file` | Wrong path | Use the absolute path to the jar in `Apps/` |
 | `ZATCA_SDK_ROOT [...] does not point to an existing directory` | Wrong path | Point to the folder with `Apps/`, `Configuration/`, `Data/` |
@@ -1709,7 +1760,8 @@ Onboard the B2B EGS in the sandbox, clear a few invoices, credit notes and debit
 - One credit or debit note in progress per invoice at a time.
 
 **Other**
-- Laravel 9 and 10 only.
+- Laravel 12 is recommended. Laravel 9, 10 and 11 work but no longer get security fixes from Laravel, and need an explicit Composer override to install. See [Laravel compatibility](#laravel-compatibility).
+- Real ZATCA SDK signing is not covered by the automated suite (those 3 tests skip by default). It is not verified on every Laravel version.
 - Certificate renewal through the API is turned off. Renew by onboarding again.
 - No PDF generation.
 
@@ -1752,7 +1804,9 @@ composer install
 composer test
 ```
 
-The suite uses Orchestra Testbench and SQLite and never calls ZATCA or the real SDK. To also test the real SDK on your machine, set `ZATCA_SDK_EXECUTABLE` and `ZATCA_SDK_ROOT` and run:
+The suite uses Orchestra Testbench and SQLite and never calls ZATCA or the real SDK. On PHP 8.2+, `composer install` picks Laravel 12. To run the suite against an older Laravel version, install into a separate copy of the package with `composer update --with "orchestra/testbench:^9.0" -W` (Laravel 11; use `^8.0` for 10 and `^7.0` for 9). Laravel 9–11 need the security override described in [Laravel compatibility](#laravel-compatibility), so keep that copy throwaway and never ship its settings.
+
+To also test the real SDK on your machine, set `ZATCA_SDK_EXECUTABLE` and `ZATCA_SDK_ROOT` and run:
 
 ```bash
 composer smoke

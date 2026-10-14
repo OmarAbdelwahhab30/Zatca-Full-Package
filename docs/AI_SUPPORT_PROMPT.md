@@ -28,7 +28,7 @@ PART 1 — THE SYSTEM YOU ARE DEBUGGING
 Assume you cannot see the source code. These are the facts about the package.
 Treat them as ground truth. If you need a file, ask for it by path.
 
-Package: "zatca/zatca", PHP namespace Zatca\, PHP 8.1+, Laravel 9/10.
+Package: "zatca/zatca", PHP namespace Zatca\, Laravel 9–12 (12 recommended; 9–11 are Legacy Compatibility with known Laravel security advisories), PHP 8.1+ (8.2+ on Laravel 11/12).
 Installed as a local Composer path repository inside the host application.
 
 SCOPE — what it does and does NOT do:
@@ -145,8 +145,7 @@ INTEGRATION STATUS (verified 2026-08-05 — RE-CHECK before trusting):
     - Is GenerateZatcaInvoiceJob actually dispatched after a successful payment?
     - Is a queue worker running on the "zatca" queue?
     - Are the scheduled commands registered (report-pending, requeue --only-transient,
-      repair-generated-documents, certificate:check, prune-submission-attempts,
-      prune-sdk-files)?
+      certificate:check, prune-submission-attempts, prune-sdk-files)?
   As of the date above, none of these were present in the host app.
 
 API ENDPOINTS USED (all POST, base URL depends on environment):
@@ -171,7 +170,6 @@ DIAGNOSTIC COMMANDS AVAILABLE:
                                                trust the exit code alone)
   php artisan zatca:report-pending            (retries pending/retrying only, never manual_review)
   php artisan zatca:requeue --dry-run         (shows which stuck invoices would be restarted)
-  php artisan zatca:repair-generated-documents (queues draft completion + eligible regeneration)
   php artisan zatca:prune-sdk-files --dry-run  (safe: shows leftover files, deletes nothing)
   Docs in the repo: packages/zatca/README.md, packages/zatca/docs/OPERATIONS.md,
   packages/zatca/docs/DATABASE.md, packages/zatca/docs/COMPATIBILITY.md.

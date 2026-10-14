@@ -20,6 +20,8 @@ use Zatca\Services\Certificate\CertificateLifecycleManager;
 use Zatca\Services\Connectors\ConnectorFactory;
 use Zatca\Services\Security\ZatcaCredentialStore;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Which rows each B2C recovery path picks up today.
@@ -35,6 +37,7 @@ use Zatca\Tests\TestCase;
  *
  * @group characterization
  */
+#[Group('characterization')]
 class SelectionCharacterizationTest extends TestCase
 {
     use CreatesInvoiceRows;
@@ -113,6 +116,7 @@ class SelectionCharacterizationTest extends TestCase
     }
 
     /** @dataProvider requeueExclusions */
+    #[DataProvider('requeueExclusions')]
     public function test_requeue_by_id_still_refuses(string $case, array $overrides): void
     {
         Bus::fake();

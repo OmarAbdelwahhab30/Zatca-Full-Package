@@ -10,6 +10,8 @@ use Zatca\DTOs\BuyerParty;
 use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\Support\InvoiceDataSnapshot;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Blueprint P20: the structured buyer and supply date, and proof that a Simplified
@@ -17,11 +19,13 @@ use Zatca\Tests\TestCase;
  *
  * @group golden
  */
+#[Group('golden')]
 class BuyerPartyTest extends TestCase
 {
     use GoldenDocuments;
 
     /** @dataProvider schemes */
+    #[DataProvider('schemes')]
     public function test_every_br_ksa_14_scheme_is_accepted(string $scheme): void
     {
         $this->assertSame($scheme, (new BuyerOtherId($scheme, 'ABC123'))->scheme);
@@ -33,6 +37,7 @@ class BuyerPartyTest extends TestCase
     }
 
     /** @dataProvider badSchemes */
+    #[DataProvider('badSchemes')]
     public function test_an_unknown_scheme_is_refused(string $scheme): void
     {
         $this->expectException(InvalidArgumentException::class);
@@ -67,6 +72,7 @@ class BuyerPartyTest extends TestCase
     }
 
     /** @dataProvider documents */
+    #[DataProvider('documents')]
     public function test_simplified_output_ignores_buyer_and_supply_date(string $case): void
     {
         $document = self::goldenDocuments()[$case];

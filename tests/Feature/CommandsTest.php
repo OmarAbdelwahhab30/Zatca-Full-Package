@@ -3,11 +3,13 @@
 namespace Zatca\Tests\Feature;
 
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /** Proves every documented artisan command is actually registered by the package. */
 class CommandsTest extends TestCase
 {
     /** @dataProvider commandProvider */
+    #[DataProvider('commandProvider')]
     public function test_command_is_registered(string $command): void
     {
         $this->assertArrayHasKey($command, $this->app[\Illuminate\Contracts\Console\Kernel::class]->all());
