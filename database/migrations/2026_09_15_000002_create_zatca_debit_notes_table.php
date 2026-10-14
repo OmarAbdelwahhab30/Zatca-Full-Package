@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Schema;
  *  - There is no `type` (full/partial). A Credit Note consumes lines of the
  *    original and so must say how many; a Debit Note ADDS a charge and consumes
  *    nothing, so "full" and "partial" have no meaning here.
- *  - `reason_type` replaces it: the four approved reasons (additional_course,
+ *  - `reason_type` replaces it: the four approved reasons (additional_item,
  *    price_adjustment, vat_adjustment, other). `reason` keeps its Credit Note
  *    meaning — the KSA-10 / BR-KSA-17 free-text explanation that goes into the
  *    signed XML — and is mandatory for every reason type, not only `other`
@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\Schema;
  * counted — the same BR-09 rule Credit Notes follow.
  *
  * Critically, acceptance means ZATCA accepted the DOCUMENT. It does not mean the
- * student has paid the extra amount; nothing here or downstream ever sets
+ * customer has paid the extra amount; nothing here or downstream ever sets
  * transactions.is_paid.
  */
 return new class extends Migration
@@ -48,7 +48,7 @@ return new class extends Migration
             $table->string('original_source_reference')->index(); // e.g. "payment:412" — root reference
             $table->string('billing_reference_id'); // original XML cbc:ID, frozen at issuance
 
-            $table->string('reason_type'); // additional_course | price_adjustment | vat_adjustment | other
+            $table->string('reason_type'); // additional_item | price_adjustment | vat_adjustment | other
             $table->text('reason'); // KSA-10 / BR-KSA-17, max 1000 chars enforced at request layer
             $table->json('document_snapshot'); // InvoiceDataSnapshot v2
 

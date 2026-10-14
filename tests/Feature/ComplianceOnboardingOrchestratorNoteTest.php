@@ -66,7 +66,12 @@ class ComplianceOnboardingOrchestratorNoteTest extends TestCase
         $this->assertSame('pass', $noteResult['status']);
 
         $noteDocument = ZatcaComplianceDocument::where('document_type', 'simplified_credit_note')->sole();
-        $this->assertSame($invoiceDocument->document_reference, $noteDocument->document_reference);
+        // The note has its own number and bills against the invoice's number.
+        $this->assertNotSame($invoiceDocument->document_reference, $noteDocument->document_reference);
+        $this->assertStringContainsString(
+            '<cac:BillingReference><cac:InvoiceDocumentReference><cbc:ID>'.$invoiceDocument->document_reference.'</cbc:ID>',
+            $noteDocument->unsigned_xml
+        );
 
         $signedXml = $sdk->xmlSeen[1];
         $this->assertStringContainsString('<cbc:InvoiceTypeCode name="0200000">381</cbc:InvoiceTypeCode>', $signedXml);
@@ -93,7 +98,12 @@ class ComplianceOnboardingOrchestratorNoteTest extends TestCase
         $this->assertSame('pass', $noteResult['status']);
 
         $noteDocument = ZatcaComplianceDocument::where('document_type', 'simplified_debit_note')->sole();
-        $this->assertSame($invoiceDocument->document_reference, $noteDocument->document_reference);
+        // The note has its own number and bills against the invoice's number.
+        $this->assertNotSame($invoiceDocument->document_reference, $noteDocument->document_reference);
+        $this->assertStringContainsString(
+            '<cac:BillingReference><cac:InvoiceDocumentReference><cbc:ID>'.$invoiceDocument->document_reference.'</cbc:ID>',
+            $noteDocument->unsigned_xml
+        );
 
         $signedXml = $sdk->xmlSeen[1];
         $this->assertStringContainsString('<cbc:InvoiceTypeCode name="0200000">383</cbc:InvoiceTypeCode>', $signedXml);
@@ -129,7 +139,11 @@ class ComplianceOnboardingOrchestratorNoteTest extends TestCase
         $orchestrator->testDebitNote(self::EGS);
 
         foreach (['simplified_credit_note', 'simplified_debit_note'] as $type) {
-            $this->assertSame($simplified->document_reference, ZatcaComplianceDocument::where('document_type', $type)->sole()->document_reference, $type);
+            $this->assertStringContainsString(
+                '<cac:InvoiceDocumentReference><cbc:ID>'.$simplified->document_reference.'</cbc:ID>',
+                ZatcaComplianceDocument::where('document_type', $type)->sole()->unsigned_xml,
+                $type
+            );
         }
     }
 

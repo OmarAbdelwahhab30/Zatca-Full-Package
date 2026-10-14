@@ -97,11 +97,11 @@ trait GoldenDocuments
                 'cn-uuid-0003',
                 14,
             ),
-            'debit_additional_course' => self::noteCase(
+            'debit_additional_item' => self::noteCase(
                 SimplifiedDebitNoteXmlGenerator::class,
                 (new DebitNoteDataFactory)->make(
                     $single,
-                    [new DebitNoteLineInput('Additional course: Data Analysis', 1, 300.00, 15.0, 300.00, 45.00, null, 55)],
+                    [new DebitNoteLineInput('Additional course: Data Analysis', 1, 345.00, courseId: 55)],
                     'DN-2026-000001',
                     'order:42',
                     'Additional course added to the enrolment',
@@ -114,7 +114,7 @@ trait GoldenDocuments
                 SimplifiedDebitNoteXmlGenerator::class,
                 (new DebitNoteDataFactory)->make(
                     $bundle,
-                    [new DebitNoteLineInput('Course A - price increase', 1, 43.48, 15.0, 43.48, 6.52, 0)],
+                    [new DebitNoteLineInput('Course A - price increase', 1, 50.00, originalLineIndex: 0)],
                     'DN-2026-000002',
                     'order:108',
                     'Price increase agreed with the student',

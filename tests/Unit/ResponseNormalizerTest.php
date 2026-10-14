@@ -86,6 +86,26 @@ class ResponseNormalizerTest extends TestCase
         $this->assertSame(409, $result->httpStatus);
     }
 
+    /** Shape captured from the developer-portal sandbox on 2026-10-15 for a Standard compliance invoice. */
+    public function test_a_standard_compliance_document_reports_its_clearance_outcome(): void
+    {
+        $body = '{"validationResults":{"infoMessages":[{"type":"INFO","code":"XSD_ZATCA_VALID","category":"XSD validation","message":"Complied with UBL 2.1 standards in line with ZATCA specifications","status":"PASS"}],"warningMessages":[],"errorMessages":[],"status":"PASS"},"reportingStatus":null,"clearanceStatus":"CLEARED","qrSellertStatus":null,"qrBuyertStatus":null}';
+        $result = $this->normalizer->normalizeComplianceInvoice(new Response(200, [], $body));
+
+        $this->assertTrue($result->successful);
+        $this->assertSame('CLEARED', $result->payload->clearanceStatus);
+        $this->assertSame('CLEARED', $result->payload->outcome());
+    }
+
+    public function test_a_simplified_compliance_document_reports_its_reporting_outcome(): void
+    {
+        $body = '{"validationResults":{"infoMessages":[],"warningMessages":[],"errorMessages":[],"status":"PASS"},"reportingStatus":"REPORTED","clearanceStatus":null,"qrSellertStatus":null,"qrBuyertStatus":null}';
+        $result = $this->normalizer->normalizeComplianceInvoice(new Response(200, [], $body));
+
+        $this->assertNull($result->payload->clearanceStatus);
+        $this->assertSame('REPORTED', $result->payload->outcome());
+    }
+
     public function test_it_normalizes_an_invalid_otp_error(): void
     {
         $body = '{"errors":[{"code":"Invalid-OTP","message":"The provided OTP is invalid"}]}';

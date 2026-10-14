@@ -13,7 +13,9 @@
             "unit_price": 43.48,
             "vat_rate": 15.0,
             "line_total_excl_vat": 43.48,
-            "vat_amount": 6.52
+            "vat_amount": 6.52,
+            "supplied_price": "50.00",
+            "price_mode": "inclusive"
         }
     ],
     "total_excl_vat": 43.48,

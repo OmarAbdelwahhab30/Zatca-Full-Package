@@ -46,7 +46,7 @@ class CreditNoteLedger
         // original_line_index, and keying it by one would let it collide with, or be
         // mistaken for, a claim on a real invoice line. A price adjustment names the
         // source it adjusts in those same columns but claims none of it, so it is kept
-        // out of both maps — the course it adjusts stays available.
+        // out of both maps — the item it adjusts stays available.
         $activeLines = $active
             ->filter(fn (ZatcaCreditNoteLine $line) => $line->isInvoiceLineSource())
             ->keyBy('original_line_index');
@@ -61,7 +61,7 @@ class CreditNoteLedger
         //
         // A source with an adjustment in flight is held — 'reserved', exactly like one
         // with a cancellation in flight — until that note is accepted or cancelled.
-        // Otherwise a course could be cancelled for what is left after an adjustment
+        // Otherwise an item could be cancelled for what is left after an adjustment
         // ZATCA later rejects, and the rejected amount would never be creditable again:
         // only an ACCEPTED adjustment may ever reduce what a later note credits (BR-09).
         $lineAdjustments = [];
@@ -88,7 +88,7 @@ class CreditNoteLedger
                 continue;
             }
 
-            // Kept per source so an admin screen can show ONE course's own history,
+            // Kept per source so an admin screen can show ONE item's own history,
             // rather than leaving the admin to pick it out of the whole invoice's.
             $sourceAdjustments[$key][] = [
                 'document_type' => 'credit_note',
@@ -188,7 +188,7 @@ class CreditNoteLedger
                 default => 'reserved',
             };
 
-            // The note giving this line back, so a course's history can show the increase
+            // The note giving this line back, so an item's history can show the increase
             // reversed rather than still standing. In flight counts too, on the same terms
             // as a price adjustment in flight: it already holds the line.
             if ($claim !== null) {
@@ -236,9 +236,9 @@ class CreditNoteLedger
     }
 
     /**
-     * How much of each available course a NEW price adjustment may still take — the
-     * amount it must stay strictly below, so the course always keeps a value a later
-     * cancellation can credit. A course held by an adjustment in flight is not
+     * How much of each available item a NEW price adjustment may still take — the
+     * amount it must stay strictly below, so the item always keeps a value a later
+     * cancellation can credit. An item held by an adjustment in flight is not
      * available, so by the time a second one is taken the first has been accepted.
      *
      * An original line on a bundle is valued at its worst case: its own price minus
@@ -327,7 +327,7 @@ class CreditNoteLedger
      *
      * A debit note line that only raised a selected source's price is added to the
      * selection here, whether or not the caller asked for it: it is part of what that
-     * course cost, so crediting the course has to hand it back too. Full already takes
+     * item cost, so crediting the item has to hand it back too. Full already takes
      * every available line, so this only ever adds to a Partial one.
      *
      * @param  int[]  $lineIndexes  ignored for ZatcaCreditNoteType::Full
@@ -379,11 +379,11 @@ class CreditNoteLedger
     /**
      * The selected debit note lines plus every available one that merely raised the
      * price of something already being credited — the rule an admin should not have to
-     * remember (a course credited without its price increase leaves that increase
-     * standing against an invoice the student no longer has).
+     * remember (an item credited without its price increase leaves that increase
+     * standing against an invoice the customer no longer has).
      *
-     * Walked as a queue: a price adjustment on a course an earlier debit note added is
-     * attached to that debit note line, so selecting the course has to reach it too.
+     * Walked as a queue: a price adjustment on an item an earlier debit note added is
+     * attached to that debit note line, so selecting the item has to reach it too.
      *
      * @param  int[]  $selected
      * @param  int[]  $selectedDebit

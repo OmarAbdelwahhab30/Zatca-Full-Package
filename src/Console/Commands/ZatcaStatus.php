@@ -33,6 +33,12 @@ class ZatcaStatus extends Command
     /** @var array<int, array{check: string, level: string, detail: string}> */
     private array $results = [];
 
+    /** Stopped and waiting for a person: reporting and clearance alike. */
+    private const NEEDS_HUMAN = ['manual_review', 'clearance_manual_review', 'clearance_rejected'];
+
+    /** Signed and still on their way to ZATCA. */
+    private const WAITING = ['pending_reporting', 'retrying', 'pending_clearance', 'clearance_retrying', 'clearance_in_doubt'];
+
     public function handle(EgsRegistry $registry): int
     {
         $this->checkManualReview();
@@ -94,7 +100,7 @@ class ZatcaStatus extends Command
         }
 
         $count = ZatcaInvoice::query()
-            ->where('status', ZatcaInvoiceStatus::ManualReview->value)
+            ->whereIn('status', self::NEEDS_HUMAN)
             ->count();
 
         if ($count === 0) {
@@ -104,7 +110,7 @@ class ZatcaStatus extends Command
         }
 
         $oldest = ZatcaInvoice::query()
-            ->where('status', ZatcaInvoiceStatus::ManualReview->value)
+            ->whereIn('status', self::NEEDS_HUMAN)
             ->orderBy('created_at')
             ->first(['id', 'created_at', 'last_error']);
 
@@ -127,7 +133,7 @@ class ZatcaStatus extends Command
         $cutoff = CarbonImmutable::now()->subMinutes($staleMinutes);
 
         $count = ZatcaInvoice::query()
-            ->whereIn('status', [ZatcaInvoiceStatus::PendingReporting->value, ZatcaInvoiceStatus::Retrying->value])
+            ->whereIn('status', self::WAITING)
             ->where('created_at', '<', $cutoff)
             ->count();
 

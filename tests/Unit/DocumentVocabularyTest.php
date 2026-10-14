@@ -15,6 +15,7 @@ use Zatca\Services\Invoice\XmlGenerators\V2\StandardCreditNoteXmlGenerator;
 use Zatca\Services\Invoice\XmlGenerators\V2\StandardDebitNoteXmlGenerator;
 use Zatca\Services\Invoice\XmlGenerators\V2\StandardInvoiceXmlGenerator;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * The document-type and status vocabulary B2B added before anything writes it
@@ -24,6 +25,7 @@ use Zatca\Tests\TestCase;
 class DocumentVocabularyTest extends TestCase
 {
     /** @dataProvider documentTypes */
+    #[DataProvider('documentTypes')]
     public function test_document_type_table(
         Type $type,
         string $value,
@@ -71,6 +73,7 @@ class DocumentVocabularyTest extends TestCase
     }
 
     /** @dataProvider statuses */
+    #[DataProvider('statuses')]
     public function test_status_table(Status $status, bool $clearance, bool $terminalSuccess, bool $retryable, bool $clearanceRetryable): void
     {
         $this->assertSame($clearance, $status->isClearanceState(), 'isClearanceState');
@@ -128,6 +131,7 @@ class DocumentVocabularyTest extends TestCase
     /**
      * @dataProvider standardTypes
      */
+    #[DataProvider('standardTypes')]
     public function test_standard_types_resolve_to_their_standard_generators(Type $type): void
     {
         $generator = (new XmlGeneratorFactory)->make($type);

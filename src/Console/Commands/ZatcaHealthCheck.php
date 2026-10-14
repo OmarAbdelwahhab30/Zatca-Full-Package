@@ -9,6 +9,7 @@ use Zatca\Services\SDK\ZatcaSdkFingerprint;
 use Zatca\Services\SDK\ZatcaSdkRuntimeManager;
 use Zatca\Services\Security\ZatcaCredentialStore;
 use Zatca\State\EgsRegistry;
+use Zatca\Support\VatSettings;
 use Illuminate\Console\Command;
 
 /**
@@ -48,6 +49,10 @@ class ZatcaHealthCheck extends Command
             $healthy = false;
         }
 
+        if (! $this->checkVatSettings()) {
+            $healthy = false;
+        }
+
         if (! $this->checkEgsSet($registry)) {
             $healthy = false;
         }
@@ -76,6 +81,26 @@ class ZatcaHealthCheck extends Command
         }
 
         return $healthy ? self::SUCCESS : self::FAILURE;
+    }
+
+    /** The VAT rate and price mode every new invoice is calculated with. */
+    private function checkVatSettings(): bool
+    {
+        try {
+            $vat = VatSettings::fromConfig();
+        } catch (ZatcaException $e) {
+            $this->error('[FAIL] '.$e->getMessage());
+
+            return false;
+        }
+
+        $this->info(sprintf(
+            '[OK] VAT: %s%% for standard-rated items, prices are VAT-%s (ZATCA_VAT_PERCENTAGE, ZATCA_VAT_MODE).',
+            rtrim(rtrim(number_format($vat->percentage, 2, '.', ''), '0'), '.'),
+            $vat->mode->value,
+        ));
+
+        return true;
     }
 
     /**
@@ -107,7 +132,6 @@ class ZatcaHealthCheck extends Command
             'additional number' => $c->additionalNumber,
             'city' => $c->city,
             'postal code' => $c->postalCode,
-            'VAT percentage' => $c->vatPercentage,
         ];
 
         foreach ($registry->identifiers() as $egs) {

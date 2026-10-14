@@ -3,6 +3,8 @@
 namespace Zatca\Tests\Unit\Golden;
 
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Freezes today's unsigned Simplified (B2C, Reporting) XML byte-for-byte.
@@ -29,6 +31,7 @@ use Zatca\Tests\TestCase;
  *
  * @group golden
  */
+#[Group('golden')]
 class SimplifiedXmlGoldenTest extends TestCase
 {
     use GoldenDocuments;
@@ -36,6 +39,7 @@ class SimplifiedXmlGoldenTest extends TestCase
     public const FIXTURE_DIR = __DIR__.'/../../Fixtures/Golden/V2/simplified';
 
     /** @dataProvider documents */
+    #[DataProvider('documents')]
     public function test_generated_xml_matches_the_golden_fixture(string $fixture): void
     {
         $xml = self::normalise(self::goldenXml(self::goldenDocuments()[$fixture]));

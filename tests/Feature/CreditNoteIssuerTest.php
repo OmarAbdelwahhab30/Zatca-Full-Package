@@ -218,23 +218,22 @@ class CreditNoteIssuerTest extends TestCase
     {
         return new class implements \Zatca\Contracts\InvoiceSourceContract
         {
-            public function toInvoiceData(mixed $source, string $egsIdentifier): \Zatca\DTOs\ZatcaInvoiceData
+            public function toInvoiceInput(mixed $source, string $egsIdentifier): \Zatca\DTOs\ZatcaInvoiceInput
             {
-                return new \Zatca\DTOs\ZatcaInvoiceData(
+                return new \Zatca\DTOs\ZatcaInvoiceInput(
                     egsIdentifier: $egsIdentifier,
                     sourceReference: $this->sourceReference($source),
                     buyerName: 'Original Buyer',
                     buyerVatNumber: null,
                     issueDateTime: new \DateTimeImmutable('2026-09-01T10:00:00+03:00'),
                     currency: 'SAR',
-                    lines: [
-                        new \Zatca\DTOs\ZatcaInvoiceLine('Course A', 1, 500.00, 15.0, 500.00, 75.00),
-                        new \Zatca\DTOs\ZatcaInvoiceLine('Course B', 1, 300.00, 15.0, 300.00, 45.00),
-                        new \Zatca\DTOs\ZatcaInvoiceLine('Course C', 1, 230.00, 15.0, 230.00, 34.50),
+                    // Priced before VAT on this invoice, which also exercises the per-invoice mode override.
+                    items: [
+                        new \Zatca\DTOs\ZatcaInvoiceItem('Course A', 1, 500.00),
+                        new \Zatca\DTOs\ZatcaInvoiceItem('Course B', 1, 300.00),
+                        new \Zatca\DTOs\ZatcaInvoiceItem('Course C', 1, 230.00),
                     ],
-                    totalExclVat: 1030.00,
-                    totalVat: 154.50,
-                    totalInclVat: 1184.50,
+                    priceMode: \Zatca\Enums\VatPriceMode::Exclusive,
                 );
             }
 

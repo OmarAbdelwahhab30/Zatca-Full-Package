@@ -14,9 +14,9 @@ enum ZatcaInvoiceStatus: string
     case ManualReview = 'manual_review';
 
     /*
-     * Clearance (Standard documents only). Declared before anything writes them so that
-     * every reader — and every rolled-back release — can load such a row. No reporting
-     * path selects them: isRetryable() and the requeue whitelist exclude them all.
+     * Clearance (Standard documents only). A signed Standard document starts in
+     * PendingClearance. isRetryable() is reporting-only; every re-send path routes by the
+     * document's submission_model (Zatca\Support\SubmissionRetry), never by status.
      */
     case PendingClearance = 'pending_clearance';
     case ClearanceRetrying = 'clearance_retrying';

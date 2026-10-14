@@ -10,6 +10,8 @@ use Zatca\DTOs\ZatcaInvoiceLine;
 use Zatca\Exceptions\ZatcaException;
 use Zatca\Support\InvoiceDataSnapshot;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Freezes the business snapshot of every golden B2C document, and the DTO
@@ -27,6 +29,7 @@ use Zatca\Tests\TestCase;
  *
  * @group golden
  */
+#[Group('golden')]
 class SnapshotGoldenTest extends TestCase
 {
     use GoldenDocuments;
@@ -36,6 +39,7 @@ class SnapshotGoldenTest extends TestCase
     private const JSON_FLAGS = JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
 
     /** @dataProvider documents */
+    #[DataProvider('documents')]
     public function test_snapshot_matches_the_golden_fixture(string $fixture): void
     {
         $json = json_encode(InvoiceDataSnapshot::toArray(self::goldenDocuments()[$fixture]['data']), self::JSON_FLAGS)."\n";
@@ -58,6 +62,7 @@ class SnapshotGoldenTest extends TestCase
      *
      * @dataProvider documents
      */
+    #[DataProvider('documents')]
     public function test_snapshot_round_trips_without_change(string $fixture): void
     {
         $snapshot = InvoiceDataSnapshot::toArray(self::goldenDocuments()[$fixture]['data']);
@@ -73,6 +78,7 @@ class SnapshotGoldenTest extends TestCase
      *
      * @dataProvider documents
      */
+    #[DataProvider('documents')]
     public function test_stored_snapshot_regenerates_the_golden_xml(string $fixture): void
     {
         $case = self::goldenDocuments()[$fixture];
@@ -94,6 +100,7 @@ class SnapshotGoldenTest extends TestCase
      *
      * @dataProvider unusableVersions
      */
+    #[DataProvider('unusableVersions')]
     public function test_an_unknown_snapshot_version_is_refused(int $version): void
     {
         $snapshot = InvoiceDataSnapshot::toArray(self::goldenDocuments()['invoice_single']['data']);
@@ -131,6 +138,7 @@ class SnapshotGoldenTest extends TestCase
      *
      * @param  array<int, array{string, string, bool}>  $expected  name, type, optional
      */
+    #[DataProvider('dtoContracts')]
     public function test_dto_constructor_contract_is_unchanged(string $class, array $expected): void
     {
         $parameters = (new ReflectionClass($class))->getConstructor()->getParameters();
@@ -173,7 +181,8 @@ class SnapshotGoldenTest extends TestCase
             'ZatcaInvoiceLine' => [ZatcaInvoiceLine::class, [
                 ['description', 'string', false],
                 ['quantity', 'int', false],
-                ['unitPrice', 'float', false],
+                // Renamed from unitPrice before the first release: it is the NET unit price.
+                ['netUnitPrice', 'float', false],
                 ['vatRate', 'float', false],
                 ['lineTotalExclVat', 'float', false],
                 ['vatAmount', 'float', false],

@@ -5,6 +5,7 @@ namespace Zatca\Tests\Unit;
 use Illuminate\Support\Facades\Config;
 use Zatca\State\EgsRegistry;
 use Zatca\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Blueprint P14: the optional B2B EGS inherits the seller identity from the primary EGS,
@@ -13,17 +14,17 @@ use Zatca\Tests\TestCase;
  */
 class EgsCompositionTest extends TestCase
 {
-    /** The primary entry's keys, in order — unchanged by P14. */
+    /** The primary entry's keys, in order. vat_percentage moved to the global zatca.vat block. */
     private const PRIMARY_KEYS = [
         'environment', 'vat_number', 'organization_name', 'organization_unit_name', 'common_name',
         'serial_number', 'organization_identifier', 'country_code', 'invoice_type', 'location_address',
-        'business_category', 'commercial_registration_number', 'company_name_ar', 'vat_percentage',
+        'business_category', 'commercial_registration_number', 'company_name_ar',
         'street', 'district', 'building_number', 'additional_number', 'city', 'postal_code',
     ];
 
     private const SELLER_KEYS = [
         'vat_number', 'organization_name', 'organization_identifier', 'country_code', 'location_address',
-        'business_category', 'commercial_registration_number', 'company_name_ar', 'vat_percentage',
+        'business_category', 'commercial_registration_number', 'company_name_ar',
         'street', 'district', 'building_number', 'additional_number', 'city', 'postal_code',
     ];
 
@@ -100,6 +101,7 @@ class EgsCompositionTest extends TestCase
     }
 
     /** @dataProvider missingPrimary */
+    #[DataProvider('missingPrimary')]
     public function test_primary_falls_back_to_the_first_egs(?string $primary): void
     {
         Config::set('zatca.primary_egs', $primary);

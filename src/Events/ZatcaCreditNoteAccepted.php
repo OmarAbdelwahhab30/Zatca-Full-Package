@@ -9,7 +9,7 @@ use Zatca\Models\ZatcaCreditNote;
  * actually accepted it (BR-09: pending/failed/rejected notes never fire this).
  *
  * The package has no opinion on what "credited" should do to the host's own
- * records (unlock/relock access, deactivate an enrollment, etc.) — that is
+ * records (unlock/relock access, cancel a subscription, etc.) — that is
  * entirely host business. Listen to this event in the host app for that.
  *
  * Dispatched from inside the same DB transaction that writes accepted_at, so a

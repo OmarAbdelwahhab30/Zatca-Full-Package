@@ -3,8 +3,8 @@
 namespace Zatca\Console\Commands;
 
 use Zatca\Enums\ZatcaInvoiceStatus;
-use Zatca\Jobs\RetryZatcaInvoiceJob;
 use Zatca\Models\ZatcaInvoice;
+use Zatca\Support\SubmissionRetry;
 use Zatca\Support\ZatcaGate;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Config;
@@ -29,7 +29,7 @@ use Illuminate\Support\Facades\Config;
 class RequeueInvoices extends Command
 {
     protected $signature = 'zatca:requeue
-        {--status=manual_review : Which status to requeue: manual_review, failed, retrying, pending_reporting}
+        {--status=manual_review : Which status to requeue: manual_review, failed, retrying, pending_reporting, clearance_manual_review, clearance_retrying, pending_clearance, clearance_in_doubt}
         {--only-transient : Only invoices whose last failure was a ZATCA outage (HTTP 0/5xx). Safe to schedule.}
         {--max-total-attempts=50 : With --only-transient, give up on an invoice that has already been tried this many times}
         {--egs= : Limit to one EGS identifier}
@@ -46,6 +46,12 @@ class RequeueInvoices extends Command
         ZatcaInvoiceStatus::Failed,
         ZatcaInvoiceStatus::Retrying,
         ZatcaInvoiceStatus::PendingReporting,
+        // Clearance (B2B). clearance_rejected is deliberately absent: ZATCA refused those
+        // exact bytes, so only a regenerated document can succeed.
+        ZatcaInvoiceStatus::ClearanceManualReview,
+        ZatcaInvoiceStatus::ClearanceRetrying,
+        ZatcaInvoiceStatus::PendingClearance,
+        ZatcaInvoiceStatus::ClearanceInDoubt,
     ];
 
     public function handle(ZatcaGate $gate): int
@@ -85,6 +91,10 @@ class RequeueInvoices extends Command
         $query->whereNotIn('status', [
             ZatcaInvoiceStatus::Reported->value,
             ZatcaInvoiceStatus::ReportedWithWarnings->value,
+            ZatcaInvoiceStatus::Cleared->value,
+            ZatcaInvoiceStatus::ClearedWithWarnings->value,
+            // ZATCA's definitive NOT_CLEARED: resending the same bytes can only fail again.
+            ZatcaInvoiceStatus::ClearanceRejected->value,
         ]);
 
         // Same class of guard, for documents that have been replaced rather than accepted.
@@ -145,14 +155,13 @@ class RequeueInvoices extends Command
         $resetAttempts = ! $this->option('keep-attempts');
 
         foreach ($invoices as $invoice) {
+            // Routed by submission model: a Standard (B2B) document is cleared, never reported.
             $invoice->update([
-                'status' => ZatcaInvoiceStatus::Retrying,
+                'status' => SubmissionRetry::retryingStatus($invoice),
                 'attempt_count' => $resetAttempts ? 0 : $invoice->attempt_count,
             ]);
 
-            RetryZatcaInvoiceJob::dispatch($invoice->id)
-                ->onConnection(Config::get('zatca.queue.connection'))
-                ->onQueue(Config::get('zatca.queue.queue'));
+            SubmissionRetry::dispatch($invoice);
         }
 
         $this->info(sprintf(

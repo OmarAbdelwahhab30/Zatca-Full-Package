@@ -4,11 +4,13 @@ namespace Zatca\Tests\Feature;
 
 use Zatca\Tests\TestCase;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /** Proves the package's migrations run cleanly on their own (no host schema assumed). */
 class MigrationTest extends TestCase
 {
     /** @dataProvider tableProvider */
+    #[DataProvider('tableProvider')]
     public function test_table_exists(string $table): void
     {
         $this->assertTrue(Schema::hasTable($table), "Expected migrated table [{$table}] to exist.");

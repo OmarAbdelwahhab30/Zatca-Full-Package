@@ -64,7 +64,7 @@ class ZatcaDebitNote extends Model
     /**
      * Accepted by ZATCA — the only state that counts financially.
      *
-     * Emphatically NOT "the student has paid". ZATCA accepting a debit note means
+     * Emphatically NOT "the customer has paid". ZATCA accepting a debit note means
      * the document is fiscally valid, nothing more; collecting the money is a
      * separate, manual, human process through the ordinary payment flow.
      */

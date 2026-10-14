@@ -24,7 +24,7 @@ class DebitNoteDataFactoryTest extends TestCase
     {
         $result = $this->factory()->make(
             $this->simplifiedOriginal(),
-            [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00)],
+            [new DebitNoteLineInput('Extra course', 1, 230.00)],
             'DN-000001',
             'payment:412',
             'Additional course',
@@ -43,7 +43,7 @@ class DebitNoteDataFactoryTest extends TestCase
     {
         $result = $this->factory()->make(
             $this->simplifiedOriginal(),
-            [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00)],
+            [new DebitNoteLineInput('Extra course', 1, 230.00)],
             'DN-000002',
             'payment:412',
             'x',
@@ -94,7 +94,7 @@ class DebitNoteDataFactoryTest extends TestCase
 
         $result = $this->factory()->make(
             $standardOriginal,
-            [new DebitNoteLineInput('Extra course', 1, 200.00, 15.0, 200.00, 30.00)],
+            [new DebitNoteLineInput('Extra course', 1, 230.00)],
             'DN-000010',
             'payment:900',
             'Additional course added after purchase',

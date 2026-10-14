@@ -8,7 +8,9 @@ use Zatca\DTOs\BuyerOtherId;
 use Zatca\DTOs\BuyerParty;
 use Zatca\DTOs\ZatcaInvoiceData;
 use Zatca\DTOs\ZatcaInvoiceLine;
+use Zatca\Enums\VatPriceMode;
 use Zatca\Enums\ZatcaComplianceDocumentType;
+use Zatca\Enums\ZatcaVatCategory;
 use Zatca\Exceptions\ZatcaException;
 use DateTimeImmutable;
 
@@ -105,11 +107,13 @@ class InvoiceDataSnapshot
             'lines' => array_map(static fn (ZatcaInvoiceLine $line) => [
                 'description' => $line->description,
                 'quantity' => $line->quantity,
-                'unit_price' => $line->unitPrice,
+                // The NET unit price — the one in the XML.
+                'unit_price' => $line->netUnitPrice,
                 'vat_rate' => $line->vatRate,
                 'line_total_excl_vat' => $line->lineTotalExclVat,
                 'vat_amount' => $line->vatAmount,
-            ], $data->lines),
+            ] + self::vatCategoryFields($line->vatCategory, $line->vatExemptionReasonCode, $line->vatExemptionReason)
+              + self::pricingFields($line), $data->lines),
             'total_excl_vat' => $data->totalExclVat,
             'total_vat' => $data->totalVat,
             'total_incl_vat' => $data->totalInclVat,
@@ -126,7 +130,7 @@ class InvoiceDataSnapshot
                 'vat_amount' => $allowance->vatAmount,
                 'pool_key' => $allowance->poolKey,
                 'line_indexes' => $allowance->lineIndexes,
-            ], $data->allowanceCharges);
+            ] + self::vatCategoryFields($allowance->vatCategory, $allowance->vatExemptionReasonCode, $allowance->vatExemptionReason), $data->allowanceCharges);
         }
 
         if ($isAdjustmentNote || $isStandard) {
@@ -270,10 +274,15 @@ class InvoiceDataSnapshot
             $lines[] = new ZatcaInvoiceLine(
                 description: (string) ($line['description'] ?? ''),
                 quantity: (int) ($line['quantity'] ?? 0),
-                unitPrice: (float) ($line['unit_price'] ?? 0),
+                netUnitPrice: (float) ($line['unit_price'] ?? 0),
                 vatRate: (float) ($line['vat_rate'] ?? 0),
                 lineTotalExclVat: (float) ($line['line_total_excl_vat'] ?? 0),
                 vatAmount: (float) ($line['vat_amount'] ?? 0),
+                vatCategory: self::vatCategory($line),
+                vatExemptionReasonCode: self::nullableString($line['vat_exemption_reason_code'] ?? null),
+                vatExemptionReason: self::nullableString($line['vat_exemption_reason'] ?? null),
+                suppliedPrice: self::nullableString($line['supplied_price'] ?? null),
+                priceMode: self::priceMode($line),
             );
         }
 
@@ -290,6 +299,9 @@ class InvoiceDataSnapshot
                 vatAmount: (float) ($allowance['vat_amount'] ?? 0),
                 poolKey: self::nullableString($allowance['pool_key'] ?? null),
                 lineIndexes: array_map('intval', $allowance['line_indexes'] ?? []),
+                vatCategory: self::vatCategory($allowance),
+                vatExemptionReasonCode: self::nullableString($allowance['vat_exemption_reason_code'] ?? null),
+                vatExemptionReason: self::nullableString($allowance['vat_exemption_reason'] ?? null),
             );
         }
 
@@ -328,5 +340,66 @@ class InvoiceDataSnapshot
     private static function nullableString(mixed $value): ?string
     {
         return $value === null || $value === '' ? null : (string) $value;
+    }
+
+    /**
+     * Written only for a non-standard category, so every standard-rated snapshot — all
+     * of them before VAT categories existed — stays byte-for-byte identical.
+     *
+     * @return array<string, string|null>
+     */
+    private static function vatCategoryFields(ZatcaVatCategory $category, ?string $exemptionCode, ?string $exemptionReason): array
+    {
+        if ($category === ZatcaVatCategory::Standard) {
+            return [];
+        }
+
+        return [
+            'vat_category' => $category->value,
+            'vat_exemption_reason_code' => $exemptionCode,
+            'vat_exemption_reason' => $exemptionReason,
+        ];
+    }
+
+    /**
+     * The supplied price and its mode, written only when recorded, so lines built without
+     * them (restated note lines, compliance samples) keep their existing shape. Frozen here
+     * so that what the app supplied is part of the document's history; nothing ever
+     * recalculates from it.
+     *
+     * @return array<string, string>
+     */
+    private static function pricingFields(ZatcaInvoiceLine $line): array
+    {
+        return array_filter([
+            'supplied_price' => $line->suppliedPrice,
+            'price_mode' => $line->priceMode?->value,
+        ], static fn ($value) => $value !== null);
+    }
+
+    /** @param  array<string, mixed>  $row */
+    private static function priceMode(array $row): ?VatPriceMode
+    {
+        $value = $row['price_mode'] ?? null;
+
+        if ($value === null) {
+            return null;
+        }
+
+        return VatPriceMode::tryFrom((string) $value)
+            ?? throw new ZatcaException("Business snapshot contains an unknown price mode [{$value}].");
+    }
+
+    /** @param  array<string, mixed>  $row */
+    private static function vatCategory(array $row): ZatcaVatCategory
+    {
+        $value = $row['vat_category'] ?? null;
+
+        if ($value === null) {
+            return ZatcaVatCategory::Standard;
+        }
+
+        return ZatcaVatCategory::tryFrom((string) $value)
+            ?? throw new ZatcaException("Business snapshot contains an unknown VAT category [{$value}].");
     }
 }

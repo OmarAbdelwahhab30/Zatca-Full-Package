@@ -5,13 +5,13 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Which course an EARLIER Debit Note added this line adjusts.
+ * Which item an EARLIER Debit Note added this line adjusts.
  *
  * A Price Adjustment used to reference only a line of the original invoice
- * (`original_line_index`). A course added through an accepted Additional Course
+ * (`original_line_index`). An item added through an accepted Additional Item
  * Debit Note is never a line of the original, so it had no way to be referenced and
  * could not be price-adjusted at all. This is that reference: the id of the Debit
- * Note line that added the course — the same column name, and the same meaning,
+ * Note line that added the item — the same column name, and the same meaning,
  * zatca_credit_note_lines already uses for a debit note line.
  *
  * Informational only, exactly like `original_line_index`: nothing ever edits the

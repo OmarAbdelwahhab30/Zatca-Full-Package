@@ -21,8 +21,8 @@ class CreditNoteException extends ZatcaException
 
     /**
      * The selection credits nothing: a discount (bundle or coupon) covers the selected
-     * courses in full, so there is no money to credit back. Not a ZATCA restriction —
-     * a business one: we do not file documents a discount made worth nothing. A course
+     * items in full, so there is no money to credit back. Not a ZATCA restriction —
+     * a business one: we do not file documents a discount made worth nothing. An item
      * that was free, with no discount at all, is not refused for this.
      */
     public const ZERO_VALUE = 'zero_value_credit_note';
@@ -38,8 +38,8 @@ class CreditNoteException extends ZatcaException
 
     /**
      * A bundle discount pool credits nothing for this note even though the note as a
-     * whole has positive value — meaning a course worth less than its bundle discount
-     * is being drained for free behind a course from outside that bundle.
+     * whole has positive value — meaning an item worth less than its bundle discount
+     * is being drained for free behind an item from outside that bundle.
      */
     public const WORTHLESS_BUNDLE_LINE = 'worthless_bundle_line';
 
@@ -47,13 +47,13 @@ class CreditNoteException extends ZatcaException
     public const MUST_BE_CREDITED_ALONE = 'source_must_be_credited_alone';
 
     /**
-     * A price adjustment named something that cannot be adjusted right now: not a course
+     * A price adjustment named something that cannot be adjusted right now: not an item
      * of this invoice, already reserved or credited, or a debit note line that is not an
-     * added course.
+     * added item.
      */
     public const NOT_ADJUSTABLE = 'price_adjustment_not_adjustable';
 
-    /** A price adjustment is not strictly below what is left of the course it adjusts. */
+    /** A price adjustment is not strictly below what is left of the item it adjusts. */
     public const ADJUSTMENT_EXCEEDS_VALUE = 'price_adjustment_exceeds_value';
 
     private function __construct(string $message, public readonly string $reason)
@@ -87,7 +87,7 @@ class CreditNoteException extends ZatcaException
     public static function zeroValue(): self
     {
         return new self(
-            '[ZATCA] The selected courses credit back nothing once the discount is applied, '
+            '[ZATCA] The selected items credit back nothing once the discount is applied, '
             .'so there is no Credit Note to issue.',
             self::ZERO_VALUE
         );
@@ -119,8 +119,8 @@ class CreditNoteException extends ZatcaException
     public static function adjustmentExceedsValue(): self
     {
         return new self(
-            '[ZATCA] A price adjustment must be less than what is left of the course it adjusts. '
-            .'Reducing a course to nothing is a course cancellation.',
+            '[ZATCA] A price adjustment must be less than what is left of the item it adjusts. '
+            .'Reducing an item to nothing is an item cancellation.',
             self::ADJUSTMENT_EXCEEDS_VALUE
         );
     }
@@ -137,9 +137,9 @@ class CreditNoteException extends ZatcaException
     public static function worthlessBundleLine(): self
     {
         return new self(
-            '[ZATCA] One of the selected courses belongs to a bundle whose discount covers its full value, '
+            '[ZATCA] One of the selected items belongs to a bundle whose discount covers its full value, '
             .'so it would be credited for nothing. Select the rest of that bundle instead of pairing it with '
-            .'an unrelated course.',
+            .'an unrelated item.',
             self::WORTHLESS_BUNDLE_LINE
         );
     }
