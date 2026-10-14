@@ -67,7 +67,10 @@ class ComplianceTestInvoiceDataFactory
         return new BuyerParty(
             registrationName: 'Compliance Test Buyer',
             vatNumber: null,
-            otherId: BuyerOtherId::commercialRegistration('7000000007'),
+            // No eight equal or sequential digits: ZATCA flags those as fake IDs
+            // (BR-KSA-F-13), and the old 7000000007 drew that warning on every B2B
+            // compliance check.
+            otherId: BuyerOtherId::commercialRegistration('1010567892'),
             address: new BuyerAddress('Test Street', '1234', 'Test District', 'Riyadh', '12345'),
         );
     }

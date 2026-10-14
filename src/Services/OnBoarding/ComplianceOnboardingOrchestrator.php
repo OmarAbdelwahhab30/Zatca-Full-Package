@@ -3,6 +3,7 @@
 namespace Zatca\Services\OnBoarding;
 
 use Zatca\Contracts\ZatcaSdkInterface;
+use Zatca\DTOs\Payloads\ComplianceInvoicePayload;
 use Zatca\Enums\ZatcaCertificateState;
 use Zatca\Enums\ZatcaComplianceDocumentType;
 use Zatca\Enums\ZatcaCredentialType;
@@ -172,6 +173,13 @@ class ComplianceOnboardingOrchestrator
     ): array {
         $egsConfig = $this->egsRegistry->for($egsIdentifier);
 
+        // Checked before an ICV is reserved: without the compliance certificate the SDK
+        // cannot sign, and the step used to fail only after spending an ICV, with no
+        // message saying which step was missing.
+        if (! $this->credentialStore->get($egsIdentifier, $egsConfig->environment, ZatcaCredentialType::Compliance)->binarySecurityToken) {
+            throw new ZatcaException("No Compliance CSID on record for EGS [{$egsIdentifier}]. Run `zatca:onboard compliance --otp=...` first.");
+        }
+
         $invoiceData = $this->testInvoiceFactory->make($egsIdentifier, 'Compliance Test Item ('.$documentType->label().')', $documentType);
         $uuid = (string) Str::uuid();
         $reservation = $this->counterManager->reserve($egsIdentifier, $egsConfig->environment);
@@ -209,7 +217,12 @@ class ComplianceOnboardingOrchestrator
             'previous_invoice_hash' => $reservation->previousInvoiceHash,
             'unsigned_xml' => $unsignedXml,
             'signed_xml_base64' => $signed['signedXmlBase64'],
-            'reporting_status' => $result->payload->reportingStatus ?? $result->status->value,
+            // CLEARED for a Standard document, REPORTED for a Simplified one. ZATCA answers a
+            // Standard compliance document with reportingStatus null, so reading only that
+            // field recorded an empty status for every B2B compliance check.
+            'reporting_status' => ($result->payload instanceof ComplianceInvoicePayload ? $result->payload->outcome() : null)
+                ?? $result->payload->reportingStatus
+                ?? $result->status->value,
             'zatca_response' => $result->sanitizedResponse,
         ]);
 

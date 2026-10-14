@@ -32,6 +32,10 @@
     "scripts": {
         "test": "vendor/bin/phpunit",
         "smoke": "vendor/bin/testbench zatca:sdk-smoke-test",
+        "test:sandbox": [
+            "@putenv ZATCA_RUN_SANDBOX_TESTS=1",
+            "vendor/bin/phpunit tests/Sandbox --testdox"
+        ],
         "golden:update": [
             "@putenv ZATCA_GOLDEN_UPDATE=1",
             "vendor/bin/phpunit --group golden"
