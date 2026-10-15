@@ -8,7 +8,7 @@
     "currency": "SAR",
     "lines": [
         {
-            "description": "Course Enrollment - price adjustment",
+            "description": "Item Enrollment - price adjustment",
             "quantity": 1,
             "unit_price": 50.0,
             "vat_rate": 15.0,

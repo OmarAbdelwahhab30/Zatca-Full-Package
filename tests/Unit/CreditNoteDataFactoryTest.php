@@ -21,12 +21,12 @@ class CreditNoteDataFactoryTest extends TestCase
             lineIndexes: [1],
             creditNoteNumber: 'CN-000001',
             billingReferenceId: 'payment:412',
-            reason: 'Course B refunded',
+            reason: 'Item B refunded',
             issueDateTime: new DateTimeImmutable('2026-09-14T12:00:00+03:00'),
         );
 
         $this->assertCount(1, $result->lines);
-        $this->assertSame('Course B', $result->lines[0]->description);
+        $this->assertSame('Item B', $result->lines[0]->description);
         $this->assertSame(300.00, $result->totalExclVat);
         $this->assertSame(45.00, $result->totalVat);
         $this->assertSame(345.00, $result->totalInclVat);
@@ -150,7 +150,7 @@ class CreditNoteDataFactoryTest extends TestCase
             buyerVatNumber: '310123456700003',
             issueDateTime: new DateTimeImmutable('2026-09-01T10:00:00+03:00'),
             currency: 'SAR',
-            lines: [new ZatcaInvoiceLine('Course A', 1, 500.00, 15.0, 500.00, 75.00)],
+            lines: [new ZatcaInvoiceLine('Item A', 1, 500.00, 15.0, 500.00, 75.00)],
             totalExclVat: 500.00,
             totalVat: 75.00,
             totalInclVat: 575.00,
@@ -164,7 +164,7 @@ class CreditNoteDataFactoryTest extends TestCase
             lineIndexes: [0],
             creditNoteNumber: 'CN-000010',
             billingReferenceId: 'payment:900',
-            reason: 'Company cancelled the course',
+            reason: 'Company cancelled the item',
             issueDateTime: new DateTimeImmutable('2026-09-14T12:00:00+03:00'),
         );
 
@@ -192,7 +192,7 @@ class CreditNoteDataFactoryTest extends TestCase
             buyerVatNumber: null,
             issueDateTime: new DateTimeImmutable('2026-09-01T10:00:00+03:00'),
             currency: 'SAR',
-            lines: [new ZatcaInvoiceLine('Course A', 1, 500.00, 15.0, 500.00, 75.00)],
+            lines: [new ZatcaInvoiceLine('Item A', 1, 500.00, 15.0, 500.00, 75.00)],
             totalExclVat: 500.00,
             totalVat: 75.00,
             totalInclVat: 575.00,
@@ -200,7 +200,7 @@ class CreditNoteDataFactoryTest extends TestCase
             buyer: $buyer,
         );
 
-        $adjustmentLine = new ZatcaInvoiceLine('Course A price adjustment', 1, 50.00, 15.0, 50.00, 7.50);
+        $adjustmentLine = new ZatcaInvoiceLine('Item A price adjustment', 1, 50.00, 15.0, 50.00, 7.50);
 
         $result = $this->factory()->makeAdjustment(
             $standardOriginal,
@@ -225,7 +225,7 @@ class CreditNoteDataFactoryTest extends TestCase
             buyerVatNumber: null,
             issueDateTime: new DateTimeImmutable('2026-09-01T10:00:00+03:00'),
             currency: 'SAR',
-            lines: [new ZatcaInvoiceLine('Discounted Course', 1, 400.00, 15.0, 400.00, 60.00)],
+            lines: [new ZatcaInvoiceLine('Discounted Item', 1, 400.00, 15.0, 400.00, 60.00)],
             totalExclVat: 400.00,
             totalVat: 60.00,
             totalInclVat: 460.00,
@@ -290,10 +290,10 @@ class CreditNoteDataFactoryTest extends TestCase
             issueDateTime: new DateTimeImmutable('2026-09-01T10:00:00+03:00'),
             currency: 'SAR',
             lines: [
-                new ZatcaInvoiceLine('Course A', 1, 500.00, 15.0, 500.00, 75.00),
-                new ZatcaInvoiceLine('Course B', 1, 300.00, 15.0, 300.00, 45.00),
-                new ZatcaInvoiceLine('Course C', 1, 230.00, 15.0, 230.00, 34.50),  // rounds to 34.50
-                new ZatcaInvoiceLine('Course D', 1, 120.00, 15.0, 120.00, 18.00),
+                new ZatcaInvoiceLine('Item A', 1, 500.00, 15.0, 500.00, 75.00),
+                new ZatcaInvoiceLine('Item B', 1, 300.00, 15.0, 300.00, 45.00),
+                new ZatcaInvoiceLine('Item C', 1, 230.00, 15.0, 230.00, 34.50),  // rounds to 34.50
+                new ZatcaInvoiceLine('Item D', 1, 120.00, 15.0, 120.00, 18.00),
             ],
             totalExclVat: 1150.00,
             totalVat: 172.50,

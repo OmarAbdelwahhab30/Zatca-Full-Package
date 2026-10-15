@@ -107,7 +107,7 @@ class ProductionInvoiceOrchestratorTest extends TestCase
         {
             public function toInvoiceInput(mixed $source, string $egsIdentifier): ZatcaInvoiceInput
             {
-                $line = new ZatcaInvoiceItem('Course Enrollment', 1, 115.00);
+                $line = new ZatcaInvoiceItem('Item Enrollment', 1, 115.00);
 
                 return new ZatcaInvoiceInput(
                     $egsIdentifier,

@@ -69,7 +69,7 @@ class InvoiceDataSnapshotTest extends TestCase
             currency: 'SAR',
             lines: [
                 new ZatcaInvoiceLine('دورة أولى', 1, 33.33, 15.0, 33.33, 5.00),
-                new ZatcaInvoiceLine('Second Course', 3, 10.01, 15.0, 30.03, 4.50),
+                new ZatcaInvoiceLine('Second Item', 3, 10.01, 15.0, 30.03, 4.50),
             ],
             totalExclVat: 63.36,
             totalVat: 9.50,
@@ -201,7 +201,7 @@ class InvoiceDataSnapshotTest extends TestCase
 
         $this->assertSame(ZatcaComplianceDocumentType::CreditNote, $restored->documentType);
         $this->assertSame('payment:412', $restored->billingReferenceId);
-        $this->assertSame('Course refunded per policy', $restored->adjustmentReason);
+        $this->assertSame('Item refunded per policy', $restored->adjustmentReason);
     }
 
     /** @dataProvider unusableCreditNoteSnapshots */
@@ -227,7 +227,7 @@ class InvoiceDataSnapshotTest extends TestCase
             'total_incl_vat' => 1.15,
             'document_type' => 'simplified_credit_note',
             'billing_reference_id' => 'payment:412',
-            'adjustment_reason' => 'Course refunded',
+            'adjustment_reason' => 'Item refunded',
         ];
 
         return [
@@ -248,13 +248,13 @@ class InvoiceDataSnapshotTest extends TestCase
             buyerVatNumber: null,
             issueDateTime: new DateTimeImmutable('2026-09-14T10:30:00+03:00'),
             currency: 'SAR',
-            lines: [new ZatcaInvoiceLine('Course Enrollment', 1, 100.00, 15.0, 100.00, 15.00)],
+            lines: [new ZatcaInvoiceLine('Item Enrollment', 1, 100.00, 15.0, 100.00, 15.00)],
             totalExclVat: 100.00,
             totalVat: 15.00,
             totalInclVat: 115.00,
             documentType: ZatcaComplianceDocumentType::CreditNote,
             billingReferenceId: 'payment:412',
-            adjustmentReason: 'Course refunded per policy',
+            adjustmentReason: 'Item refunded per policy',
         );
     }
 
@@ -267,7 +267,7 @@ class InvoiceDataSnapshotTest extends TestCase
             buyerVatNumber: null,
             issueDateTime: new DateTimeImmutable('2026-08-17T10:30:00+03:00'),
             currency: 'SAR',
-            lines: [new ZatcaInvoiceLine('Course Enrollment', 1, 100.00, 15.0, 100.00, 15.00)],
+            lines: [new ZatcaInvoiceLine('Item Enrollment', 1, 100.00, 15.0, 100.00, 15.00)],
             totalExclVat: 100.00,
             totalVat: 15.00,
             totalInclVat: 115.00,

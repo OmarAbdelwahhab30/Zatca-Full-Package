@@ -34,13 +34,13 @@ trait GoldenDocuments
      */
     public static function goldenDocuments(): array
     {
-        $single = self::singleCourseInvoice();
+        $single = self::singleItemInvoice();
         $bundle = self::bundleInvoice();
 
         return [
             'invoice_single' => self::invoiceCase($single, self::egs()),
             'invoice_multi_bundle_allowance' => self::invoiceCase($bundle, self::egs(structured: true, arabicName: true)),
-            'invoice_no_buyer' => self::invoiceCase(self::singleCourseInvoice(buyerName: null), self::egs()),
+            'invoice_no_buyer' => self::invoiceCase(self::singleItemInvoice(buyerName: null), self::egs()),
             'invoice_escaped_text' => self::invoiceCase(
                 new ZatcaInvoiceData(
                     egsIdentifier: 'default',
@@ -49,7 +49,7 @@ trait GoldenDocuments
                     buyerVatNumber: null,
                     issueDateTime: new DateTimeImmutable('2026-03-15 23:59:59'),
                     currency: 'SAR',
-                    lines: [new ZatcaInvoiceLine('Course "Advanced" & <Labs>', 1, 99.99, 15.0, 99.99, 15.00)],
+                    lines: [new ZatcaInvoiceLine('Item "Advanced" & <Labs>', 1, 99.99, 15.0, 99.99, 15.00)],
                     totalExclVat: 99.99,
                     totalVat: 15.00,
                     totalInclVat: 114.99,
@@ -63,7 +63,7 @@ trait GoldenDocuments
                     [0],
                     'CN-2026-000001',
                     'order:42',
-                    'Course cancelled before start - full refund',
+                    'Item cancelled before start - full refund',
                     new DateTimeImmutable('2026-01-10 09:15:00'),
                 ),
                 'cn-uuid-0001',
@@ -76,7 +76,7 @@ trait GoldenDocuments
                     [0],
                     'CN-2026-000002',
                     'order:108',
-                    'Refund of one course from a discounted bundle',
+                    'Refund of one item from a discounted bundle',
                     new DateTimeImmutable('2026-02-01 12:00:00'),
                     [0 => 517.50],
                 ),
@@ -87,7 +87,7 @@ trait GoldenDocuments
                 SimplifiedCreditNoteXmlGenerator::class,
                 (new CreditNoteDataFactory)->makeAdjustment(
                     $single,
-                    new ZatcaInvoiceLine('Course Enrollment - price adjustment', 1, 50.00, 15.0, 50.00, 7.50),
+                    new ZatcaInvoiceLine('Item Enrollment - price adjustment', 1, 50.00, 15.0, 50.00, 7.50),
                     'CN-2026-000003',
                     'order:42',
                     'Price corrected after enrolment',
@@ -101,10 +101,10 @@ trait GoldenDocuments
                 SimplifiedDebitNoteXmlGenerator::class,
                 (new DebitNoteDataFactory)->make(
                     $single,
-                    [new DebitNoteLineInput('Additional course: Data Analysis', 1, 345.00, courseId: 55)],
+                    [new DebitNoteLineInput('Additional item: Data Analysis', 1, 345.00, itemId: 55)],
                     'DN-2026-000001',
                     'order:42',
-                    'Additional course added to the enrolment',
+                    'Additional item added to the enrolment',
                     new DateTimeImmutable('2026-01-12 08:00:00'),
                 ),
                 'dn-uuid-0001',
@@ -114,7 +114,7 @@ trait GoldenDocuments
                 SimplifiedDebitNoteXmlGenerator::class,
                 (new DebitNoteDataFactory)->make(
                     $bundle,
-                    [new DebitNoteLineInput('Course A - price increase', 1, 50.00, originalLineIndex: 0)],
+                    [new DebitNoteLineInput('Item A - price increase', 1, 50.00, originalLineIndex: 0)],
                     'DN-2026-000002',
                     'order:108',
                     'Price increase agreed with the student',
@@ -159,8 +159,8 @@ trait GoldenDocuments
         ];
     }
 
-    /** One course, VAT added on top — the shape of most B2C checkouts. */
-    private static function singleCourseInvoice(?string $buyerName = 'Test Student'): ZatcaInvoiceData
+    /** One item, VAT added on top — the shape of most B2C checkouts. */
+    private static function singleItemInvoice(?string $buyerName = 'Test Student'): ZatcaInvoiceData
     {
         return new ZatcaInvoiceData(
             egsIdentifier: 'default',
@@ -169,14 +169,14 @@ trait GoldenDocuments
             buyerVatNumber: null,
             issueDateTime: new DateTimeImmutable('2026-01-01 10:00:00'),
             currency: 'SAR',
-            lines: [new ZatcaInvoiceLine('Course Enrollment', 1, 200.00, 15.0, 200.00, 30.00)],
+            lines: [new ZatcaInvoiceLine('Item Enrollment', 1, 200.00, 15.0, 200.00, 30.00)],
             totalExclVat: 200.00,
             totalVat: 30.00,
             totalInclVat: 230.00,
         );
     }
 
-    /** Three courses, two of them in a bundle carrying a document-level allowance. */
+    /** Three items, two of them in a bundle carrying a document-level allowance. */
     private static function bundleInvoice(): ZatcaInvoiceData
     {
         return new ZatcaInvoiceData(

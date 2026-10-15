@@ -19,16 +19,16 @@ use Illuminate\Support\Str;
 
 /**
  * End-to-end cover for crediting a BUNDLE invoice — one whose lines state each
- * course's original price and whose discount sits in a document-level allowance.
+ * item's original price and whose discount sits in a document-level allowance.
  *
  * The invoice under test throughout is the one from the bug report:
  *
- *   Course A   120.00
- *   Course B   200.00
+ *   Item A   120.00
+ *   Item B   200.00
  *   Bundle discount  -32.00
  *   Payable    288.00
  *
- * Every test is ultimately asserting one thing — that however the courses are
+ * Every test is ultimately asserting one thing — that however the items are
  * credited, in whatever order, across however many notes, the cumulative credits
  * never exceed 288.00, and equal it exactly once everything is credited.
  */
@@ -46,10 +46,10 @@ class CreditNoteBundleDiscountTest extends TestCase
     }
 
     /**
-     * The bug: crediting one bundle course used to hand back its full original
-     * price (120.00), ignoring the discount that course was sold under.
+     * The bug: crediting one bundle item used to hand back its full original
+     * price (120.00), ignoring the discount that item was sold under.
      */
-    public function test_crediting_the_first_bundle_course_consumes_the_discount(): void
+    public function test_crediting_the_first_bundle_item_consumes_the_discount(): void
     {
         $original = $this->reportedBundleInvoice(7001);
 
@@ -57,7 +57,7 @@ class CreditNoteBundleDiscountTest extends TestCase
             $original,
             ZatcaCreditNoteType::Partial,
             [0],
-            'Course A refunded',
+            'Item A refunded',
             (string) Str::uuid(),
         );
 
@@ -72,7 +72,7 @@ class CreditNoteBundleDiscountTest extends TestCase
         $this->assertSame(88.00, round((float) $creditNote->total_excl_vat + (float) $creditNote->total_vat, 2));
     }
 
-    /** …and the second course is then credited in full, totalling exactly 288.00. */
+    /** …and the second item is then credited in full, totalling exactly 288.00. */
     public function test_sequential_partial_credits_total_the_invoiced_amount(): void
     {
         $original = $this->reportedBundleInvoice(7002);
@@ -92,7 +92,7 @@ class CreditNoteBundleDiscountTest extends TestCase
     }
 
     /** The reverse order gives different amounts and the same total. */
-    public function test_crediting_the_larger_course_first_still_totals_the_invoiced_amount(): void
+    public function test_crediting_the_larger_item_first_still_totals_the_invoiced_amount(): void
     {
         $original = $this->reportedBundleInvoice(7003);
 
@@ -229,7 +229,7 @@ class CreditNoteBundleDiscountTest extends TestCase
      */
     public function test_a_selection_worth_nothing_after_the_discount_is_refused(): void
     {
-        // Course A is 20.00 against a 30.00 discount: crediting it alone returns nothing.
+        // Item A is 20.00 against a 30.00 discount: crediting it alone returns nothing.
         $original = $this->reportedBundleInvoice(7009, [20.00, 100.00], 30.00);
 
         try {
@@ -245,8 +245,8 @@ class CreditNoteBundleDiscountTest extends TestCase
         $this->assertSame([0, 1], $ledger->availableIndexes);
     }
 
-    /** A course the remaining discount covers exactly (20.00 against 20.00) is refused the same way. */
-    public function test_a_course_the_remaining_discount_covers_exactly_is_refused(): void
+    /** A item the remaining discount covers exactly (20.00 against 20.00) is refused the same way. */
+    public function test_a_item_the_remaining_discount_covers_exactly_is_refused(): void
     {
         $original = $this->reportedBundleInvoice(7019, [20.00, 100.00], 20.00);
 
@@ -259,14 +259,14 @@ class CreditNoteBundleDiscountTest extends TestCase
     }
 
     /**
-     * A course that was free — 0.00 on the invoice with no discount drawn — is cancelled
+     * A item that was free — 0.00 on the invoice with no discount drawn — is cancelled
      * by a 0.00 note: there is no discount to protect, and it is the only way to take it
      * back. (A coupon also leaves a 0.00 line; the host refuses that one, since only the
-     * course's Transaction records the coupon.)
+     * item's Transaction records the coupon.)
      */
-    public function test_a_free_course_is_cancelled_at_zero(): void
+    public function test_a_free_item_is_cancelled_at_zero(): void
     {
-        $original = $this->reportedInvoice(7020, $this->source([['Course A', 0.00], ['Course B', 115.00]], []));
+        $original = $this->reportedInvoice(7020, $this->source([['Item A', 0.00], ['Item B', 115.00]], []));
 
         $creditNote = $this->issueAccepted($original, [0], 'A refunded');
 
@@ -275,12 +275,12 @@ class CreditNoteBundleDiscountTest extends TestCase
     }
 
     /**
-     * The same courses credited TOGETHER are issuable, even though the cheaper one
+     * The same items credited TOGETHER are issuable, even though the cheaper one
      * credits nothing on its own: the note as a whole is worth 90.00, so only its
      * first line is zero. This is the route an admin has to a bundle whose discount
-     * exceeds one of its courses.
+     * exceeds one of its items.
      */
-    public function test_a_course_worth_nothing_can_still_be_credited_alongside_another(): void
+    public function test_a_item_worth_nothing_can_still_be_credited_alongside_another(): void
     {
         $original = $this->reportedBundleInvoice(7017, [20.00, 100.00], 30.00);
 
@@ -304,17 +304,17 @@ class CreditNoteBundleDiscountTest extends TestCase
     }
 
     /**
-     * The loophole this guards against: a bundle course worth less than its discount
+     * The loophole this guards against: a bundle item worth less than its discount
      * credits nothing on its own, and alone it is cancelled at 0.00. But pairing it with
-     * a course from OUTSIDE its bundle gives the note positive value from the unrelated
-     * course, hiding that the bundle course still drained its discount for free.
+     * a item from OUTSIDE its bundle gives the note positive value from the unrelated
+     * item, hiding that the bundle item still drained its discount for free.
      */
-    public function test_a_worthless_bundle_course_cannot_be_hidden_behind_an_unrelated_course(): void
+    public function test_a_worthless_bundle_item_cannot_be_hidden_behind_an_unrelated_item(): void
     {
-        // Course A is 20.00 against a 30.00 discount: worthless by itself. Course B keeps
+        // Item A is 20.00 against a 30.00 discount: worthless by itself. Item B keeps
         // the bundle paid for — one its discount covers entirely was sold for nothing.
         $original = $this->reportedInvoice(7018, $this->source(
-            [['Course A', 20.00], ['Course C', 300.00], ['Course B', 100.00]],
+            [['Item A', 20.00], ['Item C', 300.00], ['Item B', 100.00]],
             [[30.00, 'bundle:1', [0, 2]]],
         ));
 
@@ -326,7 +326,7 @@ class CreditNoteBundleDiscountTest extends TestCase
                 'A and C refunded',
                 (string) Str::uuid(),
             );
-            $this->fail('A worthless bundle line hidden behind an unrelated course should have been refused.');
+            $this->fail('A worthless bundle line hidden behind an unrelated item should have been refused.');
         } catch (CreditNoteException $e) {
             $this->assertSame(CreditNoteException::WORTHLESS_BUNDLE_LINE, $e->reason);
         }
@@ -339,14 +339,14 @@ class CreditNoteBundleDiscountTest extends TestCase
     }
 
     /**
-     * A bundle course that was free in its own right (priced 0) drew nothing from the
-     * discount, so it is the zero the rules exempt: it may be cancelled alongside a course
+     * A bundle item that was free in its own right (priced 0) drew nothing from the
+     * discount, so it is the zero the rules exempt: it may be cancelled alongside a item
      * from outside its bundle, and the bundle's discount is left whole.
      */
-    public function test_a_free_bundle_course_may_be_cancelled_alongside_an_unrelated_course(): void
+    public function test_a_free_bundle_item_may_be_cancelled_alongside_an_unrelated_item(): void
     {
         $original = $this->reportedInvoice(7021, $this->source(
-            [['Course A', 0.00], ['Course B', 100.00], ['Course D', 200.00]],
+            [['Item A', 0.00], ['Item B', 100.00], ['Item D', 200.00]],
             [[30.00, 'bundle:1', [0, 1]]],
         ));
 
@@ -357,11 +357,11 @@ class CreditNoteBundleDiscountTest extends TestCase
         $this->assertSame(30.00, app(CreditNoteLedger::class)->forOriginal($original->fresh())->discountPools['bundle:1']['available']);
     }
 
-    /** A free bundle course alone is a 0.00 cancellation with no discount drawn: issued. */
-    public function test_a_free_bundle_course_alone_is_cancelled_at_zero(): void
+    /** A free bundle item alone is a 0.00 cancellation with no discount drawn: issued. */
+    public function test_a_free_bundle_item_alone_is_cancelled_at_zero(): void
     {
         $original = $this->reportedInvoice(7022, $this->source(
-            [['Course A', 0.00], ['Course B', 100.00]],
+            [['Item A', 0.00], ['Item B', 100.00]],
             [[30.00, 'bundle:1', [0, 1]]],
         ));
 
@@ -369,14 +369,14 @@ class CreditNoteBundleDiscountTest extends TestCase
     }
 
     /**
-     * The free course does not shield a bundle course the discount DID make worthless: with
-     * that course (10.00 against a 30.00 discount) the selection is a discounted zero and is
-     * refused — alone, and alongside a course from outside the bundle.
+     * The free item does not shield a bundle item the discount DID make worthless: with
+     * that item (10.00 against a 30.00 discount) the selection is a discounted zero and is
+     * refused — alone, and alongside a item from outside the bundle.
      */
-    public function test_a_free_bundle_course_does_not_shield_a_course_the_discount_made_worthless(): void
+    public function test_a_free_bundle_item_does_not_shield_a_item_the_discount_made_worthless(): void
     {
         $original = $this->reportedInvoice(7023, $this->source(
-            [['Course A', 0.00], ['Course B', 10.00], ['Course C', 100.00], ['Course D', 200.00]],
+            [['Item A', 0.00], ['Item B', 10.00], ['Item C', 100.00], ['Item D', 200.00]],
             [[30.00, 'bundle:1', [0, 1, 2]]],
         ));
 
@@ -394,10 +394,10 @@ class CreditNoteBundleDiscountTest extends TestCase
 
     /**
      * A bundle its discount covered entirely (12 + 2 against 14) was sold for nothing, so
-     * its courses were free: they go back at 0.00 alone, together, or beside a course
+     * its items were free: they go back at 0.00 alone, together, or beside a item
      * from outside the bundle.
      */
-    public function test_the_courses_of_a_bundle_sold_for_nothing_are_cancelled_like_free_ones(): void
+    public function test_the_items_of_a_bundle_sold_for_nothing_are_cancelled_like_free_ones(): void
     {
         $cases = [
             7024 => [[0], 0.00],
@@ -408,7 +408,7 @@ class CreditNoteBundleDiscountTest extends TestCase
 
         foreach ($cases as $sourceId => [$lines, $total]) {
             $original = $this->reportedInvoice($sourceId, $this->source(
-                [['Course A', 12.00], ['Course B', 2.00], ['Course C', 50.00]],
+                [['Item A', 12.00], ['Item B', 2.00], ['Item C', 50.00]],
                 [[14.00, 'bundle:1', [0, 1]]],
             ));
 
@@ -459,10 +459,10 @@ class CreditNoteBundleDiscountTest extends TestCase
     }
 
     /**
-     * A course sharing the invoice but not the bundle is credited at its own value,
-     * and the bundle's discount is left entirely intact for the bundle's courses.
+     * A item sharing the invoice but not the bundle is credited at its own value,
+     * and the bundle's discount is left entirely intact for the bundle's items.
      */
-    public function test_a_non_bundle_course_is_unaffected_by_the_bundle_discount(): void
+    public function test_a_non_bundle_item_is_unaffected_by_the_bundle_discount(): void
     {
         $original = $this->reportedMixedInvoice(7012);
 
@@ -470,7 +470,7 @@ class CreditNoteBundleDiscountTest extends TestCase
             $original,
             ZatcaCreditNoteType::Partial,
             [2],
-            'Course C refunded',
+            'Item C refunded',
             (string) Str::uuid(),
         );
 
@@ -518,7 +518,7 @@ class CreditNoteBundleDiscountTest extends TestCase
             $original,
             ZatcaCreditNoteType::Partial,
             [0, 2],
-            'One course from each bundle',
+            'One item from each bundle',
             (string) Str::uuid(),
         );
 
@@ -530,7 +530,7 @@ class CreditNoteBundleDiscountTest extends TestCase
         $this->assertSame(20.00, $ledger->discountPools['bundle:2']['reserved']);
     }
 
-    /** Crediting every course of both bundles closes on both bundles' invoiced totals. */
+    /** Crediting every item of both bundles closes on both bundles' invoiced totals. */
     public function test_full_credit_across_two_bundles_closes_exactly(): void
     {
         $original = $this->reportedTwoBundleInvoice(7015);
@@ -604,7 +604,7 @@ class CreditNoteBundleDiscountTest extends TestCase
     private function reportedMixedInvoice(int $sourceId): ZatcaInvoice
     {
         return $this->reportedInvoice($sourceId, $this->source(
-            [['Course A', 120.00], ['Course B', 200.00], ['Course C', 300.00]],
+            [['Item A', 120.00], ['Item B', 200.00], ['Item C', 300.00]],
             [[32.00, 'bundle:1', [0, 1]]],
         ));
     }
@@ -619,7 +619,7 @@ class CreditNoteBundleDiscountTest extends TestCase
 
     private function reportedPlainInvoice(int $sourceId): ZatcaInvoice
     {
-        return $this->reportedInvoice($sourceId, $this->source([['Course A', 115.00]], []));
+        return $this->reportedInvoice($sourceId, $this->source([['Item A', 115.00]], []));
     }
 
     private function reportedInvoice(int $sourceId, \Zatca\Contracts\InvoiceSourceContract $source): ZatcaInvoice
@@ -644,7 +644,7 @@ class CreditNoteBundleDiscountTest extends TestCase
         $lines = [];
 
         foreach ($grossValues as $position => $gross) {
-            $lines[] = ['Course '.chr(65 + $position), $gross];
+            $lines[] = ['Item '.chr(65 + $position), $gross];
         }
 
         return $this->source($lines, [[$discountGross, 'bundle:1', array_keys($grossValues)]]);

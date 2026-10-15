@@ -89,7 +89,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $this->assertTrue(app(CreditNoteEligibilityPolicy::class)->allows($original));
 
         $creditNote = app(CreditNoteIssuer::class)->issue(
-            $original, ZatcaCreditNoteType::Full, [], 'Company cancelled the course', (string) Str::uuid()
+            $original, ZatcaCreditNoteType::Full, [], 'Company cancelled the item', (string) Str::uuid()
         );
 
         $document = $this->runCreditNoteGeneration($creditNote);
@@ -213,8 +213,8 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original,
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Extra course', 1, 230.00, courseId: 44)],
-            'Additional course added',
+            [new DebitNoteLineInput('Extra item', 1, 230.00, itemId: 44)],
+            'Additional item added',
             (string) Str::uuid(),
         );
 
@@ -240,7 +240,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original->fresh(),
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Extra course', 1, 230.00, courseId: 44)],
+            [new DebitNoteLineInput('Extra item', 1, 230.00, itemId: 44)],
             'x',
             (string) Str::uuid(),
         );
@@ -259,7 +259,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original,
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Extra course', 1, 230.00, courseId: 44)],
+            [new DebitNoteLineInput('Extra item', 1, 230.00, itemId: 44)],
             'x',
             (string) Str::uuid(),
         );
@@ -280,7 +280,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original,
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Extra course', 1, 230.00, courseId: 44)],
+            [new DebitNoteLineInput('Extra item', 1, 230.00, itemId: 44)],
             'x',
             (string) Str::uuid(),
         );
@@ -314,7 +314,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original,
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Extra course', 1, 230.00, courseId: 44)],
+            [new DebitNoteLineInput('Extra item', 1, 230.00, itemId: 44)],
             'x',
             (string) Str::uuid(),
         );
@@ -357,7 +357,7 @@ class StandardNoteClearanceLifecycleTest extends TestCase
                     buyerVatNumber: '310123456700003',
                     issueDateTime: new DateTimeImmutable('2026-09-20T10:30:00+03:00'),
                     currency: 'SAR',
-                    items: [new ZatcaInvoiceItem('Course Enrollment', 1, 115.00)],
+                    items: [new ZatcaInvoiceItem('Item Enrollment', 1, 115.00)],
                     documentType: ZatcaComplianceDocumentType::StandardInvoice,
                     buyer: new BuyerParty(
                         registrationName: 'شركة الاختبار المحدودة',

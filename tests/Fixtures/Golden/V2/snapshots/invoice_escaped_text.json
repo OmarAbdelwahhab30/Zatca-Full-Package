@@ -8,7 +8,7 @@
     "currency": "SAR",
     "lines": [
         {
-            "description": "Course \"Advanced\" & <Labs>",
+            "description": "Item \"Advanced\" & <Labs>",
             "quantity": 1,
             "unit_price": 99.99,
             "vat_rate": 15.0,

@@ -8,7 +8,7 @@
     "currency": "SAR",
     "lines": [
         {
-            "description": "Course A - price increase",
+            "description": "Item A - price increase",
             "quantity": 1,
             "unit_price": 43.48,
             "vat_rate": 15.0,

@@ -337,7 +337,7 @@ class RegenerationPolicyTest extends TestCase
                     buyerVatNumber: '310123456700003',
                     issueDateTime: new DateTimeImmutable('2026-08-17T10:30:00+03:00'),
                     currency: 'SAR',
-                    items: [new ZatcaInvoiceItem('Course Enrollment', 1, 115.00)],
+                    items: [new ZatcaInvoiceItem('Item Enrollment', 1, 115.00)],
                     documentType: ZatcaComplianceDocumentType::StandardInvoice,
                     buyer: new BuyerParty(
                         registrationName: 'Standard Buyer LLC',

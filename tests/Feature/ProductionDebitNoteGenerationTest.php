@@ -67,12 +67,12 @@ class ProductionDebitNoteGenerationTest extends TestCase
         $orchestrator = app(ProductionInvoiceOrchestrator::class);
 
         $original = $orchestrator->generate($this->fakeInvoiceSource(), (object) ['id' => 8601], self::EGS);
-        $data = $this->debitNoteDataFor($original, 'DN-000010', 'Additional course added after purchase');
+        $data = $this->debitNoteDataFor($original, 'DN-000010', 'Additional item added after purchase');
 
         $debitNote = $orchestrator->generateDebitNote($data, self::EGS, debitNoteId: 10);
 
         $this->assertStringContainsString(
-            '<cbc:InstructionNote>Additional course added after purchase</cbc:InstructionNote>',
+            '<cbc:InstructionNote>Additional item added after purchase</cbc:InstructionNote>',
             $debitNote->unsigned_xml
         );
         $this->assertStringNotContainsString('Compliance test debit note', $debitNote->unsigned_xml);
@@ -120,7 +120,7 @@ class ProductionDebitNoteGenerationTest extends TestCase
 
         return app(DebitNoteDataFactory::class)->make(
             $originalData,
-            [new DebitNoteLineInput('Extra course', 1, 230.00, courseId: 44)],
+            [new DebitNoteLineInput('Extra item', 1, 230.00, itemId: 44)],
             $number,
             $original->source_reference,
             $reason,

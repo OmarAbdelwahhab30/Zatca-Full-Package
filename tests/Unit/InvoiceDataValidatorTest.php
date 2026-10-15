@@ -27,15 +27,15 @@ class InvoiceDataValidatorTest extends TestCase
      * The case this class was added for. A coupon that validated at checkout and
      * failed re-validation at callback time leaves the price distributor holding
      * full prices against a discounted charge; before the fix, the difference was
-     * subtracted from one course and could take it below zero. Nothing downstream
+     * subtracted from one item and could take it below zero. Nothing downstream
      * would have refused it — the totals still reconcile, so the arithmetic checks
      * pass and only the sign is wrong.
      */
     public function test_it_refuses_a_negative_invoice_line(): void
     {
         $data = $this->invoice(lines: [
-            new ZatcaInvoiceLine('Course A', 1, 869.57, 15.0, 869.57, 130.43),
-            new ZatcaInvoiceLine('Course B', 1, -230.43, 15.0, -230.43, -34.57),
+            new ZatcaInvoiceLine('Item A', 1, 869.57, 15.0, 869.57, 130.43),
+            new ZatcaInvoiceLine('Item B', 1, -230.43, 15.0, -230.43, -34.57),
         ], net: 639.14, vat: 95.86, gross: 735.00);
 
         $this->expectException(ZatcaException::class);
@@ -55,7 +55,7 @@ class InvoiceDataValidatorTest extends TestCase
     public function test_it_refuses_a_line_with_no_quantity(): void
     {
         $data = $this->invoice(lines: [
-            new ZatcaInvoiceLine('Course A', 0, 100.00, 15.0, 100.00, 15.00),
+            new ZatcaInvoiceLine('Item A', 0, 100.00, 15.0, 100.00, 15.00),
         ], net: 100.00, vat: 15.00, gross: 115.00);
 
         $this->expectException(ZatcaException::class);
@@ -108,7 +108,7 @@ class InvoiceDataValidatorTest extends TestCase
         $net = 0.0;
 
         for ($i = 0; $i < 100; $i++) {
-            $lines[] = new ZatcaInvoiceLine('Course', 1, 0.01, 15.0, 0.01, 0.00);
+            $lines[] = new ZatcaInvoiceLine('Item', 1, 0.01, 15.0, 0.01, 0.00);
             $net += 0.01;
         }
 
@@ -362,13 +362,13 @@ class InvoiceDataValidatorTest extends TestCase
             buyerVatNumber: null,
             issueDateTime: new DateTimeImmutable('2026-09-14 10:00:00'),
             currency: 'SAR',
-            lines: [new ZatcaInvoiceLine('Course A', 1, 100.00, 15.0, 100.00, 15.00)],
+            lines: [new ZatcaInvoiceLine('Item A', 1, 100.00, 15.0, 100.00, 15.00)],
             totalExclVat: 100.00,
             totalVat: 15.00,
             totalInclVat: 115.00,
             documentType: ZatcaComplianceDocumentType::StandardCreditNote,
             billingReferenceId: 'payment:412',
-            adjustmentReason: 'Course refunded',
+            adjustmentReason: 'Item refunded',
         ));
     }
 
@@ -409,7 +409,7 @@ class InvoiceDataValidatorTest extends TestCase
             buyerVatNumber: '310123456700003',
             issueDateTime: new DateTimeImmutable('2026-08-20 10:00:00'),
             currency: 'SAR',
-            lines: [new ZatcaInvoiceLine('Course A', 1, 100.00, 15.0, 100.00, 15.00)],
+            lines: [new ZatcaInvoiceLine('Item A', 1, 100.00, 15.0, 100.00, 15.00)],
             totalExclVat: 100.00,
             totalVat: 15.00,
             totalInclVat: 115.00,
@@ -424,7 +424,7 @@ class InvoiceDataValidatorTest extends TestCase
         return new InvoiceDataValidator;
     }
 
-    private function creditNote(?string $billingReferenceId = 'payment:412', ?string $reason = 'Course refunded'): ZatcaInvoiceData
+    private function creditNote(?string $billingReferenceId = 'payment:412', ?string $reason = 'Item refunded'): ZatcaInvoiceData
     {
         return new ZatcaInvoiceData(
             egsIdentifier: 'default',
@@ -433,7 +433,7 @@ class InvoiceDataValidatorTest extends TestCase
             buyerVatNumber: null,
             issueDateTime: new DateTimeImmutable('2026-09-14 10:00:00'),
             currency: 'SAR',
-            lines: [new ZatcaInvoiceLine('Course A', 1, 100.00, 15.0, 100.00, 15.00)],
+            lines: [new ZatcaInvoiceLine('Item A', 1, 100.00, 15.0, 100.00, 15.00)],
             totalExclVat: 100.00,
             totalVat: 15.00,
             totalInclVat: 115.00,
@@ -457,7 +457,7 @@ class InvoiceDataValidatorTest extends TestCase
             buyerVatNumber: null,
             issueDateTime: new DateTimeImmutable('2026-08-20 10:00:00'),
             currency: 'SAR',
-            lines: $lines ?? [new ZatcaInvoiceLine('Course A', 1, 100.00, 15.0, 100.00, 15.00)],
+            lines: $lines ?? [new ZatcaInvoiceLine('Item A', 1, 100.00, 15.0, 100.00, 15.00)],
             totalExclVat: $net,
             totalVat: $vat,
             totalInclVat: $gross,

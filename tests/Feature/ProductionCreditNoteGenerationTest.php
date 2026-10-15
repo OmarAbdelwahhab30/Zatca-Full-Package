@@ -88,7 +88,7 @@ class ProductionCreditNoteGenerationTest extends TestCase
 
         $this->assertSame(ZatcaComplianceDocumentType::CreditNote, $restored->documentType);
         $this->assertSame($original->source_reference, $restored->billingReferenceId);
-        $this->assertSame('Course refunded per policy', $restored->adjustmentReason);
+        $this->assertSame('Item refunded per policy', $restored->adjustmentReason);
     }
 
     private function creditNoteDataFor(ZatcaInvoice $original, string $creditNoteNumber): ZatcaInvoiceData
@@ -100,7 +100,7 @@ class ProductionCreditNoteGenerationTest extends TestCase
             lineIndexes: [0],
             creditNoteNumber: $creditNoteNumber,
             billingReferenceId: $original->source_reference,
-            reason: 'Course refunded per policy',
+            reason: 'Item refunded per policy',
             issueDateTime: new DateTimeImmutable('2026-09-14T12:00:00+03:00'),
         );
     }

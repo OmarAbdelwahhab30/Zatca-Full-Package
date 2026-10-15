@@ -26,7 +26,7 @@ class XmlGeneratorTest extends TestCase
         $this->assertStringContainsString('<cbc:TaxInclusiveAmount currencyID="SAR">230.00</cbc:TaxInclusiveAmount>', $xml);
         $this->assertStringContainsString('<cbc:UUID>5</cbc:UUID>', $xml); // ICV
         $this->assertStringContainsString('Test Student', $xml);
-        $this->assertStringContainsString('Course Enrollment', $xml);
+        $this->assertStringContainsString('Item Enrollment', $xml);
     }
 
     /**
@@ -144,7 +144,7 @@ class XmlGeneratorTest extends TestCase
     {
         $egsConfig ??= $this->egsConfig();
 
-        $line = new ZatcaInvoiceLine('Course Enrollment', 1, 200.00, 15.0, 200.00, 30.00);
+        $line = new ZatcaInvoiceLine('Item Enrollment', 1, 200.00, 15.0, 200.00, 30.00);
 
         $invoiceData = new ZatcaInvoiceData(
             egsIdentifier: 'default',
