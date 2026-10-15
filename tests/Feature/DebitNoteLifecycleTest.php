@@ -113,7 +113,7 @@ class DebitNoteLifecycleTest extends TestCase
 
     /**
      * The acceptance contract: reporting success writes accepted_at, announces it once,
-     * and — the rule the entire Additional Course flow depends on — says nothing at all
+     * and — the rule the entire Additional Item flow depends on — says nothing at all
      * about payment.
      */
     public function test_reporting_success_accepts_the_note_once_and_announces_it(): void
@@ -176,8 +176,8 @@ class DebitNoteLifecycleTest extends TestCase
         return app(DebitNoteIssuer::class)->issue(
             $original,
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Extra course', 1, 230.00, courseId: 44)],
-            'Additional course',
+            [new DebitNoteLineInput('Extra item', 1, 230.00, itemId: 44)],
+            'Additional item',
             (string) Str::uuid(),
         );
     }

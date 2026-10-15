@@ -223,7 +223,7 @@ class InvoiceCalculatorTest extends TestCase
     public function test_an_inclusive_bundle_discount_comes_off_what_the_customer_pays(): void
     {
         $data = $this->calculate(
-            [new ZatcaInvoiceItem('Course A', 1, 120), new ZatcaInvoiceItem('Course B', 1, 200)],
+            [new ZatcaInvoiceItem('Item A', 1, 120), new ZatcaInvoiceItem('Item B', 1, 200)],
             discounts: [new ZatcaInvoiceDiscount('Bundle discount', 32, poolKey: 'bundle:1', lineIndexes: [0, 1])],
         );
 

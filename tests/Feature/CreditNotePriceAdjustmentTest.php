@@ -28,15 +28,15 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
 /**
- * Credit Note price adjustments: crediting the difference when a course was charged
- * more than its correct price, without taking the course back.
+ * Credit Note price adjustments: crediting the difference when a item was charged
+ * more than its correct price, without taking the item back.
  *
  * The invoice from the bug report throughout, unless a test says otherwise:
  *
- *   Original invoice   Course A   700.00   (correct price 500.00)
- *   Price adjustment   Course A  -200.00
+ *   Original invoice   Item A   700.00   (correct price 500.00)
+ *   Price adjustment   Item A  -200.00
  *
- * The invariants every test protects: the adjusted course stays creditable, what is
+ * The invariants every test protects: the adjusted item stays creditable, what is
  * later credited for it is only what is left, and cumulative credits still close on
  * exactly what was invoiced.
  */
@@ -57,7 +57,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
         ]);
     }
 
-    public function test_a_price_adjustment_credits_the_difference_and_leaves_the_course_available(): void
+    public function test_a_price_adjustment_credits_the_difference_and_leaves_the_item_available(): void
     {
         $original = $this->reportedInvoice(9101);
 
@@ -80,7 +80,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $snapshot = InvoiceDataSnapshot::fromArray($note->document_snapshot);
         $this->assertSame($original->source_reference, $snapshot->billingReferenceId);
         $this->assertSame('Price adjustment reason', $snapshot->adjustmentReason);
-        $this->assertSame(['تسوية سعر - Course A'], array_map(fn ($l) => $l->description, $snapshot->lines));
+        $this->assertSame(['تسوية سعر - Item A'], array_map(fn ($l) => $l->description, $snapshot->lines));
 
         $pending = $this->ledger($original);
         $this->assertSame(200.00, $pending->lineAdjustments[0]);
@@ -112,7 +112,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
     }
 
     /** The bug report's arithmetic, carried through a later cancellation: 200 now, 500 later, 700 in all. */
-    public function test_cancelling_an_adjusted_course_credits_only_what_is_left(): void
+    public function test_cancelling_an_adjusted_item_credits_only_what_is_left(): void
     {
         $original = $this->reportedInvoice(9103);
         $this->adjust($original, 'line:0', 200.00)->update(['accepted_at' => now()]);
@@ -132,12 +132,12 @@ class CreditNotePriceAdjustmentTest extends TestCase
     }
 
     /**
-     * An adjustment in flight holds its course. Cancelling the course for what is left
+     * An adjustment in flight holds its item. Cancelling the item for what is left
      * would lose the adjusted amount for good if ZATCA then rejected the adjustment.
      */
-    public function test_an_adjustment_in_flight_holds_its_course_until_accepted(): void
+    public function test_an_adjustment_in_flight_holds_its_item_until_accepted(): void
     {
-        $original = $this->reportedInvoice(9104, [['Course A', 700.00], ['Course B', 300.00]]);
+        $original = $this->reportedInvoice(9104, [['Item A', 700.00], ['Item B', 300.00]]);
         $adjustment = $this->adjust($original, 'line:0', 200.00);
 
         $held = $this->ledger($original);
@@ -155,8 +155,8 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $this->assertSame(500.00, (float) $this->cancelLines($original, [0])->total_incl_vat);
     }
 
-    /** A rejected adjustment that is cancelled gives the course back its whole value. */
-    public function test_a_cancelled_adjustment_leaves_the_course_creditable_in_full(): void
+    /** A rejected adjustment that is cancelled gives the item back its whole value. */
+    public function test_a_cancelled_adjustment_leaves_the_item_creditable_in_full(): void
     {
         $original = $this->reportedInvoice(9111);
         $adjustment = $this->adjust($original, 'line:0', 200.00);
@@ -167,7 +167,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $this->assertSame(700.00, (float) $this->cancelLines($original, [0])->total_incl_vat);
     }
 
-    public function test_an_adjustment_must_stay_strictly_below_what_is_left_of_the_course(): void
+    public function test_an_adjustment_must_stay_strictly_below_what_is_left_of_the_item(): void
     {
         $original = $this->reportedInvoice(9105);
 
@@ -218,9 +218,9 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $this->assertSame(700.00, (float) $this->cancelLines($original, [0])->total_incl_vat);
     }
 
-    public function test_a_reserved_or_credited_course_cannot_be_adjusted(): void
+    public function test_a_reserved_or_credited_item_cannot_be_adjusted(): void
     {
-        $original = $this->reportedInvoice(9108, [['Course A', 700.00], ['Course B', 300.00]]);
+        $original = $this->reportedInvoice(9108, [['Item A', 700.00], ['Item B', 300.00]]);
 
         $reserved = $this->cancelLines($original, [0]);
         $this->assertRefused(CreditNoteEligibilityVerdict::ADJUSTMENT_IN_PROGRESS, fn () => $this->adjust($original, 'line:0', 100.00));
@@ -228,24 +228,24 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $reserved->update(['accepted_at' => now()]);
         $this->assertRefused(CreditNoteException::NOT_ADJUSTABLE, fn () => $this->adjust($original, 'line:0', 100.00));
 
-        // The other course is untouched by either.
+        // The other item is untouched by either.
         $this->assertSame(100.00, (float) $this->adjust($original, 'line:1', 100.00)->total_incl_vat);
     }
 
-    public function test_only_a_course_of_this_invoice_can_be_adjusted(): void
+    public function test_only_a_item_of_this_invoice_can_be_adjusted(): void
     {
         $original = $this->reportedInvoice(9109);
         $vatLine = $this->debitNote($original, ZatcaDebitNoteReason::VatAdjustment, 15.00, referencedIndex: 0, vatOnly: true)->lines->sole();
         $priceLine = $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 50.00, referencedIndex: 0)->lines->sole();
 
-        foreach (['line:1', 'line:99', 'dn_line:'.$vatLine->id, 'dn_line:'.$priceLine->id, 'dn_line:999999', 'course:1', ''] as $key) {
+        foreach (['line:1', 'line:99', 'dn_line:'.$vatLine->id, 'dn_line:'.$priceLine->id, 'dn_line:999999', 'item:1', ''] as $key) {
             $this->assertRefused(CreditNoteException::NOT_ADJUSTABLE, fn () => $this->adjust($original, $key, 10.00));
         }
 
         $this->assertSame(0, ZatcaCreditNote::count());
     }
 
-    /** A course a debit note added can be adjusted too, and crediting it later takes only what is left. */
+    /** A item a debit note added can be adjusted too, and crediting it later takes only what is left. */
     public function test_an_additional_item_from_a_debit_note_can_be_adjusted(): void
     {
         $original = $this->reportedInvoice(9110);
@@ -281,14 +281,14 @@ class CreditNotePriceAdjustmentTest extends TestCase
     }
 
     /**
-     * A bundle course worth less than the discount left is refused, until a price
+     * A bundle item worth less than the discount left is refused, until a price
      * settlement moves value onto it: 5.00 from B to A makes A worth 17.00, the whole
      * 15.00 discount is drawn against that, and cancelling A credits 2.00 — the line
      * absorbs 12.00 of the discount and its price increase the last 3.00.
      */
-    public function test_a_price_increase_counts_toward_what_a_bundle_course_absorbs_of_the_discount(): void
+    public function test_a_price_increase_counts_toward_what_a_bundle_item_absorbs_of_the_discount(): void
     {
-        $original = $this->reportedInvoice(9140, [['Course A', 12.00], ['Course B', 200.00]], [15.00, 'bundle:1', [0, 1]]);
+        $original = $this->reportedInvoice(9140, [['Item A', 12.00], ['Item B', 200.00]], [15.00, 'bundle:1', [0, 1]]);
 
         $this->assertRefused(CreditNoteException::ZERO_VALUE, fn () => $this->cancelLines($original, [0]));
 
@@ -312,10 +312,10 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $this->assertSame(195.00, (float) $this->cancelLines($original, [1])->total_incl_vat);
     }
 
-    /** The settlement does not rescue a course still worth less than the discount. */
+    /** The settlement does not rescue a item still worth less than the discount. */
     public function test_a_price_increase_too_small_to_cover_the_discount_is_still_refused(): void
     {
-        $original = $this->reportedInvoice(9141, [['Course A', 12.00], ['Course B', 200.00]], [15.00, 'bundle:1', [0, 1]]);
+        $original = $this->reportedInvoice(9141, [['Item A', 12.00], ['Item B', 200.00]], [15.00, 'bundle:1', [0, 1]]);
         $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 2.00, 0);
 
         $this->assertRefused(CreditNoteException::ZERO_VALUE, fn () => $this->cancelLines($original, [0]));
@@ -323,14 +323,14 @@ class CreditNotePriceAdjustmentTest extends TestCase
     }
 
     /**
-     * On a bundle a course's worth depends on how much of the shared discount it ends
+     * On a bundle a item's worth depends on how much of the shared discount it ends
      * up absorbing, so the cap assumes the worst: all of it. Either cancellation order
      * then closes on exactly what the bundle charged.
      */
-    public function test_a_bundle_course_is_capped_at_its_worst_case_value_and_closes_in_either_order(): void
+    public function test_a_bundle_item_is_capped_at_its_worst_case_value_and_closes_in_either_order(): void
     {
         foreach ([[0, 1], [1, 0]] as $run => $order) {
-            $original = $this->reportedInvoice(9120 + $run, [['Course A', 120.00], ['Course B', 200.00]], [32.00, 'bundle:1', [0, 1]]);
+            $original = $this->reportedInvoice(9120 + $run, [['Item A', 120.00], ['Item B', 200.00]], [32.00, 'bundle:1', [0, 1]]);
 
             $this->assertSame(88.00, $this->ledger($original)->adjustableFor('line:0'));
             $this->assertRefused(CreditNoteException::ADJUSTMENT_EXCEEDS_VALUE, fn () => $this->adjust($original, 'line:0', 88.00));
@@ -360,11 +360,11 @@ class CreditNotePriceAdjustmentTest extends TestCase
     /** Discount a pending note only reserves may come back, so it still counts against the cap. */
     public function test_a_bundle_cap_ignores_discount_that_is_only_reserved(): void
     {
-        $original = $this->reportedInvoice(9130, [['Course A', 120.00], ['Course B', 200.00]], [32.00, 'bundle:1', [0, 1]]);
+        $original = $this->reportedInvoice(9130, [['Item A', 120.00], ['Item B', 200.00]], [32.00, 'bundle:1', [0, 1]]);
 
         $pending = $this->cancelLines($original, [1]); // reserves the whole 32.00 discount
         $this->assertSame(0.00, $this->ledger($original)->discountPools['bundle:1']['available']);
-        // Reserved, not consumed: the cap still assumes the 32.00 may come back to Course A.
+        // Reserved, not consumed: the cap still assumes the 32.00 may come back to Item A.
         $this->assertSame(88.00, $this->ledger($original)->adjustableFor('line:0'));
         // Nothing may be issued while that note is in progress.
         $this->assertRefused(CreditNoteEligibilityVerdict::ADJUSTMENT_IN_PROGRESS, fn () => $this->adjust($original, 'line:0', 87.99));
@@ -373,7 +373,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $this->assertSame(88.00, $this->ledger($original)->adjustableFor('line:0'));
         $this->adjust($original, 'line:0', 87.99)->update(['accepted_at' => now()]);
 
-        // The discount is back and lands on Course A; its credit is still positive.
+        // The discount is back and lands on Item A; its credit is still positive.
         $this->assertSame(0.01, (float) $this->cancelLines($original, [0])->total_incl_vat);
     }
 
@@ -403,17 +403,17 @@ class CreditNotePriceAdjustmentTest extends TestCase
     }
 
     /**
-     * The rule a bundle course is held to: whatever is left of it after the adjustment
-     * must still be worth more than the discount it could absorb — course minus the
+     * The rule a bundle item is held to: whatever is left of it after the adjustment
+     * must still be worth more than the discount it could absorb — item minus the
      * adjustments standing against it, strictly greater than the remaining discount.
      *
-     * Course A 100.00 on a 20.00 bundle, so A may be adjusted by anything under 80.00.
+     * Item A 100.00 on a 20.00 bundle, so A may be adjusted by anything under 80.00.
      * A smaller adjustment is not "too small": the discount is untouched by it and the
-     * course is still worth cancelling afterwards, which is the whole point of the rule.
+     * item is still worth cancelling afterwards, which is the whole point of the rule.
      */
-    public function test_a_bundle_course_must_stay_worth_more_than_the_discount_after_adjusting(): void
+    public function test_a_bundle_item_must_stay_worth_more_than_the_discount_after_adjusting(): void
     {
-        $original = $this->reportedInvoice(9131, [['Course A', 100.00], ['Course B', 50.00]], [20.00, 'bundle:1', [0, 1]]);
+        $original = $this->reportedInvoice(9131, [['Item A', 100.00], ['Item B', 50.00]], [20.00, 'bundle:1', [0, 1]]);
 
         $this->assertSame(80.00, $this->ledger($original)->adjustableFor('line:0'));
 
@@ -430,12 +430,12 @@ class CreditNotePriceAdjustmentTest extends TestCase
     }
 
     /**
-     * Several courses corrected by ONE note: each keeps its own amount and its own line,
+     * Several items corrected by ONE note: each keeps its own amount and its own line,
      * and the note is worth their sum. The bug report's shape — 200.00, 150.00, 300.00.
      */
-    public function test_one_note_can_correct_several_courses_at_once(): void
+    public function test_one_note_can_correct_several_items_at_once(): void
     {
-        $original = $this->reportedInvoice(9140, [['Course A', 700.00], ['Course B', 400.00], ['Course C', 500.00]]);
+        $original = $this->reportedInvoice(9140, [['Item A', 700.00], ['Item B', 400.00], ['Item C', 500.00]]);
 
         $note = $this->adjustMany($original, ['line:0' => 200.00, 'line:1' => 150.00, 'line:2' => 300.00]);
 
@@ -447,7 +447,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
         );
         $this->assertSame([0, 1, 2], $note->lines->map(fn ($line) => (int) $line->original_line_index)->all());
 
-        // One claim per course, so the unique active_line_key cannot collide.
+        // One claim per item, so the unique active_line_key cannot collide.
         $this->assertSame([
             'pa:'.$note->id.':line:0',
             'pa:'.$note->id.':line:1',
@@ -458,16 +458,16 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $ledger = $this->ledger($original);
 
         $this->assertSame([0 => 200.00, 1 => 150.00, 2 => 300.00], $ledger->lineAdjustments);
-        // Every course stays creditable for what is left of it.
+        // Every item stays creditable for what is left of it.
         $this->assertSame([0, 1, 2], $ledger->availableIndexes);
         $this->assertSame(500.00, $ledger->adjustableFor('line:0'));
         $this->assertSame(250.00, $ledger->adjustableFor('line:1'));
     }
 
-    /** The signed document states every course, and its totals are the sum of them. */
-    public function test_the_signed_document_states_every_corrected_course(): void
+    /** The signed document states every item, and its totals are the sum of them. */
+    public function test_the_signed_document_states_every_corrected_item(): void
     {
-        $original = $this->reportedInvoice(9141, [['Course A', 700.00], ['Course B', 400.00]]);
+        $original = $this->reportedInvoice(9141, [['Item A', 700.00], ['Item B', 400.00]]);
 
         $note = $this->adjustMany($original, ['line:0' => 230.00, 'line:1' => 115.00]);
 
@@ -492,12 +492,12 @@ class CreditNotePriceAdjustmentTest extends TestCase
     }
 
     /**
-     * One course refused takes the whole note with it. A partially applied correction is
+     * One item refused takes the whole note with it. A partially applied correction is
      * not something an admin can reason about, so nothing is written at all.
      */
-    public function test_one_course_over_its_value_refuses_the_whole_note(): void
+    public function test_one_item_over_its_value_refuses_the_whole_note(): void
     {
-        $original = $this->reportedInvoice(9142, [['Course A', 700.00], ['Course B', 400.00]]);
+        $original = $this->reportedInvoice(9142, [['Item A', 700.00], ['Item B', 400.00]]);
 
         $this->assertRefused(
             CreditNoteException::ADJUSTMENT_EXCEEDS_VALUE,
@@ -509,10 +509,10 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $this->assertSame([], $this->ledger($original)->lineAdjustments);
     }
 
-    /** Two amounts for one course is a request nobody meant to make. */
-    public function test_the_same_course_cannot_be_named_twice_in_one_note(): void
+    /** Two amounts for one item is a request nobody meant to make. */
+    public function test_the_same_item_cannot_be_named_twice_in_one_note(): void
     {
-        $original = $this->reportedInvoice(9143, [['Course A', 700.00]]);
+        $original = $this->reportedInvoice(9143, [['Item A', 700.00]]);
 
         $this->assertRefused(CreditNoteException::NOT_ADJUSTABLE, fn () => $this->issuer()->issuePriceAdjustments(
             $original->fresh(),
@@ -528,13 +528,13 @@ class CreditNotePriceAdjustmentTest extends TestCase
     }
 
     /**
-     * The two kinds of course share a note as readily as two original ones: an invoice
-     * line and a course an accepted Debit Note added, each corrected by its own amount and
+     * The two kinds of item share a note as readily as two original ones: an invoice
+     * line and a item an accepted Debit Note added, each corrected by its own amount and
      * each measured against its own cap.
      */
-    public function test_one_note_can_correct_an_original_course_and_an_added_one(): void
+    public function test_one_note_can_correct_an_original_item_and_an_added_one(): void
     {
-        $original = $this->reportedInvoice(9144, [['Course A', 700.00]]);
+        $original = $this->reportedInvoice(9144, [['Item A', 700.00]]);
         $addedLineId = (int) $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 500.00, itemId: 77)
             ->lines->first()->getKey();
         $addedKey = CreditSource::debitNoteLineKey($addedLineId);
@@ -551,7 +551,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
         $this->assertSame(150.00, $ledger->debitLineAdjustments[$addedLineId]);
         $this->assertSame(500.00, $ledger->adjustableFor('line:0'));
         $this->assertSame(350.00, $ledger->adjustableFor($addedKey));
-        // Both courses are still there to credit for what is left of them.
+        // Both items are still there to credit for what is left of them.
         $this->assertSame([0], $ledger->availableIndexes);
         $this->assertSame([$addedLineId], $ledger->availableDebitLineIds());
     }
@@ -593,7 +593,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
             $original->fresh(),
             $sourceKey,
             $gross,
-            'تسوية سعر - Course A',
+            'تسوية سعر - Item A',
             'Price adjustment reason',
             $key ?? (string) Str::uuid(),
         )->fresh(['lines']);
@@ -634,7 +634,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
         ?int $itemId = null,
         bool $vatOnly = false,
     ): ZatcaDebitNote {
-        $description = $reason === ZatcaDebitNoteReason::AdditionalItem ? 'Course B' : 'Adjustment';
+        $description = $reason === ZatcaDebitNoteReason::AdditionalItem ? 'Item B' : 'Adjustment';
 
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original->fresh(),
@@ -655,7 +655,7 @@ class CreditNotePriceAdjustmentTest extends TestCase
      * @param  array<int, array{0: string, 1: float}>  $lines  description, VAT-inclusive value
      * @param  array{0: float, 1: string, 2: int[]}|null  $bundle  discount, pool key, covered line indexes
      */
-    private function reportedInvoice(int $sourceId, array $lines = [['Course A', 700.00]], ?array $bundle = null): ZatcaInvoice
+    private function reportedInvoice(int $sourceId, array $lines = [['Item A', 700.00]], ?array $bundle = null): ZatcaInvoice
     {
         $this->seedFakeProductionCredentials();
         $this->app->instance(ZatcaSdkInterface::class, $this->scriptedSdk());

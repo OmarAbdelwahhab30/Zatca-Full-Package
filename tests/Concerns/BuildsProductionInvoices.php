@@ -215,7 +215,7 @@ class FakeInvoiceSource implements InvoiceSourceContract
             // keeps generated documents byte-comparable across calls.
             issueDateTime: new DateTimeImmutable('2026-08-17T10:30:00+03:00'),
             currency: 'SAR',
-            items: [new ZatcaInvoiceItem('Course Enrollment', 1, 115.00)],
+            items: [new ZatcaInvoiceItem('Item Enrollment', 1, 115.00)],
         );
     }
 

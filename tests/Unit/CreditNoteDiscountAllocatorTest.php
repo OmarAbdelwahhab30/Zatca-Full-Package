@@ -16,7 +16,7 @@ use DateTimeImmutable;
  * business states it and how the allocator works — the VAT split happens later,
  * in CreditNoteDataFactory, against the frozen line.
  *
- * The invariant every test is really checking: whatever order the courses are
+ * The invariant every test is really checking: whatever order the items are
  * credited in, and however the discount lands across them, the cumulative credits
  * equal what the bundle was actually invoiced. Individual amounts move; the total
  * does not.
@@ -24,7 +24,7 @@ use DateTimeImmutable;
 class CreditNoteDiscountAllocatorTest extends TestCase
 {
     /** A=120, B=200, discount 32 → invoiced 288. Credit A first: 120-32 = 88. */
-    public function test_first_credited_course_consumes_the_whole_discount(): void
+    public function test_first_credited_item_consumes_the_whole_discount(): void
     {
         $original = $this->bundleInvoice([120.00, 200.00], 32.00);
 
@@ -35,8 +35,8 @@ class CreditNoteDiscountAllocatorTest extends TestCase
         $this->assertSame('bundle:1', $allocation->poolFor(0));
     }
 
-    /** …and the next course is then credited in full, so the two total 288. */
-    public function test_second_course_is_credited_in_full_once_the_discount_is_spent(): void
+    /** …and the next item is then credited in full, so the two total 288. */
+    public function test_second_item_is_credited_in_full_once_the_discount_is_spent(): void
     {
         $original = $this->bundleInvoice([120.00, 200.00], 32.00);
 
@@ -49,7 +49,7 @@ class CreditNoteDiscountAllocatorTest extends TestCase
     }
 
     /** The other order gives different individual amounts and the SAME total. */
-    public function test_crediting_the_larger_course_first_still_totals_the_invoiced_amount(): void
+    public function test_crediting_the_larger_item_first_still_totals_the_invoiced_amount(): void
     {
         $original = $this->bundleInvoice([120.00, 200.00], 32.00);
 
@@ -118,11 +118,11 @@ class CreditNoteDiscountAllocatorTest extends TestCase
     }
 
     /**
-     * The edge case: a discount larger than the first course credited. The credit is
+     * The edge case: a discount larger than the first item credited. The credit is
      * floored at zero rather than going negative, and the unspent remainder carries
      * to the next note.
      */
-    public function test_a_discount_larger_than_the_course_credits_zero_and_carries_the_remainder(): void
+    public function test_a_discount_larger_than_the_item_credits_zero_and_carries_the_remainder(): void
     {
         $original = $this->bundleInvoice([20.00, 100.00], 30.00);
 
@@ -164,7 +164,7 @@ class CreditNoteDiscountAllocatorTest extends TestCase
         $this->assertSame($ascending->creditInclVat, $descending->creditInclVat);
     }
 
-    /** A course outside the bundle is untouched by the bundle's discount. */
+    /** A item outside the bundle is untouched by the bundle's discount. */
     public function test_a_non_bundle_line_is_credited_at_its_full_value(): void
     {
         $original = new ZatcaInvoiceData(
@@ -175,9 +175,9 @@ class CreditNoteDiscountAllocatorTest extends TestCase
             issueDateTime: new DateTimeImmutable('2026-09-01T10:00:00+03:00'),
             currency: 'SAR',
             lines: [
-                $this->line('Course A', 120.00),
-                $this->line('Course B', 200.00),
-                $this->line('Course C', 300.00),
+                $this->line('Item A', 120.00),
+                $this->line('Item B', 200.00),
+                $this->line('Item C', 300.00),
             ],
             totalExclVat: 0.0,
             totalVat: 0.0,
@@ -223,7 +223,7 @@ class CreditNoteDiscountAllocatorTest extends TestCase
             ['bundle:1' => 32.00, 'bundle:2' => 20.00],
         );
 
-        // Each course draws only on its own bundle: 120-32 and 100-20.
+        // Each item draws only on its own bundle: 120-32 and 100-20.
         $this->assertSame(88.00, $allocation->creditFor(0));
         $this->assertSame(80.00, $allocation->creditFor(2));
         $this->assertSame('bundle:1', $allocation->poolFor(0));
@@ -240,7 +240,7 @@ class CreditNoteDiscountAllocatorTest extends TestCase
             buyerVatNumber: null,
             issueDateTime: new DateTimeImmutable('2026-09-01T10:00:00+03:00'),
             currency: 'SAR',
-            lines: [$this->line('Course A', 120.00)],
+            lines: [$this->line('Item A', 120.00)],
             totalExclVat: 104.35,
             totalVat: 15.65,
             totalInclVat: 120.00,
@@ -251,7 +251,7 @@ class CreditNoteDiscountAllocatorTest extends TestCase
     }
 
     /**
-     * Three courses whose discount does not divide evenly. The point is not any one
+     * Three items whose discount does not divide evenly. The point is not any one
      * line's figure but that the three credits sum to exactly what the bundle was
      * invoiced, with no fil left behind.
      */
@@ -276,7 +276,7 @@ class CreditNoteDiscountAllocatorTest extends TestCase
         $lines = [];
 
         foreach ($grossLineValues as $position => $gross) {
-            $lines[] = $this->line('Course '.($position + 1), $gross);
+            $lines[] = $this->line('Item '.($position + 1), $gross);
         }
 
         return new ZatcaInvoiceData(
@@ -296,7 +296,7 @@ class CreditNoteDiscountAllocatorTest extends TestCase
         );
     }
 
-    /** A VAT-inclusive line, the shape PaymentInvoiceSource signs for a bundle course. */
+    /** A VAT-inclusive line, the shape PaymentInvoiceSource signs for a bundle item. */
     private function line(string $description, float $gross): ZatcaInvoiceLine
     {
         $net = round($gross / 1.15, 2);

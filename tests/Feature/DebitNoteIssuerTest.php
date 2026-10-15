@@ -49,7 +49,7 @@ class DebitNoteIssuerTest extends TestCase
         $debitNote = $this->issuer()->issue(
             $original,
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Course D', 1, 230.00, itemId: 44)],
+            [new DebitNoteLineInput('Item D', 1, 230.00, itemId: 44)],
             'إضافة دورة تدريبية لم تكن ضمن الفاتورة الأصلية',
             (string) Str::uuid(),
         );
@@ -248,10 +248,10 @@ class DebitNoteIssuerTest extends TestCase
     }
 
     /**
-     * A course an earlier Debit Note added is not a line of the original invoice, so a
+     * A item an earlier Debit Note added is not a line of the original invoice, so a
      * price adjustment of it references that debit note line instead.
      */
-    public function test_a_price_adjustment_may_reference_a_course_an_accepted_debit_note_added(): void
+    public function test_a_price_adjustment_may_reference_a_item_an_accepted_debit_note_added(): void
     {
         $original = $this->reportedOriginal(7012);
         $added = $this->additionalItem($original, itemId: 44);
@@ -259,7 +259,7 @@ class DebitNoteIssuerTest extends TestCase
         $adjustment = $this->issuer()->issue(
             $original->fresh(),
             ZatcaDebitNoteReason::PriceAdjustment,
-            [new DebitNoteLineInput('تسوية سعر - Course D', 1, 57.50, sourceDebitNoteLineId: $added->id)],
+            [new DebitNoteLineInput('تسوية سعر - Item D', 1, 57.50, sourceDebitNoteLineId: $added->id)],
             'x',
             (string) Str::uuid(),
         );
@@ -273,7 +273,7 @@ class DebitNoteIssuerTest extends TestCase
     }
 
     /** Only an ACCEPTED debit note has added anything; a pending one references nothing. */
-    public function test_a_reference_to_a_course_from_a_debit_note_that_is_not_accepted_is_refused(): void
+    public function test_a_reference_to_a_item_from_a_debit_note_that_is_not_accepted_is_refused(): void
     {
         $original = $this->reportedOriginal(7013);
         $pending = $this->additionalItem($original, itemId: 44, accept: false);
@@ -282,13 +282,13 @@ class DebitNoteIssuerTest extends TestCase
         // While it is pending nothing may be issued against the invoice at all.
         $this->assertRefusedReference($original, $reference, DebitNoteEligibilityVerdict::ADJUSTMENT_IN_PROGRESS);
 
-        // Cancelled, it never added anything, so its course is not a reference either.
+        // Cancelled, it never added anything, so its item is not a reference either.
         $pending->debitNote->update(['cancelled_at' => now()]);
         $this->assertRefusedReference($original, $reference);
     }
 
-    /** A price adjustment line is itself a correction, not a course that has a price. */
-    public function test_a_reference_to_a_debit_note_line_that_did_not_add_a_course_is_refused(): void
+    /** A price adjustment line is itself a correction, not a item that has a price. */
+    public function test_a_reference_to_a_debit_note_line_that_did_not_add_a_item_is_refused(): void
     {
         $original = $this->reportedOriginal(7014);
         $adjustment = $this->issueSimple($original, 'x', 100.00, 15.00, originalLineIndex: 0);
@@ -297,7 +297,7 @@ class DebitNoteIssuerTest extends TestCase
         $this->assertRefusedReference($original, new DebitNoteLineInput('x', 1, 57.50, sourceDebitNoteLineId: $adjustment->lines()->first()->id));
     }
 
-    public function test_a_reference_to_a_course_added_to_another_invoice_is_refused(): void
+    public function test_a_reference_to_a_item_added_to_another_invoice_is_refused(): void
     {
         $other = $this->reportedOriginal(7015);
         $added = $this->additionalItem($other, itemId: 44);
@@ -306,7 +306,7 @@ class DebitNoteIssuerTest extends TestCase
         $this->assertRefusedReference($original, new DebitNoteLineInput('x', 1, 57.50, sourceDebitNoteLineId: $added->id));
     }
 
-    public function test_a_line_may_not_reference_both_an_original_line_and_an_added_course(): void
+    public function test_a_line_may_not_reference_both_an_original_line_and_an_added_item(): void
     {
         $original = $this->reportedOriginal(7017);
         $added = $this->additionalItem($original, itemId: 44);
@@ -343,10 +343,10 @@ class DebitNoteIssuerTest extends TestCase
     }
 
     /**
-     * After a full credit only what is still open may be adjusted: a course a later debit
+     * After a full credit only what is still open may be adjusted: a item a later debit
      * note added is, until it is credited back too.
      */
-    public function test_a_credited_added_course_is_refused_while_an_uncredited_one_is_still_adjustable(): void
+    public function test_a_credited_added_item_is_refused_while_an_uncredited_one_is_still_adjustable(): void
     {
         $original = $this->reportedOriginal(7020);
         $this->creditNote($original, [0])->update(['accepted_at' => now()]);
@@ -368,7 +368,7 @@ class DebitNoteIssuerTest extends TestCase
 
     /**
      * One Price Adjustment note may charge more for several items at once: an original
-     * line and a course an accepted Debit Note added, each with its own amount and its
+     * line and a item an accepted Debit Note added, each with its own amount and its
      * own reference. The note is worth their sum.
      */
     public function test_a_price_adjustment_may_correct_several_items_in_one_note(): void
@@ -453,13 +453,13 @@ class DebitNoteIssuerTest extends TestCase
         );
     }
 
-    /** @return \Zatca\Models\ZatcaDebitNoteLine the line that added the course */
+    /** @return \Zatca\Models\ZatcaDebitNoteLine the line that added the item */
     private function additionalItem(ZatcaInvoice $original, int $itemId, bool $accept = true): \Zatca\Models\ZatcaDebitNoteLine
     {
         $debitNote = $this->issuer()->issue(
             $original->fresh(),
             ZatcaDebitNoteReason::AdditionalItem,
-            [new DebitNoteLineInput('Course D', 1, 230.00, itemId: $itemId)],
+            [new DebitNoteLineInput('Item D', 1, 230.00, itemId: $itemId)],
             'x',
             (string) Str::uuid(),
         );

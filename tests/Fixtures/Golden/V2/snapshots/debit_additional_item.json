@@ -8,7 +8,7 @@
     "currency": "SAR",
     "lines": [
         {
-            "description": "Additional course: Data Analysis",
+            "description": "Additional item: Data Analysis",
             "quantity": 1,
             "unit_price": 300.0,
             "vat_rate": 15.0,
@@ -23,5 +23,5 @@
     "total_incl_vat": 345.0,
     "document_type": "simplified_debit_note",
     "billing_reference_id": "order:42",
-    "adjustment_reason": "Additional course added to the enrolment"
+    "adjustment_reason": "Additional item added to the enrolment"
 }

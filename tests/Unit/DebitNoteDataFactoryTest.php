@@ -24,16 +24,16 @@ class DebitNoteDataFactoryTest extends TestCase
     {
         $result = $this->factory()->make(
             $this->simplifiedOriginal(),
-            [new DebitNoteLineInput('Extra course', 1, 230.00)],
+            [new DebitNoteLineInput('Extra item', 1, 230.00)],
             'DN-000001',
             'payment:412',
-            'Additional course',
+            'Additional item',
             new DateTimeImmutable('2026-09-14T12:00:00+03:00'),
         );
 
         $this->assertSame(ZatcaComplianceDocumentType::DebitNote, $result->documentType);
         $this->assertSame('payment:412', $result->billingReferenceId);
-        $this->assertSame('Additional course', $result->adjustmentReason);
+        $this->assertSame('Additional item', $result->adjustmentReason);
         $this->assertSame('DN-000001', $result->sourceReference);
         $this->assertSame(230.00, $result->totalInclVat);
     }
@@ -43,7 +43,7 @@ class DebitNoteDataFactoryTest extends TestCase
     {
         $result = $this->factory()->make(
             $this->simplifiedOriginal(),
-            [new DebitNoteLineInput('Extra course', 1, 230.00)],
+            [new DebitNoteLineInput('Extra item', 1, 230.00)],
             'DN-000002',
             'payment:412',
             'x',
@@ -83,7 +83,7 @@ class DebitNoteDataFactoryTest extends TestCase
             buyerVatNumber: '310123456700003',
             issueDateTime: new DateTimeImmutable('2026-09-01T10:00:00+03:00'),
             currency: 'SAR',
-            lines: [new ZatcaInvoiceLine('Course A', 1, 500.00, 15.0, 500.00, 75.00)],
+            lines: [new ZatcaInvoiceLine('Item A', 1, 500.00, 15.0, 500.00, 75.00)],
             totalExclVat: 500.00,
             totalVat: 75.00,
             totalInclVat: 575.00,
@@ -94,10 +94,10 @@ class DebitNoteDataFactoryTest extends TestCase
 
         $result = $this->factory()->make(
             $standardOriginal,
-            [new DebitNoteLineInput('Extra course', 1, 230.00)],
+            [new DebitNoteLineInput('Extra item', 1, 230.00)],
             'DN-000010',
             'payment:900',
-            'Additional course added after purchase',
+            'Additional item added after purchase',
             new DateTimeImmutable('2026-09-14T12:00:00+03:00'),
         );
 
@@ -137,7 +137,7 @@ class DebitNoteDataFactoryTest extends TestCase
             issueDateTime: new DateTimeImmutable('2026-09-01T10:00:00+03:00'),
             currency: 'SAR',
             lines: [
-                new ZatcaInvoiceLine('Course A', 1, 500.00, 15.0, 500.00, 75.00),
+                new ZatcaInvoiceLine('Item A', 1, 500.00, 15.0, 500.00, 75.00),
             ],
             totalExclVat: 500.00,
             totalVat: 75.00,

@@ -121,7 +121,7 @@ class SimplifiedNoteXmlGeneratorTest extends TestCase
 
     private function invoiceData(): ZatcaInvoiceData
     {
-        $line = new ZatcaInvoiceLine('Course Enrollment', 1, 200.00, 15.0, 200.00, 30.00);
+        $line = new ZatcaInvoiceLine('Item Enrollment', 1, 200.00, 15.0, 200.00, 30.00);
 
         return new ZatcaInvoiceData(
             egsIdentifier: 'default',

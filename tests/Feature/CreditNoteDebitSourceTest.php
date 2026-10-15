@@ -36,8 +36,8 @@ use Illuminate\Support\Str;
  *
  * The invoice throughout is the one from the bug reports:
  *
- *   Original invoice   Course A   200.00
- *   Debit Note         Course B  +100.00
+ *   Original invoice   Item A   200.00
+ *   Debit Note         Item B  +100.00
  *
  * The invariant every test protects: cumulative credits never exceed the original
  * plus what accepted debit notes added, and each source is credited at most once.
@@ -60,7 +60,7 @@ class CreditNoteDebitSourceTest extends TestCase
         ]);
     }
 
-    /** Bug 1: the course a debit note added is offered, and credited at its own value. */
+    /** Bug 1: the item a debit note added is offered, and credited at its own value. */
     public function test_an_accepted_additional_item_line_becomes_creditable(): void
     {
         $original = $this->reportedInvoice(8001);
@@ -168,7 +168,7 @@ class CreditNoteDebitSourceTest extends TestCase
     /**
      * A price adjustment is its own source — it never reopens the original line it
      * refers to — but crediting that line takes the adjustment with it (bug #33285):
-     * the student paid 200 for the course and 100 more for the same course, so
+     * the student paid 200 for the item and 100 more for the same item, so
      * cancelling it hands back 300.
      */
     public function test_crediting_a_line_also_credits_the_debit_note_that_raised_its_price(): void
@@ -180,7 +180,7 @@ class CreditNoteDebitSourceTest extends TestCase
         $debitNote = $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 100.00, referencedIndex: 0);
         $debitLineId = $debitNote->lines->first()->id;
 
-        // Only the course is asked for; the adjustment is added by the ledger.
+        // Only the item is asked for; the adjustment is added by the ledger.
         $creditNote = $this->issue($original, [0], []);
         $creditNote->update(['accepted_at' => now()]);
 
@@ -213,10 +213,10 @@ class CreditNoteDebitSourceTest extends TestCase
     }
 
     /**
-     * The document ZATCA actually receives for such a note: both the course and the
+     * The document ZATCA actually receives for such a note: both the item and the
      * price increase are lines of ONE credit note, and its totals are the sum of the two.
      */
-    public function test_the_signed_document_carries_the_course_and_its_price_increase(): void
+    public function test_the_signed_document_carries_the_item_and_its_price_increase(): void
     {
         $original = $this->reportedInvoice(8022);
         $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 100.00, referencedIndex: 0);
@@ -252,12 +252,12 @@ class CreditNoteDebitSourceTest extends TestCase
 
     /**
      * What ZATCA is actually sent when an adjustment reverses an increase: ONE credit note
-     * stating both parts — 850.00 off the course and the 200.00 increase given back — with
+     * stating both parts — 850.00 off the item and the 200.00 increase given back — with
      * totals that add up to the 1,050.00 the admin asked for, billed against the original.
      */
     public function test_the_signed_document_states_the_adjustment_and_the_increase_it_reversed(): void
     {
-        $original = $this->reportedInvoice(8037, [['Course A', 1000.00]]);
+        $original = $this->reportedInvoice(8037, [['Item A', 1000.00]]);
         $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 200.00, 0);
 
         $creditNote = $this->adjust($original, 'line:0', 1050.00);
@@ -288,8 +288,8 @@ class CreditNoteDebitSourceTest extends TestCase
         );
     }
 
-    /** The same rule one level up: a price adjustment on a course a debit note added. */
-    public function test_crediting_an_added_course_also_credits_a_price_adjustment_on_it(): void
+    /** The same rule one level up: a price adjustment on a item a debit note added. */
+    public function test_crediting_an_added_item_also_credits_a_price_adjustment_on_it(): void
     {
         $original = $this->reportedInvoice(8019);
 
@@ -306,14 +306,14 @@ class CreditNoteDebitSourceTest extends TestCase
         $ledger = $this->ledger($original);
         $this->assertSame('reserved', $ledger->debitLineStates[$addedLineId]);
         $this->assertSame('reserved', $ledger->debitLineStates[$adjustmentLineId]);
-        // The original course is untouched by any of it.
+        // The original item is untouched by any of it.
         $this->assertSame([0], $ledger->availableIndexes);
     }
 
     /** Only the adjustments of what is actually being credited come along. */
     public function test_an_adjustment_on_another_line_is_left_alone(): void
     {
-        $original = $this->reportedInvoice(8020, [['Course A', 120.00], ['Course B', 200.00]]);
+        $original = $this->reportedInvoice(8020, [['Item A', 120.00], ['Item B', 200.00]]);
 
         $adjustmentLineId = $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 60.00, referencedIndex: 1)
             ->lines->first()->id;
@@ -333,13 +333,13 @@ class CreditNoteDebitSourceTest extends TestCase
         $adjustmentLineId = $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 100.00, referencedIndex: 0)
             ->lines->first()->id;
 
-        // Still in flight: it holds the adjustment, so crediting the course would not take it.
+        // Still in flight: it holds the adjustment, so crediting the item would not take it.
         $this->issue($original, [], [$adjustmentLineId]);
         $ledger = $this->ledger($original);
         $this->assertSame('reserved', $ledger->debitLineStates[$adjustmentLineId]);
         $this->assertSame([], $ledger->attachedAvailableDebitLineIds('line:0'));
 
-        // And the course cannot be credited at all until that note settles.
+        // And the item cannot be credited at all until that note settles.
         try {
             $this->issue($original, [0], []);
             $this->fail('A second note while one is in progress should have been refused.');
@@ -424,7 +424,7 @@ class CreditNoteDebitSourceTest extends TestCase
         $this->assertSame(300.00, (float) $creditNote->total_incl_vat);
 
         $snapshot = InvoiceDataSnapshot::fromArray($creditNote->document_snapshot);
-        $this->assertSame(['Course A', 'Course B'], array_map(fn ($l) => $l->description, $snapshot->lines));
+        $this->assertSame(['Item A', 'Item B'], array_map(fn ($l) => $l->description, $snapshot->lines));
         $this->assertSame($creditNote->billing_reference_id, $snapshot->billingReferenceId);
         $this->assertSame($original->source_reference, $snapshot->billingReferenceId);
 
@@ -540,10 +540,10 @@ class CreditNoteDebitSourceTest extends TestCase
         $this->assertFalse($this->verdict($original)->eligible);
     }
 
-    /** A course added after a bundle purchase takes none of the bundle's discount. */
+    /** A item added after a bundle purchase takes none of the bundle's discount. */
     public function test_a_debit_note_line_on_a_bundle_invoice_never_touches_the_discount(): void
     {
-        $original = $this->reportedInvoice(8017, [['Course A', 120.00], ['Course B', 200.00]], [32.00, 'bundle:1', [0, 1]]);
+        $original = $this->reportedInvoice(8017, [['Item A', 120.00], ['Item B', 200.00]], [32.00, 'bundle:1', [0, 1]]);
 
         $added = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 100.00)->lines->first()->id;
         $adjustment = $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 50.00, referencedIndex: 0)->lines->first()->id;
@@ -560,7 +560,7 @@ class CreditNoteDebitSourceTest extends TestCase
         $this->assertSame(0.00, $pool['reserved']);
         $this->assertSame(32.00, $pool['available']);
 
-        // The bundle's own courses still draw the discount down exactly as before.
+        // The bundle's own items still draw the discount down exactly as before.
         $first = $this->issue($original, [0], []);
         $this->assertSame(88.00, (float) $first->total_incl_vat);
     }
@@ -568,13 +568,13 @@ class CreditNoteDebitSourceTest extends TestCase
     /** A fully credited bundle reopened by a debit note: only the debit is creditable, the discount is not spent again. */
     public function test_a_fully_credited_bundle_reopened_by_a_debit_note_does_not_spend_the_discount_again(): void
     {
-        $original = $this->reportedInvoice(8018, [['Course A', 120.00], ['Course B', 200.00]], [32.00, 'bundle:1', [0, 1]]);
+        $original = $this->reportedInvoice(8018, [['Item A', 120.00], ['Item B', 200.00]], [32.00, 'bundle:1', [0, 1]]);
 
         $full = $this->issuer()->issue($original, ZatcaCreditNoteType::Full, [], 'Full', (string) Str::uuid());
         $full->update(['accepted_at' => now()]);
         $this->assertSame(288.00, (float) $full->total_incl_vat);
 
-        // An added course: a price adjustment of a credited bundle line is refused (bug #33280).
+        // An added item: a price adjustment of a credited bundle line is refused (bug #33280).
         $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 50.00, itemId: 44);
 
         $reopened = $this->issuer()->issue($original, ZatcaCreditNoteType::Full, [], 'Full again', (string) Str::uuid());
@@ -589,16 +589,16 @@ class CreditNoteDebitSourceTest extends TestCase
     }
 
     /**
-     * What BOTH note screens must show for one course, from the bug report's numbers:
+     * What BOTH note screens must show for one item, from the bug report's numbers:
      * 1,000.00 charged, an accepted Debit Note raised it by 200.00, an accepted Credit
-     * Note price adjustment cut it by 100.00, so the course is worth 1,100.00 now.
+     * Note price adjustment cut it by 100.00, so the item is worth 1,100.00 now.
      *
      * Neither flow could see the other's correction before: the Credit Note screen read
      * the invoice's frozen line, and the Debit Note screen read the same one.
      */
-    public function test_a_course_reports_what_it_is_worth_after_both_kinds_of_adjustment(): void
+    public function test_a_item_reports_what_it_is_worth_after_both_kinds_of_adjustment(): void
     {
-        $original = $this->reportedInvoice(8030, [['Course A', 1000.00]]);
+        $original = $this->reportedInvoice(8030, [['Item A', 1000.00]]);
 
         $this->assertSame(0.0, $this->ledger($original)->debitUpliftFor('line:0'));
         $this->assertSame(1000.00, $this->ledger($original)->currentValueFor('line:0', 1000.00));
@@ -637,12 +637,12 @@ class CreditNoteDebitSourceTest extends TestCase
     }
 
     /**
-     * An adjustment ZATCA has not accepted yet already holds the course, so the admin has
+     * An adjustment ZATCA has not accepted yet already holds the item, so the admin has
      * to see it — listed, and marked as not accepted, exactly as it counts against the cap.
      */
     public function test_an_adjustment_still_in_flight_is_listed_and_marked_unaccepted(): void
     {
-        $original = $this->reportedInvoice(8031, [['Course A', 1000.00]]);
+        $original = $this->reportedInvoice(8031, [['Item A', 1000.00]]);
 
         $this->adjust($original, 'line:0', 100.00);
 
@@ -657,11 +657,11 @@ class CreditNoteDebitSourceTest extends TestCase
     /**
      * From the bug report: 100.00 charged, an accepted Credit Note cut 50.00, an accepted
      * Debit Note raised it 100.00, and a Credit Note then gave that 100.00 back. The
-     * reversed increase must stop counting: the course is worth 50.00, not 150.00.
+     * reversed increase must stop counting: the item is worth 50.00, not 150.00.
      */
-    public function test_an_increase_given_back_no_longer_counts_toward_the_course(): void
+    public function test_an_increase_given_back_no_longer_counts_toward_the_item(): void
     {
-        $original = $this->reportedInvoice(8039, [['Course A', 100.00]]);
+        $original = $this->reportedInvoice(8039, [['Item A', 100.00]]);
 
         $cut = $this->adjust($original, 'line:0', 50.00);
         $cut->update(['accepted_at' => now()]);
@@ -682,7 +682,7 @@ class CreditNoteDebitSourceTest extends TestCase
 
         $this->assertSame(100.00, $ledger->debitUpliftFor('line:0'));
         $this->assertSame(150.00, $ledger->creditReductionFor('line:0'));
-        // A reversed increase is credited as its own source, never against the course.
+        // A reversed increase is credited as its own source, never against the item.
         $this->assertSame(50.00, $ledger->adjustmentFor('line:0'));
         $this->assertSame(50.00, $ledger->currentValueFor('line:0', 100.00));
 
@@ -711,10 +711,10 @@ class CreditNoteDebitSourceTest extends TestCase
         ], $ledger->adjustmentHistoryFor('line:0'));
     }
 
-    /** A course a Debit Note ADDED carries its own history the same way an original line does. */
-    public function test_a_debit_note_course_reports_the_increase_raised_on_it(): void
+    /** A item a Debit Note ADDED carries its own history the same way an original line does. */
+    public function test_a_debit_note_item_reports_the_increase_raised_on_it(): void
     {
-        $original = $this->reportedInvoice(8032, [['Course A', 1000.00]]);
+        $original = $this->reportedInvoice(8032, [['Item A', 1000.00]]);
 
         $added = $this->debitNote($original, ZatcaDebitNoteReason::AdditionalItem, 300.00);
         $addedLineId = (int) $added->lines->first()->getKey();
@@ -749,13 +749,13 @@ class CreditNoteDebitSourceTest extends TestCase
     }
 
     /**
-     * The cap a price adjustment is held to spans both note kinds: a course invoiced at
+     * The cap a price adjustment is held to spans both note kinds: a item invoiced at
      * 1,000.00 that an accepted Debit Note raised by 200.00 may be corrected by anything
      * under 1,200.00, because 1,200.00 is what was charged for it.
      */
-    public function test_an_adjustment_may_reach_the_whole_of_what_was_charged_for_the_course(): void
+    public function test_an_adjustment_may_reach_the_whole_of_what_was_charged_for_the_item(): void
     {
-        $original = $this->reportedInvoice(8033, [['Course A', 1000.00]]);
+        $original = $this->reportedInvoice(8033, [['Item A', 1000.00]]);
         $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 200.00, 0);
 
         $ledger = $this->ledger($original);
@@ -770,10 +770,10 @@ class CreditNoteDebitSourceTest extends TestCase
         $this->assertSame(1199.00, (float) $this->adjust($original, 'line:0', 1199.00)->total_incl_vat);
     }
 
-    /** An adjustment the course can absorb on its own leaves the increase alone — the ordinary case. */
-    public function test_an_adjustment_within_the_course_leaves_the_increase_untouched(): void
+    /** An adjustment the item can absorb on its own leaves the increase alone — the ordinary case. */
+    public function test_an_adjustment_within_the_item_leaves_the_increase_untouched(): void
     {
-        $original = $this->reportedInvoice(8034, [['Course A', 1000.00]]);
+        $original = $this->reportedInvoice(8034, [['Item A', 1000.00]]);
         $debit = $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 200.00, 0);
         $increaseId = (int) $debit->lines->first()->getKey();
 
@@ -785,14 +785,14 @@ class CreditNoteDebitSourceTest extends TestCase
     }
 
     /**
-     * Reaching past the course's own value reverses the increase that paid for the rest,
-     * in the SAME note: 1,050.00 is 850.00 off the course plus the 200.00 increase given
-     * back. Afterwards the increase is credited, so cancelling the course pays only what
-     * is left of the course itself — and the invoice closes on exactly what it charged.
+     * Reaching past the item's own value reverses the increase that paid for the rest,
+     * in the SAME note: 1,050.00 is 850.00 off the item plus the 200.00 increase given
+     * back. Afterwards the increase is credited, so cancelling the item pays only what
+     * is left of the item itself — and the invoice closes on exactly what it charged.
      */
-    public function test_an_adjustment_past_the_course_reverses_the_increase_that_paid_for_it(): void
+    public function test_an_adjustment_past_the_item_reverses_the_increase_that_paid_for_it(): void
     {
-        $original = $this->reportedInvoice(8035, [['Course A', 1000.00]]);
+        $original = $this->reportedInvoice(8035, [['Item A', 1000.00]]);
         $debit = $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 200.00, 0);
         $increaseId = (int) $debit->lines->first()->getKey();
 
@@ -827,11 +827,11 @@ class CreditNoteDebitSourceTest extends TestCase
 
     /**
      * An increase is credited whole or not at all, so an amount that needs part of one and
-     * cannot be absorbed by what is left of the course is refused rather than approximated.
+     * cannot be absorbed by what is left of the item is refused rather than approximated.
      */
     public function test_an_amount_that_needs_half_an_increase_is_refused(): void
     {
-        $original = $this->reportedInvoice(8036, [['Course A', 1000.00]]);
+        $original = $this->reportedInvoice(8036, [['Item A', 1000.00]]);
         $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 200.00, 0);
 
         $this->adjust($original, 'line:0', 950.00)->update(['accepted_at' => now()]);
@@ -842,20 +842,20 @@ class CreditNoteDebitSourceTest extends TestCase
 
         // Needs 50.00 of the 200.00 increase, which cannot be split.
         $this->assertRefused(fn () => $this->adjust($original, 'line:0', 100.00));
-        // Reverses the increase and takes nothing off the course: that is crediting the
-        // increase, which is issued by naming it, not by adjusting the course.
+        // Reverses the increase and takes nothing off the item: that is crediting the
+        // increase, which is issued by naming it, not by adjusting the item.
         $this->assertRefused(fn () => $this->adjust($original, 'line:0', 200.00));
 
-        // 10.00 off the course plus the whole increase back.
+        // 10.00 off the item plus the whole increase back.
         $note = $this->adjust($original, 'line:0', 210.00);
         $this->assertSame(210.00, (float) $note->total_incl_vat);
         $this->assertCount(2, $note->lines);
     }
 
-    /** Cancelling such a note gives BOTH parts back: the course's room and the increase. */
+    /** Cancelling such a note gives BOTH parts back: the item's room and the increase. */
     public function test_cancelling_a_reversing_adjustment_releases_the_increase_again(): void
     {
-        $original = $this->reportedInvoice(8038, [['Course A', 1000.00]]);
+        $original = $this->reportedInvoice(8038, [['Item A', 1000.00]]);
         $debit = $this->debitNote($original, ZatcaDebitNoteReason::PriceAdjustment, 200.00, 0);
         $increaseId = (int) $debit->lines->first()->getKey();
 
@@ -923,7 +923,7 @@ class CreditNoteDebitSourceTest extends TestCase
         bool $vatOnly = false,
         ?int $referencedDebitLineId = null,
     ): ZatcaDebitNote {
-        $description = $reason === ZatcaDebitNoteReason::AdditionalItem ? 'Course B' : 'Adjustment';
+        $description = $reason === ZatcaDebitNoteReason::AdditionalItem ? 'Item B' : 'Adjustment';
 
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original->fresh(),
@@ -946,7 +946,7 @@ class CreditNoteDebitSourceTest extends TestCase
      * @param  array<int, array{0: string, 1: float}>  $lines  description, VAT-inclusive value
      * @param  array{0: float, 1: string, 2: int[]}|null  $bundle  discount, pool key, covered line indexes
      */
-    private function reportedInvoice(int $sourceId, array $lines = [['Course A', 200.00]], ?array $bundle = null): ZatcaInvoice
+    private function reportedInvoice(int $sourceId, array $lines = [['Item A', 200.00]], ?array $bundle = null): ZatcaInvoice
     {
         $this->seedFakeProductionCredentials();
         $this->app->instance(ZatcaSdkInterface::class, $this->scriptedSdk());

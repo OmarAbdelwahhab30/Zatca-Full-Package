@@ -63,7 +63,7 @@ class CreditNoteIssuerTest extends TestCase
             $original,
             ZatcaCreditNoteType::Partial,
             [1],
-            'Course B refunded',
+            'Item B refunded',
             (string) Str::uuid(),
         );
 
@@ -72,7 +72,7 @@ class CreditNoteIssuerTest extends TestCase
         $this->assertSame(345.00, (float) $creditNote->total_incl_vat);
     }
 
-    /** Scenario 5: crediting course B, then course C separately — independent notes, independent lines. */
+    /** Scenario 5: crediting item B, then item C separately — independent notes, independent lines. */
     public function test_multiple_credit_notes_against_different_lines(): void
     {
         $original = $this->reportedThreeLineInvoice(6003);
@@ -229,9 +229,9 @@ class CreditNoteIssuerTest extends TestCase
                     currency: 'SAR',
                     // Priced before VAT on this invoice, which also exercises the per-invoice mode override.
                     items: [
-                        new \Zatca\DTOs\ZatcaInvoiceItem('Course A', 1, 500.00),
-                        new \Zatca\DTOs\ZatcaInvoiceItem('Course B', 1, 300.00),
-                        new \Zatca\DTOs\ZatcaInvoiceItem('Course C', 1, 230.00),
+                        new \Zatca\DTOs\ZatcaInvoiceItem('Item A', 1, 500.00),
+                        new \Zatca\DTOs\ZatcaInvoiceItem('Item B', 1, 300.00),
+                        new \Zatca\DTOs\ZatcaInvoiceItem('Item C', 1, 230.00),
                     ],
                     priceMode: \Zatca\Enums\VatPriceMode::Exclusive,
                 );

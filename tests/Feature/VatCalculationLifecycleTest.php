@@ -128,7 +128,7 @@ class VatCalculationLifecycleTest extends TestCase
      */
     public function test_a_price_adjustment_splits_at_the_frozen_rate_and_mode(): void
     {
-        $original = $this->reported(9706, [new ZatcaInvoiceItem('Course A', 1, 700)]);
+        $original = $this->reported(9706, [new ZatcaInvoiceItem('Item A', 1, 700)]);
 
         Config::set('zatca.vat.percentage', '10');
         Config::set('zatca.vat.mode', 'exclusive');
@@ -142,7 +142,7 @@ class VatCalculationLifecycleTest extends TestCase
 
     public function test_a_debit_note_line_keeps_the_adjusted_items_rate_and_a_new_item_uses_the_current_one(): void
     {
-        $original = $this->reported(9707, [new ZatcaInvoiceItem('Course A', 1, 115)]);
+        $original = $this->reported(9707, [new ZatcaInvoiceItem('Item A', 1, 115)]);
 
         Config::set('zatca.vat.percentage', '5');
         Config::set('zatca.vat.mode', 'exclusive');
@@ -151,7 +151,7 @@ class VatCalculationLifecycleTest extends TestCase
             $original,
             ZatcaDebitNoteReason::Other,
             [
-                new DebitNoteLineInput('Course A - price increase', 1, 10, originalLineIndex: 0),
+                new DebitNoteLineInput('Item A - price increase', 1, 10, originalLineIndex: 0),
                 new DebitNoteLineInput('Extra material', 2, 50),
             ],
             'Price corrected and material added',
@@ -160,7 +160,7 @@ class VatCalculationLifecycleTest extends TestCase
 
         $rows = $debitNote->lines()->orderBy('id')->get();
 
-        // Adjusts Course A: its own 15%, priced in the current (exclusive) mode.
+        // Adjusts Item A: its own 15%, priced in the current (exclusive) mode.
         $this->assertSame(['15.00', '10.00', '1.50', '11.50'], [$rows[0]->vat_rate, $rows[0]->line_total_excl_vat, $rows[0]->vat_amount, $rows[0]->line_total_incl_vat]);
         // A new item: the configured 5%.
         $this->assertSame(['5.00', '100.00', '5.00', '50.000000'], [$rows[1]->vat_rate, $rows[1]->line_total_excl_vat, $rows[1]->vat_amount, $rows[1]->unit_price]);
@@ -169,7 +169,7 @@ class VatCalculationLifecycleTest extends TestCase
 
     public function test_a_vat_only_debit_note_line(): void
     {
-        $original = $this->reported(9708, [new ZatcaInvoiceItem('Course A', 1, 115)]);
+        $original = $this->reported(9708, [new ZatcaInvoiceItem('Item A', 1, 115)]);
 
         $debitNote = app(DebitNoteIssuer::class)->issue(
             $original,
@@ -185,7 +185,7 @@ class VatCalculationLifecycleTest extends TestCase
 
     public function test_an_inclusive_discount_through_generation(): void
     {
-        $invoice = $this->generate(9709, [new ZatcaInvoiceItem('Course A', 1, 120), new ZatcaInvoiceItem('Course B', 1, 200)], [
+        $invoice = $this->generate(9709, [new ZatcaInvoiceItem('Item A', 1, 120), new ZatcaInvoiceItem('Item B', 1, 200)], [
             new ZatcaInvoiceDiscount('Bundle discount', 32, poolKey: 'bundle:1', lineIndexes: [0, 1]),
         ]);
 

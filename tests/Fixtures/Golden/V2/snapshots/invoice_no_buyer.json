@@ -8,7 +8,7 @@
     "currency": "SAR",
     "lines": [
         {
-            "description": "Course Enrollment",
+            "description": "Item Enrollment",
             "quantity": 1,
             "unit_price": 200.0,
             "vat_rate": 15.0,
