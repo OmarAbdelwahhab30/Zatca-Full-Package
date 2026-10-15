@@ -26,6 +26,24 @@ class B2bReadiness
         private readonly ZatcaInspector $inspector = new ZatcaInspector(new EgsRegistry),
     ) {}
 
+    /**
+     * The configured B2B EGS identifier, if `zatca.b2b.egs_identifier` names one that
+     * actually exists in the registry — regardless of the on/off switch or onboarding
+     * state. Callers that only need to know which EGS a B2B sale would use (not whether
+     * B2B can run right now) should use this instead of re-deriving it inline.
+     */
+    public function configuredEgsIdentifier(): ?string
+    {
+        $egsIdentifier = config('zatca.b2b.egs_identifier');
+
+        if (! is_string($egsIdentifier) || $egsIdentifier === ''
+            || ! in_array($egsIdentifier, $this->egsRegistry->identifiers(), true)) {
+            return null;
+        }
+
+        return $egsIdentifier;
+    }
+
     public function ready(): bool
     {
         // The switch is checked first so "off" can never be reported as "on but not
@@ -34,10 +52,9 @@ class B2bReadiness
             return false;
         }
 
-        $egsIdentifier = config('zatca.b2b.egs_identifier');
+        $egsIdentifier = $this->configuredEgsIdentifier();
 
-        if (! is_string($egsIdentifier) || $egsIdentifier === ''
-            || ! in_array($egsIdentifier, $this->egsRegistry->identifiers(), true)) {
+        if ($egsIdentifier === null) {
             return false;
         }
 

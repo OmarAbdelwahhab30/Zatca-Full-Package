@@ -291,6 +291,24 @@ class RecoverZatcaInvoiceCommandTest extends TestCase
         $this->assertSame(0, ZatcaInvoice::query()->count());
     }
 
+    /**
+     * "A B2B EGS is configured" and "B2B invoicing is switched on" are different
+     * questions: the EGS being configured is what creates the ambiguity (this sale
+     * could belong to either EGS), regardless of whether the switch is currently on.
+     * The ambiguity refusal must still fire with the switch off and no --egs given —
+     * guessing the primary (B2C) EGS here would be exactly as wrong as with it on.
+     */
+    public function test_with_a_b2b_egs_configured_but_switched_off_a_new_document_still_needs_an_explicit_egs(): void
+    {
+        $this->configureB2bEgs();
+        config()->set('zatca.b2b.enabled', false);
+        $this->connectorExpectingNoCalls();
+
+        $this->assertSame(1, $this->recover(['--source-type' => 'order', '--source-id' => '33']));
+        $this->assertStringContainsString('--egs=', $this->output);
+        $this->assertSame(0, ZatcaInvoice::query()->count(), 'No ICV may be spent on a guessed EGS.');
+    }
+
     public function test_an_existing_document_always_stays_on_its_own_egs(): void
     {
         $this->invoiceRow(ZatcaInvoiceStatus::PendingReporting, ['source_reference' => 'order:32']);
