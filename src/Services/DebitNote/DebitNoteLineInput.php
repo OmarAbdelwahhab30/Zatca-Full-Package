@@ -111,6 +111,16 @@ class DebitNoteLineInput
      */
     public static function fromArray(array $row): self
     {
+        $usesOldShape = array_key_exists('unit_price', $row) || array_key_exists('net_amount', $row) || array_key_exists('vat_amount', $row);
+
+        if (! array_key_exists('price', $row) && $usesOldShape) {
+            throw new \InvalidArgumentException(
+                'DebitNoteLineInput::fromArray() no longer accepts unit_price/net_amount/vat_amount — '
+                .'this line is now built from a single price in the configured price mode. Pass '
+                .'"price" instead (and optionally "vat_rate"); the package computes net and VAT.'
+            );
+        }
+
         $itemId = $row['item_id'] ?? $row['course_id'] ?? null;
         $category = $row['vat_category'] ?? null;
 

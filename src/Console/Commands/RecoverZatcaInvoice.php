@@ -21,6 +21,7 @@ use Zatca\Models\ZatcaInvoice;
 use Zatca\Services\Execute\ProductionInvoiceOrchestrator;
 use Zatca\Services\Generation\DraftCompletionPolicy;
 use Zatca\State\EgsRegistry;
+use Zatca\Support\B2bReadiness;
 use Zatca\Support\SubmissionRetry;
 use Zatca\Support\ZatcaGate;
 
@@ -295,8 +296,8 @@ class RecoverZatcaInvoice extends Command
     /** @return array{action: string, message: string, egs?: string} */
     private function planNewDocument(ZatcaGate $gate, EgsRegistry $egsRegistry): array
     {
-        $b2bEgs = config('zatca.b2b.egs_identifier');
-        $b2bConfigured = is_string($b2bEgs) && $b2bEgs !== '' && in_array($b2bEgs, $egsRegistry->identifiers(), true);
+        $b2bEgs = (new B2bReadiness(gate: $gate, egsRegistry: $egsRegistry))->configuredEgsIdentifier();
+        $b2bConfigured = $b2bEgs !== null;
         $requestedEgs = $this->option('egs');
 
         if (blank($requestedEgs)) {

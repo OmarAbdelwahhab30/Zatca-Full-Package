@@ -75,6 +75,27 @@ class GenericTerminologyCompatibilityTest extends TestCase
         $this->assertSame(8, DebitNoteLineInput::fromArray($row + ['item_id' => 8])->itemId);
     }
 
+    /**
+     * Regression for the pre-generic-rename array shape: fromArray() used to read
+     * unit_price/net_amount/vat_amount (pre-computed amounts). It now reads a single
+     * "price" and computes the amounts itself. A caller still sending the old keys
+     * (host code or a queued payload serialized before upgrading) must get a loud
+     * error, not a silently-created $0.00 line.
+     */
+    public function test_debit_note_line_input_from_array_refuses_the_old_precomputed_amount_shape(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        DebitNoteLineInput::fromArray([
+            'description' => 'Extra charger',
+            'quantity' => 1,
+            'unit_price' => 50.00,
+            'vat_rate' => 15.0,
+            'net_amount' => 50.00,
+            'vat_amount' => 7.50,
+        ]);
+    }
+
     public function test_credit_source_accepts_item_id_and_the_old_course_id(): void
     {
         $line = new ZatcaInvoiceLine('Extra charger', 1, 50.00, 15.0, 50.00, 7.50);
