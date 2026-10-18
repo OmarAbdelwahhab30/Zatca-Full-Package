@@ -26,7 +26,7 @@ You give it your order. It builds the e-invoice, signs it, adds the QR code, sen
 11. [Understanding ZATCA responses](#11-understanding-zatca-responses)
 12. [More features](#12-more-features)
 13. [Console commands](#13-console-commands)
-14. [Deploy to production](#14-deploy-to-production)
+14. [Server Setup & Production Deployment](#server-setup)
 15. [Troubleshooting](#15-troubleshooting)
 16. [Known limitations](#known-limitations)
 17. [Renamed classes and methods](#17-renamed-classes-and-methods)
@@ -49,7 +49,7 @@ This README covers installation, configuration and everyday usage end to end. Th
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | The authoritative ZATCA/SDK/UBL/Laravel/PHP version matrix referenced throughout this README |
 | [`docs/DATABASE.md`](docs/DATABASE.md) | Pointer to `ZATCA_WORKFLOWS.md` §6 (kept at this path so existing bookmarks still work) |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Pointer to `ZATCA_WORKFLOWS.md` (kept at this path so existing bookmarks still work) |
-| [`docs/SERVER_REQUIREMENTS.md`](docs/SERVER_REQUIREMENTS.md) | Pointer to this README's [§4](#4-requirements)/[§5](#5-installation) and `ZATCA_WORKFLOWS.md` (kept at this path so existing bookmarks still work) |
+| [`docs/SERVER_REQUIREMENTS.md`](docs/SERVER_REQUIREMENTS.md) | Pointer to this README's [§4](#4-requirements) and [§14 Server Setup & Production Deployment](#server-setup) (kept at this path so existing bookmarks still work) |
 
 ---
 
@@ -174,11 +174,11 @@ You never edit an accepted invoice. You issue a note that points to it. A note a
 | PHP | 8.1 or newer for Laravel 9 and 10. 8.2 or newer for Laravel 11 and 12 (Laravel's own rule). |
 | Laravel | **12** is recommended. 9, 10 and 11 still work (Legacy Compatibility). See [Laravel compatibility](#laravel-compatibility) below. |
 | PHP extensions | `openssl`, `dom`, `mbstring`, `ctype`, `json`, plus your database's PDO driver |
-| Java | Java 11 (the ZATCA SDK supports Java 11 to 15). `java` must be on the `PATH` of the user that runs PHP and your queue workers. |
-| ZATCA Java SDK | Version **3.4.8**, the version the package is tested with. Download it from [ZATCA's developer portal](https://zatca.gov.sa/en/E-Invoicing/SystemsDevelopers/ComplianceEnablementToolbox/Pages/DownloadSDK.aspx), or use the copy that ships with the package in [`SDKs/`](SDKs/) |
+| Java | Java 11 (the ZATCA SDK supports Java 11 to 15). Server setup, user accounts and verification: [Server Setup & Production Deployment](#server-setup). |
+| ZATCA Java SDK | Version **3.4.8**, the version the package is tested with — already bundled with the package. Installing it on a real server: [§14.4](#server-setup-sdk-install). |
 | Database | Any database Laravel supports (MySQL, PostgreSQL, SQLite in tests) |
-| Queue | Any real Laravel queue driver (`database`, `redis`…). `sync` works for quick tests only. |
-| Scheduler | Laravel scheduler (cron) for the retry sweep and certificate checks |
+| Queue | Any real Laravel queue driver (`database`, `redis`…). `sync` works for quick tests only. A persistent queue worker is required for production — [§14.5](#server-setup-supervisor). |
+| Scheduler | Laravel scheduler (cron) for the retry sweep and certificate checks — [§14.6](#server-setup-cron) |
 
 Composer dependencies are installed for you: `guzzlehttp/guzzle`, `doctrine/dbal`, `symfony/process`, `nesbot/carbon`.
 
@@ -240,19 +240,14 @@ Treat this as temporary and plan the move to Laravel 12.
 
 ### Step 1: Install Java and the ZATCA SDK
 
-The package signs invoices with ZATCA's official Java SDK, so it must be on the server.
+The package signs invoices with ZATCA's official Java SDK, so it must be on the server. For local development, the quick version:
 
 ```bash
 sudo apt-get install -y openjdk-11-jre-headless
-```
-
-```bash
 java -version
 ```
 
-Download the ZATCA SDK (v3.4.8) from [ZATCA's developer portal](https://zatca.gov.sa/en/E-Invoicing/SystemsDevelopers/ComplianceEnablementToolbox/Pages/DownloadSDK.aspx) and unzip it somewhere outside `public/`, for example `/var/www/zatca-sdk`. The folder must contain `Apps/`, `Configuration/` and `Data/`. The jar file is in `Apps/`.
-
-Or skip the download: the exact SDK version the package is tested with ships with the package, under [`SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/`](SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/). After Step 2 it is at `vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8`, and you can point `ZATCA_SDK_ROOT` and `ZATCA_SDK_EXECUTABLE` there. The jar's SHA-256 is in [`SDKs/README.md`](SDKs/README.md).
+The exact SDK version this package is tested with already ships with it, under [`SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/`](SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/) — after Step 2 it's at `vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8`, and you can point `ZATCA_SDK_ROOT`/`ZATCA_SDK_EXECUTABLE` straight at it. **For a real server** — which user needs access, where to put the SDK, and full verification — see [Server Setup & Production Deployment §4](#server-setup-sdk-install).
 
 ### Step 2: Install the package
 
@@ -306,15 +301,13 @@ Copy the block from [Configuration](#6-configuration) and fill in your business 
 
 ### Step 6: Make sure storage is writable
 
-The package writes short-lived signing files to `storage/app/private/zatca`.
+The package writes short-lived signing files to `storage/app/private/zatca`. For local development:
 
 ```bash
 mkdir -p storage/app/private/zatca
 ```
 
-```bash
-sudo chown -R www-data:www-data storage
-```
+That's enough if you're running everything as yourself locally. **On a real server**, don't just `chown` this to `www-data` and move on — the user that needs access here is usually your **queue worker**, not your web server, and they're often not the same account. See [Server Setup & Production Deployment §2–§3](#server-setup-identify-users) for how to find the right user and set this up safely (including when more than one user needs access).
 
 ### Step 7: Check the installation
 
@@ -729,7 +722,7 @@ The package loads your order again inside the queue with `Model::find()` (`Eloqu
 php artisan queue:work --queue=zatca
 ```
 
-Every ZATCA job runs on the `zatca` queue (`ZATCA_QUEUE_NAME`). Keep this worker running in production (see [Deploy](#14-deploy-to-production)).
+Every ZATCA job runs on the `zatca` queue (`ZATCA_QUEUE_NAME`). Keep this worker running in production under Supervisor or systemd (see [Server Setup & Production Deployment](#server-setup)).
 
 #### E. Pick the right EGS
 
@@ -1703,103 +1696,383 @@ It takes no options and is read-only. It lists sales that have documents on more
 
 ---
 
-## 14. Deploy to production
+<a id="server-setup"></a>
+## 14. Server Setup & Production Deployment
 
-### First-time setup (once per server)
+Everything about preparing a real server — not just installing the Composer package — lives here: who needs access to what, the SDK, the queue worker, the scheduler, and a checklist before you flip `ZATCA_ENVIRONMENT=production`. If you only just want the package running locally for development, you don't need this section yet — see [Installation](#5-installation).
 
-1. **Server:** PHP 8.1+ (8.2+ on Laravel 11 and 12) with `openssl`, `dom`, `mbstring`, `ctype`, `json` and your PDO driver, Java 11, the ZATCA SDK folder, Supervisor (or similar), and cron.
-2. **Network:** the server must reach `https://gw-fatoora.zatca.gov.sa` on port 443. Allow it in your firewall or proxy.
-3. **Install:**
+1. [Server requirements](#server-setup-requirements)
+2. [Identify your server's users](#server-setup-identify-users)
+3. [Configure storage permissions](#server-setup-storage-permissions)
+4. [ZATCA SDK installation & server paths](#server-setup-sdk-install)
+5. [Configure the queue worker](#server-setup-supervisor)
+6. [Configure the scheduler (cron)](#server-setup-cron)
+7. [First deploy and every redeploy](#server-setup-deploying)
+8. [Production deployment checklist](#server-setup-checklist)
+9. [Troubleshooting: server & infrastructure](#server-setup-troubleshooting)
 
-   ```bash
-   composer install --no-dev --optimize-autoloader
-   ```
+<a id="server-setup-requirements"></a>
+### 1. Server requirements
 
-   ```bash
-   php artisan vendor:publish --tag=zatca-config
-   ```
+| What | Needed for | Detail |
+|---|---|---|
+| PHP 8.1+ (8.2+ for Laravel 11/12) with `openssl`, `dom`, `mbstring`, `ctype`, `json`, your PDO driver | The app itself | See [Requirements](#4-requirements) for the full compatibility matrix |
+| Java 11–15 | Signing invoices (the ZATCA SDK is a Java program) | [§4 below](#server-setup-sdk-install) |
+| The ZATCA SDK folder (`Apps/`, `Configuration/`, `Data/`) | Same | [§4 below](#server-setup-sdk-install) |
+| A persistent queue worker (Supervisor or systemd) | Running `queue:work --queue=zatca` continuously — invoice generation and signing happen here, not in the web request | [§5 below](#server-setup-supervisor) |
+| The Laravel scheduler (cron, once a minute) | The retry sweep, certificate checks, and cleanup commands | [§6 below](#server-setup-cron) |
+| A writable `storage/app/private/zatca` directory | Short-lived signing files | [§3 below](#server-setup-storage-permissions) |
+| Outbound HTTPS to `https://gw-fatoora.zatca.gov.sa` on port 443 | Reaching ZATCA at all | Allow it in your firewall/proxy |
 
-   ```bash
-   php artisan migrate --force
-   ```
+<a id="server-setup-identify-users"></a>
+### 2. Identify your server's users
 
-4. **`.env`:** set `ZATCA_ENVIRONMENT=production` and all seller values (see [Configuration](#6-configuration)). Keep `APP_KEY` safe (see below).
-5. **Storage:**
+Don't assume one `www-data` user runs everything — on most real servers there are at least two or three different system users involved, and the default on your distro may not be any of them:
 
-   ```bash
-   mkdir -p storage/app/private/zatca
-   ```
+| Role | What it needs for this package | Usually the user that... |
+|---|---|---|
+| **`WEB_USER`** | Normal Laravel `storage`/`bootstrap/cache` write access. **Does not need Java or SDK access**, unless `QUEUE_CONNECTION` (or `ZATCA_QUEUE_CONNECTION`) is set to `sync` — not recommended beyond quick local tests | Runs PHP-FPM / Apache for this specific app |
+| **`QUEUE_USER`** | Java on its `PATH`, read access to the SDK folder, and write access to `storage/app/private/zatca` — because `GenerateZatcaInvoiceJob` runs the SDK **inside the queue worker**, not the web request | Runs `php artisan queue:work --queue=zatca` (via Supervisor/systemd) |
+| **`CLI_USER`** | Same needs as `QUEUE_USER` (Java, SDK, `storage/app/private/zatca`) for as long as a command runs | Whoever SSHes in to run `php artisan zatca:*` by hand — onboarding, `zatca:recover`, etc. Often a third, separate "deploy" account |
 
-   ```bash
-   sudo chown -R www-data:www-data storage
-   ```
+These can be the same user on a small server, or three different ones on a shared host with multiple sites. Find each one for real instead of guessing.
 
-6. **Queue worker** (`/etc/supervisor/conf.d/zatca-worker.conf`):
-
-   ```ini
-   [program:zatca-worker]
-   command=php /var/www/my-shop/artisan queue:work --queue=zatca --sleep=3 --max-time=3600
-   user=www-data
-   numprocs=1
-   autostart=true
-   autorestart=true
-   stopwaitsecs=3600
-   ```
-
-   Start with **one** worker process. The package handles concurrency safely, but one process keeps documents in order and is enough for most shops.
-
-7. **Scheduler:** add the cron entry, and these lines to your schedule (`app/Console/Kernel.php`):
-
-   ```bash
-   * * * * * cd /var/www/my-shop && php artisan schedule:run >> /dev/null 2>&1
-   ```
-
-   ```php
-   $schedule->command('zatca:report-pending')->everyFiveMinutes()->withoutOverlapping();
-   $schedule->command('zatca:requeue --only-transient')->hourly()->withoutOverlapping();
-   $schedule->command('zatca:certificate:check')->daily();
-   $schedule->command('zatca:status')->hourly();
-   $schedule->command('zatca:prune-submission-attempts')->weekly();
-   $schedule->command('zatca:prune-sdk-files')->daily();
-   ```
-
-8. **Onboard in production** with a production OTP (see [Onboarding](#8-zatca-onboarding)), then run `zatca:health-check`.
-9. **Safe first check:** make one small, real sale (it **is** a legal invoice), then confirm `zatca:inspect invoice --id=…` shows `reported`. Never send fake test invoices to production.
-
-### Every deployment
+**Find `WEB_USER`** (watch out for more than one PHP-FPM pool on the same server):
 
 ```bash
-php artisan down
+# Lists every php-fpm/apache worker user on the box — there may be several if the
+# server hosts more than one site, so don't just take the first line blindly.
+ps -eo user,comm | grep -E 'php-fpm|apache2|httpd' | grep -v root | sort -u
 ```
+
+If more than one user shows up, confirm which one is *this* app, not someone else's site on the same box:
+
+```bash
+# Nginx: match this app's server_name to its fastcgi_pass, then find that socket's
+# "user = " line in the matching PHP-FPM pool file.
+sudo nginx -T 2>/dev/null | grep -nE 'server_name|fastcgi_pass'
+sudo grep -nE '^\s*(user|listen)\s*=' /etc/php/*/fpm/pool.d/*.conf
+```
+
+(Apache with `mod_php` instead of FPM: the worker user is whatever Apache itself runs as — check `apache2ctl -S` or your distro's `apache2`/`httpd` service user.)
+
+**Find `QUEUE_USER`** (from whichever process manager actually runs your queue worker):
+
+```bash
+# Supervisor:
+sudo grep -RnE '^\s*(\[program:|command=|user=)' /etc/supervisor/conf.d/
+```
+
+```bash
+# systemd, if you run the worker as a unit instead:
+systemctl show your-queue-worker.service -p User
+```
+
+**`CLI_USER`** is simply whoever you are when you SSH in and run a command — `whoami` tells you. The only thing to check is whether it's the *same* account as `QUEUE_USER`; if not, it needs the same Java/SDK/storage access whenever you run `php artisan zatca:*` by hand.
+
+**You do not have to make these the same user.** What matters is that each one can reach what it actually needs — see the next section for `storage/app/private/zatca` specifically, and [§4](#server-setup-sdk-install) for the SDK folder.
+
+<a id="server-setup-storage-permissions"></a>
+### 3. Configure storage permissions
+
+This is about one folder specifically: `storage/app/private/zatca`, where the package writes short-lived signing files. (The rest of Laravel's `storage/` follows ordinary Laravel permission guidance — this package doesn't change that.)
+
+```bash
+mkdir -p storage/app/private/zatca
+```
+
+**Single-user server** (`WEB_USER`, `QUEUE_USER` and `CLI_USER` are all the same account):
+
+```bash
+QUEUE_USER=www-data   # ← whatever you found in §2 — replace this
+chown -R "$QUEUE_USER" storage/app/private/zatca
+chmod 700 storage/app/private/zatca
+```
+
+**Separate web and queue users**, where only `QUEUE_USER` ever touches this folder (the normal case — signing happens in the queue worker, not the web request):
+
+```bash
+QUEUE_USER=deploy   # ← whatever you found in §2
+chown -R "$QUEUE_USER" storage/app/private/zatca
+chmod 700 storage/app/private/zatca
+```
+
+`WEB_USER` needs nothing here in this case — leave it out entirely rather than widening permissions "just in case".
+
+**Multiple users genuinely need access** (for example `QUEUE_USER` and a separate `CLI_USER` both sign invoices, or you sometimes run the queue `sync` so `WEB_USER` needs it too) — use a shared group instead of `chown`-ing everyone to one account or opening the folder up:
+
+```bash
+QUEUE_USER=deploy        # ← yours
+CLI_USER=ops             # ← yours, if different from QUEUE_USER
+sudo groupadd zatca-writers 2>/dev/null
+sudo usermod -aG zatca-writers "$QUEUE_USER"
+sudo usermod -aG zatca-writers "$CLI_USER"
+sudo chown -R "$QUEUE_USER:zatca-writers" storage/app/private/zatca
+sudo chmod -R 770 storage/app/private/zatca
+sudo chmod g+s storage/app/private/zatca   # new files/folders inherit the group automatically
+```
+
+If your distro has `setfacl`/ACLs available and you'd rather not create a shared group, this reaches the same result without changing anyone's primary group:
+
+```bash
+setfacl -R -m u:"$QUEUE_USER":rwx,u:"$CLI_USER":rwx storage/app/private/zatca
+setfacl -R -d -m u:"$QUEUE_USER":rwx,u:"$CLI_USER":rwx storage/app/private/zatca   # inherited by new files too
+```
+
+**Never `chmod 777` this folder, and never `chown -R` the whole `storage/` tree for ZATCA's sake.** It briefly holds certificate and private-key material while a signing process is running, before the package cleans it up (`zatca:prune-sdk-files` — see [§13](#13-console-commands)).
+
+**Confirm it actually worked**, as whichever user(s) need it:
+
+```bash
+sudo -u "$QUEUE_USER" -- test -w storage/app/private/zatca && echo "QUEUE_USER can write OK"
+```
+
+<a id="server-setup-sdk-install"></a>
+### 4. ZATCA SDK installation & server paths
+
+**Recommended: use the SDK that already ships with the package.** The exact version this package is built and tested against — Java SDK 3.4.8 (`238-R3.4.8`) — is bundled at [`SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/`](SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/) (about 58 MB). After `composer require`, it's already on your server at:
+
+```
+vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/
+```
+
+You don't need to download anything from ZATCA, and the package never writes into this folder (it writes its temporary signing files to `storage/app/private/zatca` instead, covered in §3) — so there's nothing to make writable here. Point `.env` straight at it:
+
+```dotenv
+ZATCA_SDK_ROOT=/var/www/your-app/vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8
+ZATCA_SDK_EXECUTABLE=/var/www/your-app/vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar
+ZATCA_SDK_VERSION=3.4.8
+```
+
+**Trade-off:** this is the simplest option — nothing extra to install or keep in sync — but the path lives under `vendor/`, which some deploy tools replace wholesale on every release (fine, since `composer install` always restores the same bundled copy) or route through a changing release directory (e.g. Capistrano/Deployer-style `releases/<timestamp>/`), which can make `.env`'s absolute path point at a now-deleted release if you don't update it.
+
+**Alternative: copy it to a stable, version-independent path** such as `/opt/zatca-sdk`, if your deploy layout changes the `vendor/` path on every release and you'd rather not update `.env` each time:
+
+```bash
+sudo mkdir -p /opt/zatca-sdk
+sudo cp -r vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/. /opt/zatca-sdk/
+```
+
+```dotenv
+ZATCA_SDK_ROOT=/opt/zatca-sdk
+ZATCA_SDK_EXECUTABLE=/opt/zatca-sdk/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar
+ZATCA_SDK_VERSION=3.4.8
+```
+
+**Trade-off:** one extra manual copy step per SDK version, and it's now your responsibility to re-copy when you ever change SDK version — but `.env` never needs to change on a routine deploy. **For a typical single-server setup, use the bundled path directly** (the first option) — only reach for a separate copy if your release process genuinely moves `vendor/` around. Either way: keep it outside `public/`, and never download the SDK twice just because you're unsure which copy to use — the bundled one is already sourced and SHA-256-verified in [`SDKs/README.md`](SDKs/README.md).
+
+**Required folder structure**, either location: `Apps/` (contains the jar), `Configuration/`, `Data/`. Verify it's intact:
+
+```bash
+ls "$ZATCA_SDK_ROOT"/{Apps,Configuration,Data}   # all three must exist
+```
+
+**Permissions:** the SDK folder only needs to be **readable** by `QUEUE_USER` (and `CLI_USER` — see §2) — it never needs to be writable by anyone, since the package writes nothing into it:
+
+```bash
+sudo chown -R root:root "$ZATCA_SDK_ROOT"   # or your deploy user — ownership doesn't matter much
+sudo chmod -R a+rX "$ZATCA_SDK_ROOT"         # readable, never writable
+```
+
+**Install Java** (11 through 15 — the SDK supports that range):
+
+```bash
+sudo apt-get install -y openjdk-11-jre-headless
+```
+
+**Verify Java specifically as `QUEUE_USER`** — not as whoever happens to be running the install command:
+
+```bash
+QUEUE_USER=deploy   # ← from §2
+sudo -u "$QUEUE_USER" -- java -version
+```
+
+If you ever dispatch ZATCA jobs on a `sync` queue connection (not recommended beyond local testing — see §2), `WEB_USER` needs this same check. If you run onboarding or recovery commands by hand, `CLI_USER` does too.
+
+**SDK version changes and the fingerprint check:** the package records a SHA-256 fingerprint of the jar (`ZATCA_SDK_FINGERPRINT`) and refuses to run if the file on disk doesn't match — this catches both an accidental mismatch and a tampered file. `composer install`/`composer update` never touch this SDK folder (it's not a Composer-managed path), so the fingerprint only needs to change when **you** deliberately swap in a different SDK release:
+
+```bash
+php artisan zatca:generate-credentials   # prints the current fingerprint
+```
+
+Copy that value into `ZATCA_SDK_FINGERPRINT`, then `php artisan config:cache`. See [§17](#17-renamed-classes-and-methods) and [Running the package tests](#18-running-the-package-tests) if you're adding a *new* SDK version rather than just verifying the existing one.
+
+**Final verification** — this is the package's own smoke test, and it checks everything above in one go without contacting ZATCA or needing any certificate:
+
+```bash
+php artisan zatca:sdk-smoke-test
+```
+
+A successful run prints **nine `[OK]` lines**: Java, SDK executable, SDK root, fingerprint, CSR generation, hash, signing, QR extraction, validation. If any line says `SKIPPED` instead, `ZATCA_SDK_EXECUTABLE`/`ZATCA_SDK_ROOT` are wrong or unset — note that the command still **exits successfully** either way, so read the printed text, not just the exit code.
+
+<a id="server-setup-supervisor"></a>
+### 5. Configure the queue worker (Supervisor or systemd)
+
+Invoice generation and signing happen inside a queued job, so **nothing is ever actually sent to ZATCA unless a queue worker is running continuously.** Supervisor is the most common choice on a traditional Linux server; systemd works just as well if you'd rather not run a second process manager — you only need one of the two, not both.
+
+**Install Supervisor**, if it isn't already present:
+
+```bash
+sudo apt-get install -y supervisor
+```
+
+**Create `/etc/supervisor/conf.d/zatca-worker.conf`:**
+
+```ini
+[program:zatca-worker]
+; Replace with this app's real path.
+command=php /var/www/my-shop/artisan queue:work --queue=zatca --sleep=3 --max-time=3600
+; This IS your QUEUE_USER from §2 — whatever you put here is what §3's chown must match.
+user=www-data
+numprocs=1
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+stopwaitsecs=3600
+redirect_stderr=true
+stdout_logfile=/var/www/my-shop/storage/logs/zatca-worker.log
+```
+
+Two things to check against *your own* `.env`, not just copy blindly:
+- **`--queue=zatca`** must match `ZATCA_QUEUE_NAME` (the package's default is `zatca`, but you may have changed it).
+- **The queue connection** comes from `ZATCA_QUEUE_CONNECTION` (falling back to your app's own `QUEUE_CONNECTION`). If that differs from your app's main queue connection, pass it explicitly as `queue:work`'s first argument, e.g. `queue:work redis --queue=zatca`.
+
+Start with **one** worker process (`numprocs=1`). The package handles concurrency safely, but one process keeps documents in order and is enough for most shops.
+
+**Activate it:**
+
+```bash
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl start zatca-worker:*
+```
+
+`autostart=true`/`autorestart=true` are what make it survive a server reboot and restart itself if it crashes — Supervisor itself needs to be enabled as a system service (`systemctl enable supervisor`, already the default on most distro packages) for that to apply across reboots.
+
+**Check status and logs:**
+
+```bash
+sudo supervisorctl status zatca-worker:*
+tail -f /var/www/my-shop/storage/logs/zatca-worker.log
+```
+
+If it shows `FATAL` or keeps restarting in a loop, check the log file above first — a missing Java/SDK path or a storage permission error (§3/§4) is the most common cause of a worker that starts and immediately exits.
+
+**systemd alternative**, if you'd rather not use Supervisor — a minimal unit file (`/etc/systemd/system/zatca-worker.service`):
+
+```ini
+[Unit]
+Description=ZATCA queue worker
+After=network.target
+
+[Service]
+User=deploy
+WorkingDirectory=/var/www/my-shop
+ExecStart=/usr/bin/php /var/www/my-shop/artisan queue:work --queue=zatca --sleep=3 --max-time=3600
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now zatca-worker
+sudo systemctl status zatca-worker
+```
+
+<a id="server-setup-cron"></a>
+### 6. Configure the scheduler (cron)
+
+**Supervisor and cron do two different jobs, and you need both:**
+
+| | Supervisor (or systemd) | Cron |
+|---|---|---|
+| Keeps running | `php artisan queue:work --queue=zatca`, continuously | Nothing by itself — it fires `php artisan schedule:run` once a minute |
+| What actually happens | New invoices are generated, signed and sent as your app dispatches jobs | Laravel's scheduler checks which of *its own* scheduled commands are due, and runs them |
+| Missing it means | Nothing is ever signed or sent — jobs just pile up on the queue | The retry sweep, certificate checks and cleanup commands never run, even though the queue worker is fine |
+
+Configuring only one of these is **not** a working production setup — you need the queue worker running continuously *and* the scheduler ticking every minute.
+
+**The cron entry** (one line, added for whichever user should own it — see below):
+
+```cron
+* * * * * cd /path/to/laravel-project && /usr/bin/php artisan schedule:run >> /dev/null 2>&1
+```
+
+- **PHP binary:** confirm the absolute path with `which php` (or `which php8.3`, etc. — it must be the *same* PHP version your app actually runs on, not necessarily the system default).
+- **Project path:** the absolute path to this Laravel app's root (where `artisan` lives).
+- **Which user:** this just runs `artisan` like any other CLI command — it does **not** need Java or SDK access itself (see why, below). Install it under whichever account normally deploys/maintains this app (often the same as `CLI_USER` from §2), using `crontab -e` as that user, or `sudo crontab -e -u deploy` to edit another user's crontab directly.
+
+**Why the scheduler doesn't need Java:** none of the six commands this package expects you to schedule actually sign a new invoice — signing only happens inside `GenerateZatcaInvoiceJob`, which runs on the **queue worker** (§5), never from the scheduler. So the cron user only needs ordinary Laravel CLI access, not SDK/Java access.
+
+Add these lines to your schedule (`routes/console.php` on newer Laravel, `app/Console/Kernel.php` on older):
+
+```php
+$schedule->command('zatca:report-pending')->everyFiveMinutes()->withoutOverlapping();
+$schedule->command('zatca:requeue --only-transient')->hourly()->withoutOverlapping();
+$schedule->command('zatca:certificate:check')->daily();
+$schedule->command('zatca:status')->hourly();
+$schedule->command('zatca:prune-submission-attempts')->weekly();
+$schedule->command('zatca:prune-sdk-files')->daily();
+```
+
+| Command | What it does |
+|---|---|
+| `zatca:report-pending` | Sends B2C invoices still waiting to be reported — the normal "push what's due" sweep |
+| `zatca:requeue --only-transient` | Retries documents stuck because of a ZATCA outage only — never retries a genuine rejection |
+| `zatca:certificate:check` | Updates each EGS's certificate state (`valid`/`expiring_soon`/`expired`) and logs a warning as expiry approaches |
+| `zatca:status` | One command your monitoring can read (`--json`, `--strict`); exits non-zero when something needs a human |
+| `zatca:prune-submission-attempts` | Deletes old attempt-log rows for invoices that already succeeded (default: older than 180 days) |
+| `zatca:prune-sdk-files` | Deletes leftover SDK temp files from `storage/app/private/zatca` (default: older than 7 days) — never touches the database |
+
+Full flags and behavior for each are in [§13 Console commands](#13-console-commands).
+
+**Verify it's actually installed and running:**
+
+```bash
+crontab -l -u deploy                        # confirm the line is there, for the right user
+php artisan schedule:list                   # confirm Laravel itself sees these six commands registered
+grep CRON /var/log/syslog | tail -20         # (Debian/Ubuntu) confirm cron is actually firing schedule:run
+```
+
+**Running on more than one server?** `withoutOverlapping()` (already on the two retry commands above) only prevents a command from overlapping *itself* on the same machine — it does **not** stop two servers from both running the same scheduled command at the same moment. If this app runs on multiple web/cron servers, add Laravel's own `->onOneServer()` to each line (this is a core Laravel scheduler feature, not something this package adds):
+
+```php
+$schedule->command('zatca:report-pending')->everyFiveMinutes()->onOneServer();
+```
+
+This needs a cache driver that supports atomic locks (`database`, `redis`, `memcached`, `dynamodb` — not `file` or `array`) configured as your app's default cache store.
+
+<a id="server-setup-deploying"></a>
+### 7. First deploy and every redeploy
+
+**First time on a new server**, after §1–§6 above:
 
 ```bash
 composer install --no-dev --optimize-autoloader
-```
-
-```bash
+php artisan vendor:publish --tag=zatca-config
 php artisan migrate --force
 ```
 
+Set `.env`: `ZATCA_ENVIRONMENT=production` and all seller values (see [Configuration](#6-configuration)). Then onboard with a production OTP (see [Onboarding](#8-zatca-onboarding)), run `zatca:health-check` to confirm, and make **one small, real sale** — it **is** a legal invoice — confirming `zatca:inspect invoice --id=…` shows `reported`. Never send fake test invoices to production.
+
+**Every subsequent deployment:**
+
 ```bash
+php artisan down
+composer install --no-dev --optimize-autoloader
+php artisan migrate --force
 php artisan config:cache
-```
-
-```bash
 php artisan queue:restart
-```
-
-```bash
 php artisan up
-```
-
-```bash
 php artisan zatca:health-check
 ```
 
-`queue:restart` is required, because workers keep old code and config in memory.
+`queue:restart` is required — workers keep old code and config in memory until told to restart.
 
-### Keep your data safe
-
+**Keep your data safe:**
 - **Never lose `APP_KEY`.** Credentials are encrypted with it. A new `APP_KEY` makes the stored keys unreadable, and you would have to onboard again.
 - **Never delete or edit** rows in `zatca_egs_credentials`, `zatca_egs_states` or `zatca_invoices`. The counter and hash chain must continue forever. Resetting them breaks your chain with ZATCA.
 - **Never run `migrate:fresh` / `migrate:refresh`** on a production database.
@@ -1807,47 +2080,64 @@ php artisan zatca:health-check
 - **Never** put the private key, tokens or certificates in Git, logs or `.env` files. The package keeps them encrypted in the database only.
 - Keep the SDK folder and `storage/app/private` out of `public/`.
 
-### Logging and monitoring
-
+**Logging and monitoring:**
 - The package logs to your normal Laravel log with a `[ZATCA]` prefix. Secrets are removed.
 - Hook `zatca:status --json` into your monitoring, or alert from `ZatcaInvoiceNeedsAttention` and `ZatcaCertificateExpiring` listeners.
 
-### Updating the package later
+**Updating the package later:**
 
 ```bash
 composer update zatca/zatca
 ```
 
-Read the changelog. If a release adds migrations, run `zatca:check-source-uniqueness`, then use the "every deployment" steps. If you replace the ZATCA SDK jar, run `zatca:sdk-smoke-test` and update `ZATCA_SDK_FINGERPRINT`.
+Read the changelog. If a release adds migrations, run `zatca:check-source-uniqueness`, then use the "every deployment" steps above. If you replace the ZATCA SDK jar itself, see [§4](#server-setup-sdk-install) again and update `ZATCA_SDK_FINGERPRINT`.
 
-### Go-live checklist
+<a id="server-setup-checklist"></a>
+### 8. Production deployment checklist
 
 - [ ] `ZATCA_ENVIRONMENT=production`, and the seller data matches the Fatoora portal
 - [ ] `ZATCA_VAT_NUMBER` = `ZATCA_ORG_IDENTIFIER`
-- [ ] Java works for the web and worker user (`sudo -u www-data java -version`)
-- [ ] `zatca:sdk-smoke-test` all PASS, and `ZATCA_SDK_FINGERPRINT` is set
+- [ ] SDK located and readable: `ls "$ZATCA_SDK_ROOT"/{Apps,Configuration,Data}` succeeds for `QUEUE_USER` (see [§4](#server-setup-sdk-install))
+- [ ] Java confirmed under `QUEUE_USER` (`sudo -u "$QUEUE_USER" java -version`) — and under `WEB_USER` too only if you ever run the queue synchronously
+- [ ] `storage/app/private/zatca` is owned/group-writable by `QUEUE_USER` (and `CLI_USER` if different) — never `chmod 777` (see [§3](#server-setup-storage-permissions))
+- [ ] `zatca:sdk-smoke-test` — all nine lines `[OK]`, and `ZATCA_SDK_FINGERPRINT` is set
 - [ ] Onboarded in production: `zatca:health-check` shows production credentials `valid`
-- [ ] The `zatca` queue worker is running under Supervisor
-- [ ] The scheduler cron is installed, with the schedule above
+- [ ] The queue worker is running continuously under Supervisor or systemd (see [§5](#server-setup-supervisor))
+- [ ] The scheduler cron is installed for the right user, and `schedule:list` shows all six commands (see [§6](#server-setup-cron))
 - [ ] `APP_KEY` is backed up somewhere safe, and database backups are on
 - [ ] Alerts are wired for `ZatcaInvoiceNeedsAttention` / `zatca:status`
 - [ ] A calendar reminder to re-onboard before the certificate expires
 - [ ] `ZATCA_B2B_ENABLED=false` unless B2B has passed `composer test:sandbox` and a simulation rehearsal (see [Known limitations](#known-limitations))
 - [ ] One real sale reported successfully
 
+<a id="server-setup-troubleshooting"></a>
+### 9. Troubleshooting: server & infrastructure
+
+Business-rule rejections, onboarding/CSID errors and VAT/data validation errors are in the main [Troubleshooting](#15-troubleshooting) section below. These are specifically the server/infrastructure problems that show up while getting a box ready:
+
+| Problem | Reason | Fix |
+|---|---|---|
+| `java: not found` or SDK errors when signing | Java is missing, or not on the **queue worker's** `PATH` — signing runs inside `queue:work`, not the web request | Install Java 11–15 and test with `sudo -u "$QUEUE_USER" java -version` (find `$QUEUE_USER` as in [§2](#server-setup-identify-users)) |
+| `ZATCA_SDK_EXECUTABLE [...] does not point to an existing SDK jar file` / `ZATCA_SDK_ROOT [...] does not point to an existing directory` | Wrong, relative, or stale path (common after a deploy tool moves `vendor/` to a new release folder) | Use the exact absolute path — see [§4](#server-setup-sdk-install) |
+| `[FAIL] ... fingerprint` | The SDK jar on disk changed | If you upgraded it on purpose, run `zatca:generate-credentials` for the new fingerprint and update `ZATCA_SDK_FINGERPRINT`. If you didn't change it, **stop and investigate** — the file may be corrupted or tampered with. |
+| Permission denied in `storage/app/private/zatca` | Wrong owner — this folder needs to be writable by `QUEUE_USER`, not necessarily `WEB_USER` | `chown -R "$QUEUE_USER" storage/app/private/zatca` (or the shared-group setup if more than one user needs it) — see [§3](#server-setup-storage-permissions) |
+| Invoices stuck in `pending_reporting`/queue not processing | No queue worker running, or it crashed | Check `sudo supervisorctl status zatca-worker:*` (or `systemctl status zatca-worker`); see its log for the real cause — usually a Java/SDK/permission problem from the rows above |
+| Supervisor shows the worker `FATAL` or stuck restarting | The underlying `artisan queue:work` command is failing immediately — almost always one of: wrong project path in `command=`, wrong `user=`, or a Java/SDK/storage problem | Read `stdout_logfile` first (configured in [§5](#server-setup-supervisor)); fix the underlying cause, then `sudo supervisorctl restart zatca-worker:*` |
+| Scheduled commands never seem to run | Cron isn't installed, installed for the wrong user, or `schedule:run` itself is failing | `crontab -l -u <user>` to confirm the line exists; `php artisan schedule:list` to confirm Laravel sees the six commands; check your system's cron log (e.g. `grep CRON /var/log/syslog`) |
+| Many `manual_review` after a ZATCA outage, but they never clear | `zatca:requeue --only-transient` isn't actually scheduled, or the scheduler isn't running (see the row above) | Confirm the line is in your schedule (see [§6](#server-setup-cron)) and that cron is firing |
+| `.env` change has no effect | Config cache or old workers | `php artisan config:cache` and `php artisan queue:restart` |
+
 ---
 
 ## 15. Troubleshooting
+
+Server and infrastructure problems (Java, the SDK, storage permissions, the queue worker, cron) have their own table in [§14.9](#server-setup-troubleshooting). These are the rest: business-rule rejections, onboarding, VAT/data validation, and the data chain itself.
 
 | Problem | Reason | Fix |
 |---|---|---|
 | `composer require` fails on Laravel 9, 10 or 11 with "affected by security advisories" | Every release of those Laravel versions has open security advisories, and Composer blocks them by default | Upgrade the app to Laravel 12 (recommended), or have the app's owner accept the risk as described in [Laravel compatibility](#laravel-compatibility) |
 | `composer require` fails on Laravel 11 or 12 with a PHP version error | Laravel 11 and 12 need PHP 8.2 or newer | Upgrade PHP to 8.2+ |
 | `Call to undefined function openssl_x509_parse` (or similar) | Missing PHP extension | Install or enable `openssl` / `dom` / `mbstring` |
-| `ZATCA_SDK_EXECUTABLE [...] does not point to an existing SDK jar file` | Wrong path | Use the absolute path to the jar in `Apps/` |
-| `ZATCA_SDK_ROOT [...] does not point to an existing directory` | Wrong path | Point to the folder with `Apps/`, `Configuration/`, `Data/` |
-| `java: not found` or SDK errors when signing | Java is missing, or not on the worker user's PATH | Install Java 11 and test with `sudo -u www-data java -version` |
-| `[FAIL] ... fingerprint` | The SDK jar changed | If you upgraded on purpose, update `ZATCA_SDK_FINGERPRINT` |
 | `Unknown ZATCA EGS identifier` | The EGS name doesn't match `.env` | Use `config('zatca.primary_egs')` / `config('zatca.b2b.egs_identifier')` |
 | `No CSR on record ... Run zatca:generate-credentials first` | Step 1 skipped | Run `zatca:generate-credentials` |
 | CSR generation fails | Bad or empty CSR fields, or non-English characters in `ZATCA_ORG_NAME` | Fill every CSR field, and keep the English name in `ZATCA_ORG_NAME` |
@@ -1873,13 +2163,9 @@ Read the changelog. If a release adds migrations, run `zatca:check-source-unique
 | Credit note: `not eligible` | Original not accepted yet, another note is in progress, or the original is fully credited | Check `CreditNoteEligibilityPolicy::verdict()->reason` |
 | Missing original invoice reference | Not possible from this API | Notes always take the reference from `$original`, so pass the right `ZatcaInvoice` |
 | Wrong previous hash / counter problems | The database was restored or edited, or two environments are mixed | Never edit `zatca_egs_states`. Check `zatca:inspect state`. Contact ZATCA if the chain broke. |
-| Stuck in `pending_reporting` | No queue worker, or no scheduler | Run `queue:work --queue=zatca` and the cron |
-| Many `manual_review` after a ZATCA outage | Retry budget used up | `zatca:requeue --only-transient` (schedule it hourly) |
 | Signing works in sandbox, fails in production | Production not onboarded, a different OTP or portal, or wrong environment value. Also, the sandbox does not check the production signature (its production certificate is shared), so a signing problem can stay hidden there. | Onboard again in production. Credentials are per environment. Rehearse in simulation first. |
 | `composer test:sandbox` skips every test | `ZATCA_SDK_ROOT` / `ZATCA_SDK_EXECUTABLE` not set or wrong | Set both (see [Sandbox tests](#sandbox-tests)) |
 | `composer test:sandbox` fails at `generate-credentials` (the first SDK step) | Java is missing from the PATH, or the version is outside what the SDK supports (11 up to, not including, 15) | Install Java 11 and put it first on the PATH |
-| Permission denied in `storage/app/private/zatca` | Wrong owner | `chown -R www-data:www-data storage` |
-| `.env` change has no effect | Config cache or old workers | `php artisan config:cache` and `php artisan queue:restart` |
 
 ---
 
