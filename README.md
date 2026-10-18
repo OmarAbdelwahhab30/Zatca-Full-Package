@@ -34,6 +34,25 @@ You give it your order. It builds the e-invoice, signs it, adds the QR code, sen
 
 ---
 
+## Documentation map
+
+This README covers installation, configuration and everyday usage end to end. The [`docs/`](docs/) folder goes deeper on specific topics — use this as a guide to which file to open:
+
+| File | Read it for |
+|---|---|
+| [`docs/ZATCA_CONCEPTS.md`](docs/ZATCA_CONCEPTS.md) | What ZATCA, EGS, certificates, the hash chain, environments, XML/UBL and QR codes actually mean — the ideas behind the glossary in [§2](#2-zatca-basics-in-5-minutes) |
+| [`docs/INVOICE_TYPES.md`](docs/INVOICE_TYPES.md) | Deciding B2B vs. B2C and credit vs. debit note for a real sale, with business scenarios and comparison tables |
+| [`docs/USAGE_EXAMPLES.md`](docs/USAGE_EXAMPLES.md) | Code patterns beyond [§9](#9-complete-usage-examples): previewing VAT before checkout, refund admin screens, status dashboards, recovering stuck documents |
+| [`docs/VAT_GUIDE.md`](docs/VAT_GUIDE.md) | The exact VAT rounding rules, plus worked examples (mixed VAT categories, split discounts, price-adjustment math) |
+| [`docs/ZATCA_WORKFLOWS.md`](docs/ZATCA_WORKFLOWS.md) | The full document lifecycle, Reporting vs. Clearance in practice, sandbox/simulation/production, deployment stages, certificate renewal, SDK/API version changes, and what the package automates vs. what you must do |
+| [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | A symptom-first diagnosis flow (`zatca:status` → what to do), common rejection codes, the exceptions reference, and an incident-response checklist |
+| [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | The authoritative ZATCA/SDK/UBL/Laravel/PHP version matrix referenced throughout this README |
+| [`docs/DATABASE.md`](docs/DATABASE.md) | Pointer to `ZATCA_WORKFLOWS.md` §6 (kept at this path so existing bookmarks still work) |
+| [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Pointer to `ZATCA_WORKFLOWS.md` (kept at this path so existing bookmarks still work) |
+| [`docs/SERVER_REQUIREMENTS.md`](docs/SERVER_REQUIREMENTS.md) | Pointer to this README's [§4](#4-requirements)/[§5](#5-installation) and `ZATCA_WORKFLOWS.md` (kept at this path so existing bookmarks still work) |
+
+---
+
 ## 1. What is this package?
 
 In Saudi Arabia, every VAT-registered business must send its invoices to ZATCA electronically. In Phase 2, each invoice must:
