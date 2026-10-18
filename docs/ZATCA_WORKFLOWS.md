@@ -175,7 +175,7 @@ php artisan zatca:inspect invoice --id=5 # What happened to invoice 5?
 
 ## 7. Deploying and updating the package itself
 
-The README's [§14 Deploy to production](../README.md#14-deploy-to-production) covers the standard first-deploy and every-deploy steps. Two situations it doesn't cover:
+The README's [§14 Server Setup & Production Deployment](../README.md#server-setup) covers server prerequisites, user accounts, the SDK, Supervisor/cron, and the standard first-deploy and every-deploy steps. Two situations it doesn't cover:
 
 ### When the ZATCA SDK version changes
 
