@@ -13,7 +13,7 @@ interface ZatcaSdkInterface
     /** @return array{csr: string, privateKey: string} absolute file paths */
     public function generateCsr(string $csrConfigPath, ZatcaEnvironment $environment): array;
 
-    /** @return array{signedXmlPath: string, signedXmlBase64: string, invoiceHash: string, qrCode: string} */
+    /** @return array{signedXmlBase64: string, invoiceHash: string, qrCode: string} the signed document is returned in memory; nothing is left on disk */
     public function signInvoice(string $unsignedXmlPath, string $certificatePath, string $privateKeyPath): array;
 
     public function generateHash(string $xmlPath): string;

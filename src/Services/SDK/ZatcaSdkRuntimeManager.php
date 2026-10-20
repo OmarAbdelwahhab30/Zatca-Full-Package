@@ -67,7 +67,7 @@ class ZatcaSdkRuntimeManager
     }
 
     /** Writes the raw (no PEM header/footer/newlines) cert + private key this invocation must sign/validate with. */
-    public function writeCredentials(SdkWorkspace $workspace, string $certificateRawBase64, string $privateKeyRawBase64): void
+    public function writeCredentials(SdkWorkspace $workspace, string $certificateRawBase64, #[\SensitiveParameter] string $privateKeyRawBase64): void
     {
         file_put_contents($workspace->certificatePath(), $this->stripPemArmor($certificateRawBase64));
         chmod($workspace->certificatePath(), 0600);

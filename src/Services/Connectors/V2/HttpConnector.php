@@ -41,7 +41,7 @@ class HttpConnector implements ZatcaConnectorInterface
         private readonly ZatcaCredentialStore $credentialStore,
     ) {}
 
-    public function requestComplianceCsid(string $egsIdentifier, string $csrBase64, string $otp): ZatcaApiResult
+    public function requestComplianceCsid(string $egsIdentifier, string $csrBase64, #[\SensitiveParameter] string $otp): ZatcaApiResult
     {
         $environment = $this->environmentFor($egsIdentifier);
 
@@ -165,6 +165,10 @@ class HttpConnector implements ZatcaConnectorInterface
             $response = $this->client->request($method, $baseUrl.$path, array_merge($options, [
                 'timeout' => Config::get('zatca.http.timeout', 30),
                 'http_errors' => false,
+                // ZATCA's API never redirects these POSTs. A redirect would carry the CSID
+                // Basic-auth credentials to wherever it points, so it is treated as the
+                // failure it is (a 3xx result) instead of being followed.
+                'allow_redirects' => false,
             ]));
 
             return $normalize($response);

@@ -46,6 +46,8 @@ class InvoiceDataValidator
     /** @throws ZatcaException when the invoice's own figures do not reconcile. */
     public function validate(ZatcaInvoiceData $data): void
     {
+        $this->validateText($data);
+
         if ($data->documentType->isStandard()) {
             $this->validateStandardBuyer($data);
         }
@@ -420,6 +422,67 @@ class InvoiceDataValidator
     }
 
     /** Line-level rounding may differ from a recomputation by at most one fil. */
+    /**
+     * Every free-text value that ends up in the XML must be valid UTF-8 and free of the
+     * control characters XML 1.0 forbids. Escaping cannot fix either: invalid UTF-8
+     * would be silently emptied by the XML generators (a blank legal name or item name
+     * on a tax invoice), and a control character would make the document unparseable
+     * for the SDK. Both are caught here, before an ICV is spent, and the value itself is
+     * deliberately not echoed back.
+     */
+    private function validateText(ZatcaInvoiceData $data): void
+    {
+        $texts = [
+            'source reference' => $data->sourceReference,
+            'buyer name' => $data->buyerName,
+            'billing reference' => $data->billingReferenceId,
+            'adjustment reason' => $data->adjustmentReason,
+        ];
+
+        foreach ($data->lines as $index => $line) {
+            $number = $index + 1;
+            $texts["line {$number} description"] = $line->description;
+            $texts["line {$number} exemption reason"] = $line->vatExemptionReason;
+            $texts["line {$number} exemption code"] = $line->vatExemptionReasonCode;
+        }
+
+        foreach ($data->allowanceCharges as $index => $allowance) {
+            $number = $index + 1;
+            $texts["allowance {$number} reason"] = $allowance->reason;
+            $texts["allowance {$number} exemption reason"] = $allowance->vatExemptionReason;
+            $texts["allowance {$number} exemption code"] = $allowance->vatExemptionReasonCode;
+        }
+
+        if ($data->buyer) {
+            $buyer = $data->buyer;
+            $texts['buyer legal name'] = $buyer->registrationName;
+            $texts['buyer VAT number'] = $buyer->vatNumber;
+            $texts['buyer other ID scheme'] = $buyer->otherId?->scheme;
+            $texts['buyer other ID value'] = $buyer->otherId?->value;
+            $texts['buyer street'] = $buyer->address->street;
+            $texts['buyer building number'] = $buyer->address->buildingNumber;
+            $texts['buyer district'] = $buyer->address->district;
+            $texts['buyer city'] = $buyer->address->city;
+            $texts['buyer postal code'] = $buyer->address->postalCode;
+            $texts['buyer country code'] = $buyer->address->countryCode;
+        }
+
+        foreach ($texts as $label => $value) {
+            if ($value !== null && ! $this->isValidXmlText($value)) {
+                throw new ZatcaException(
+                    "[ZATCA] Invoice [{$data->sourceReference}] has invalid text in the {$label}: it must be valid UTF-8 without control characters."
+                );
+            }
+        }
+    }
+
+    /** The character set XML 1.0 allows: tab, line feeds, and everything from space up except surrogates and U+FFFE/U+FFFF. */
+    private function isValidXmlText(string $value): bool
+    {
+        return mb_check_encoding($value, 'UTF-8')
+            && preg_match('/[^\x{9}\x{A}\x{D}\x{20}-\x{D7FF}\x{E000}-\x{FFFD}\x{10000}-\x{10FFFF}]/u', $value) !== 1;
+    }
+
     private function assertWithinOneFil(float $expected, float $actual, string $reference, string $rule): void
     {
         if (abs($actual - $expected) < 0.01 + self::EPSILON) {

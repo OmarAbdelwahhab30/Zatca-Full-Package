@@ -7,6 +7,7 @@ use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Models\ZatcaEgsCredential;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\State\EgsRegistry;
+use Zatca\Support\SchedulerHeartbeat;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Config;
@@ -39,10 +40,12 @@ class ZatcaStatus extends Command
     /** Signed and still on their way to ZATCA. */
     private const WAITING = ['pending_reporting', 'retrying', 'pending_clearance', 'clearance_retrying', 'clearance_in_doubt'];
 
-    public function handle(EgsRegistry $registry): int
+    public function handle(EgsRegistry $registry, SchedulerHeartbeat $heartbeat): int
     {
         $this->checkManualReview();
         $this->checkStuckInvoices();
+        $this->checkReportingDeadline();
+        $this->checkScheduler($heartbeat);
         $this->checkCertificates($registry);
         $this->checkFailedJobs();
 
@@ -151,6 +154,76 @@ class ZatcaStatus extends Command
             $staleMinutes,
             Config::get('zatca.queue.queue', 'zatca')
         ));
+    }
+
+    /**
+     * ZATCA requires a Simplified (B2C) document to be reported within 24 hours of issue.
+     * The stuck-invoice check above fires after an hour; this one speaks in terms of the
+     * deadline itself, and also counts documents already in manual review, which that check
+     * does not. Stateless on purpose: it reports the current picture on every run, so there
+     * is nothing to de-duplicate and no new event to wire.
+     */
+    private function checkReportingDeadline(): void
+    {
+        if (! Schema::hasTable('zatca_invoices')) {
+            return;
+        }
+
+        $warnHours = min(23, max(1, (int) Config::get('zatca.reporting_deadline.warn_after_hours', 20)));
+
+        $unreported = fn () => ZatcaInvoice::query()
+            ->where('submission_model', 'reporting')
+            ->whereIn('status', ['pending_reporting', 'retrying', 'manual_review'])
+            ->whereNull('superseded_by_id');
+
+        $now = CarbonImmutable::now();
+
+        $overdue = $unreported()->where('created_at', '<=', $now->subHours(24));
+        $approaching = $unreported()
+            ->where('created_at', '<=', $now->subHours($warnHours))
+            ->where('created_at', '>', $now->subHours(24));
+
+        if (($count = (clone $overdue)->count()) > 0) {
+            $oldest = $overdue->orderBy('created_at')->first(['id', 'created_at']);
+
+            $this->record('Reporting deadline', 'fail', sprintf(
+                "%d B2C document(s) are past ZATCA's 24-hour reporting deadline. Oldest: #%d from %s. Report them now: php artisan zatca:requeue --dry-run",
+                $count,
+                $oldest->id,
+                $oldest->created_at?->diffForHumans() ?? 'unknown'
+            ));
+
+            return;
+        }
+
+        if (($count = (clone $approaching)->count()) > 0) {
+            $oldest = $approaching->orderBy('created_at')->first(['id', 'created_at']);
+
+            $this->record('Reporting deadline', 'warn', sprintf(
+                "%d B2C document(s) are still unreported after %d hours and approach ZATCA's 24-hour deadline. Oldest: #%d from %s.",
+                $count,
+                $warnHours,
+                $oldest->id,
+                $oldest->created_at?->diffForHumans() ?? 'unknown'
+            ));
+
+            return;
+        }
+
+        $this->record('Reporting deadline', 'ok', "No B2C document is close to ZATCA's 24-hour reporting deadline.");
+    }
+
+    private function checkScheduler(SchedulerHeartbeat $heartbeat): void
+    {
+        $status = $heartbeat->status();
+
+        $level = match ($status['state']) {
+            SchedulerHeartbeat::STATE_OK => 'ok',
+            SchedulerHeartbeat::STATE_STALE => 'fail',
+            default => 'warn',
+        };
+
+        $this->record('Scheduler', $level, $status['detail']);
     }
 
     private function checkCertificates(EgsRegistry $registry): void

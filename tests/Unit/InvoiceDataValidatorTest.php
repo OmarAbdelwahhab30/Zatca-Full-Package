@@ -165,6 +165,49 @@ class InvoiceDataValidatorTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Free text that goes into the XML: valid UTF-8, no XML-forbidden control characters.
+    // -------------------------------------------------------------------------
+
+    /** @dataProvider unusableText */
+    #[DataProvider('unusableText')]
+    public function test_it_refuses_text_the_xml_cannot_carry(string $text): void
+    {
+        $this->expectException(ZatcaException::class);
+        $this->expectExceptionMessageMatches('/invalid text in the line 1 description/');
+
+        $this->validator()->validate($this->invoice(lines: [
+            new ZatcaInvoiceLine($text, 1, 100.00, 15.0, 100.00, 15.00),
+        ]));
+    }
+
+    public static function unusableText(): array
+    {
+        return [
+            'invalid UTF-8 (would be silently emptied)' => ["Caf\xE9 latte"],
+            'control character (would break the XML)' => ["Item\x01A"],
+            'null byte' => ["Item\x00A"],
+        ];
+    }
+
+    public function test_it_refuses_a_control_character_in_the_buyer_name(): void
+    {
+        $this->expectException(ZatcaException::class);
+        $this->expectExceptionMessageMatches('/invalid text in the buyer name/');
+
+        $this->validator()->validate($this->invoice(buyerName: "Ali\x08"));
+    }
+
+    public function test_it_accepts_arabic_text_tabs_and_line_breaks(): void
+    {
+        $this->validator()->validate($this->invoice(
+            lines: [new ZatcaInvoiceLine("كتاب\tالمحاسبة\nالجزء الأول", 1, 100.00, 15.0, 100.00, 15.00)],
+            buyerName: 'شركة النور',
+        ));
+
+        $this->addToAssertionCount(1);
+    }
+
+    // -------------------------------------------------------------------------
     // Standard (B2B) buyer — P22. Every rule here is from the KSA schematron rules
     // shipped with the ZATCA SDK (Facts Register F-SDK-04…F-SDK-10).
     // -------------------------------------------------------------------------
@@ -449,11 +492,12 @@ class InvoiceDataValidatorTest extends TestCase
         float $net = 100.00,
         float $vat = 15.00,
         float $gross = 115.00,
+        string $buyerName = 'Student',
     ): ZatcaInvoiceData {
         return new ZatcaInvoiceData(
             egsIdentifier: 'default',
             sourceReference: 'payment:1',
-            buyerName: 'Student',
+            buyerName: $buyerName,
             buyerVatNumber: null,
             issueDateTime: new DateTimeImmutable('2026-08-20 10:00:00'),
             currency: 'SAR',

@@ -73,7 +73,7 @@ class ComplianceOnboardingOrchestrator
     }
 
     /** @return array{requestId:string, dispositionMessage:?string} */
-    public function compliance(string $egsIdentifier, string $otp): array
+    public function compliance(string $egsIdentifier, #[\SensitiveParameter] string $otp): array
     {
         $egsConfig = $this->egsRegistry->for($egsIdentifier);
         $csr = $this->credentialStore->getCsr($egsIdentifier, $egsConfig->environment, ZatcaCredentialType::Compliance);

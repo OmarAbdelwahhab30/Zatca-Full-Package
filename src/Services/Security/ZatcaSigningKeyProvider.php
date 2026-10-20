@@ -87,7 +87,7 @@ class ZatcaSigningKeyProvider
      * during production onboarding — the raw key never leaves this class;
      * the caller only learns that the copy succeeded.
      */
-    public function reuseComplianceKeyForProduction(string $egsIdentifier, ZatcaEnvironment $environment, array $productionCredentialData): void
+    public function reuseComplianceKeyForProduction(string $egsIdentifier, ZatcaEnvironment $environment, #[\SensitiveParameter] array $productionCredentialData): void
     {
         $complianceCredentials = $this->credentialStore->get($egsIdentifier, $environment, ZatcaCredentialType::Compliance);
 

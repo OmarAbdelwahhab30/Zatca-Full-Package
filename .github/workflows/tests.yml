@@ -1,0 +1,115 @@
+name: Tests
+
+# Runs the full suite, including the tests that drive the real ZATCA Java SDK, on a
+# representative set of Laravel and PHP versions. Live ZATCA sandbox tests are never run
+# here (they are opt-in and call ZATCA's developer portal).
+#
+# To run every supported combination locally, use docs/run-compat-matrix.ps1.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly, so a new security advisory or dependency release is noticed without a commit.
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Laravel ${{ matrix.laravel }} / PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Covers every supported Laravel (9-12) and every supported PHP (8.1-8.4) at least once.
+        #
+        # legacy: true marks Laravel 9, 10 and 11. Every release of those has open security
+        # advisories, so Composer refuses to install them by default. Those jobs turn the
+        # block off explicitly (see the "Allow legacy Laravel" step, which prints a warning
+        # annotation). Laravel 12 jobs keep Composer's protection and also run `composer audit`.
+        include:
+          - { laravel: '12', testbench: '^10.0', phpunit: '^11.0', php: '8.4', legacy: false }
+          - { laravel: '12', testbench: '^10.0', phpunit: '^11.0', php: '8.2', legacy: false }
+          - { laravel: '11', testbench: '^9.0', phpunit: '^10.0|^11.0', php: '8.2', legacy: true }
+          - { laravel: '10', testbench: '^8.0', phpunit: '^10.0', php: '8.3', legacy: true }
+          - { laravel: '9', testbench: '^7.0', phpunit: '^9.5', php: '8.1', legacy: true }
+
+    env:
+      # The SDK ships inside this repository (SDKs/). The package never writes into it.
+      ZATCA_SDK_ROOT: ${{ github.workspace }}/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8
+      ZATCA_SDK_EXECUTABLE: ${{ github.workspace }}/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The ZATCA SDK supports Java 11 up to (not including) 15.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, mbstring, openssl, ctype, json, pdo_sqlite, sqlite3
+          tools: composer:v2
+          coverage: none
+
+      - name: Check the SDK is present
+        run: |
+          java -version
+          test -f "$ZATCA_SDK_EXECUTABLE"
+          sha256sum "$ZATCA_SDK_EXECUTABLE"
+
+      - name: Allow legacy Laravel (Composer security block off for this job only)
+        if: ${{ matrix.legacy }}
+        run: |
+          echo "::warning title=Composer security block disabled::Laravel ${{ matrix.laravel }} has open security advisories and cannot be installed otherwise. This job only proves the package still works on it; use Laravel 12 for production."
+          composer config audit.block-insecure false
+
+      - name: Install Laravel ${{ matrix.laravel }}
+        run: >
+          composer require --dev
+          "laravel/framework:^${{ matrix.laravel }}.0"
+          "orchestra/testbench:${{ matrix.testbench }}"
+          "phpunit/phpunit:${{ matrix.phpunit }}"
+          -W --no-interaction --no-progress --prefer-dist
+
+      - name: Composer security audit
+        if: ${{ !matrix.legacy }}
+        run: composer audit
+
+      - name: Run the test suite (real ZATCA SDK, no live sandbox)
+        run: vendor/bin/phpunit --exclude-group sandbox --log-junit junit.xml
+
+      # The real-SDK tests skip themselves when the SDK is not configured. A green run in
+      # which they skipped would prove nothing, so fail if any of them did not actually run.
+      - name: Confirm the real-SDK tests ran
+        run: |
+          python3 - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          wanted = ('ProductionInvoiceOrchestratorTest', 'VatRealSdkValidationTest', 'SdkSmokeTestCommandTest')
+          ran = skipped = 0
+          for case in ET.parse('junit.xml').iter('testcase'):
+              if any(name in (case.get('classname', '') + case.get('class', '')) for name in wanted):
+                  if case.find('skipped') is not None:
+                      skipped += 1
+                  else:
+                      ran += 1
+          print(f'real-SDK tests: {ran} ran, {skipped} skipped')
+          if ran == 0 or skipped:
+              print('::error::The real-SDK tests did not run. Check Java and ZATCA_SDK_ROOT / ZATCA_SDK_EXECUTABLE.')
+              sys.exit(1)
+          PY

@@ -14,7 +14,7 @@ class LaravelCredentialEncrypter implements CredentialEncrypterInterface
 {
     public function __construct(private readonly Encrypter $encrypter) {}
 
-    public function encrypt(string $plaintext): string
+    public function encrypt(#[\SensitiveParameter] string $plaintext): string
     {
         return $this->encrypter->encryptString($plaintext);
     }
