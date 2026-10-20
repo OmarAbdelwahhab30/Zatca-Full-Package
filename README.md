@@ -47,6 +47,7 @@ This README covers installation, configuration and everyday usage end to end. Th
 | [`docs/ZATCA_WORKFLOWS.md`](docs/ZATCA_WORKFLOWS.md) | The full document lifecycle, Reporting vs. Clearance in practice, sandbox/simulation/production, deployment stages, certificate renewal, SDK/API version changes, and what the package automates vs. what you must do |
 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | A symptom-first diagnosis flow (`zatca:status` → what to do), common rejection codes, the exceptions reference, and an incident-response checklist |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | The authoritative ZATCA/SDK/UBL/Laravel/PHP version matrix referenced throughout this README |
+| [`docs/run-compat-matrix.ps1`](docs/run-compat-matrix.ps1) | A PowerShell script that runs the full test suite (real SDK, no live sandbox) on every Laravel 9–12 × PHP 8.1–8.4 combination in isolated temporary copies, then prints a pass/fail matrix. Run it with `powershell -ExecutionPolicy Bypass -File docsun-compat-matrix.ps1` |
 | [`docs/DATABASE.md`](docs/DATABASE.md) | Pointer to `ZATCA_WORKFLOWS.md` §6 (kept at this path so existing bookmarks still work) |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Pointer to `ZATCA_WORKFLOWS.md` (kept at this path so existing bookmarks still work) |
 | [`docs/SERVER_REQUIREMENTS.md`](docs/SERVER_REQUIREMENTS.md) | Pointer to this README's [§4](#4-requirements) and [§14 Server Setup & Production Deployment](#server-setup) (kept at this path so existing bookmarks still work) |
