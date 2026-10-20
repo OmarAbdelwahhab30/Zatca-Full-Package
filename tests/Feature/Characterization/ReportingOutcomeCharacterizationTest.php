@@ -12,10 +12,13 @@ use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Event;
+use Zatca\Enums\ZatcaCertificateState;
+use Zatca\Enums\ZatcaCredentialType;
 use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Events\ZatcaInvoiceNeedsAttention;
 use Zatca\Exceptions\ZatcaContractChangedException;
 use Zatca\Jobs\ReportZatcaInvoiceJob;
+use Zatca\Models\ZatcaEgsCredential;
 use Zatca\Models\ZatcaInvoice;
 use Zatca\Models\ZatcaSubmissionAttempt;
 use Zatca\Services\Connectors\ConnectorFactory;
@@ -231,6 +234,25 @@ class ReportingOutcomeCharacterizationTest extends TestCase
             ZatcaInvoiceStatus::cases(),
             fn (ZatcaInvoiceStatus $s) => ! $s->isTerminalSuccess() && ! $s->isClearanceState(),
         ));
+    }
+
+    /**
+     * An expired production certificate stops reporting before any request or attempt row.
+     * The invoice stays pending so it resumes once the certificate is renewed.
+     */
+    public function test_an_expired_certificate_stops_reporting_before_any_request(): void
+    {
+        ZatcaEgsCredential::query()
+            ->where('credential_type', ZatcaCredentialType::Production->value)
+            ->update(['certificate_state' => ZatcaCertificateState::Expired->value]);
+        $invoice = $this->invoiceRow(ZatcaInvoiceStatus::PendingReporting);
+
+        $this->report($invoice);
+
+        $this->assertCount(0, $this->history);
+        $this->assertSame(ZatcaInvoiceStatus::PendingReporting, $invoice->refresh()->status);
+        $this->assertSame(0, $invoice->attempt_count);
+        $this->assertSame(0, ZatcaSubmissionAttempt::query()->count());
     }
 
     private function report(ZatcaInvoice $invoice): void
