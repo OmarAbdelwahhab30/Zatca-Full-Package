@@ -9,6 +9,7 @@ use Zatca\Services\SDK\ZatcaSdkFingerprint;
 use Zatca\Services\SDK\ZatcaSdkRuntimeManager;
 use Zatca\Services\Security\ZatcaCredentialStore;
 use Zatca\State\EgsRegistry;
+use Zatca\Support\SchedulerHeartbeat;
 use Zatca\Support\VatSettings;
 use Illuminate\Console\Command;
 
@@ -29,6 +30,7 @@ class ZatcaHealthCheck extends Command
         ZatcaSdkFingerprint $fingerprint,
         EgsRegistry $registry,
         ZatcaCredentialStore $credentialStore,
+        SchedulerHeartbeat $heartbeat,
     ): int {
         $healthy = true;
 
@@ -50,6 +52,10 @@ class ZatcaHealthCheck extends Command
         }
 
         if (! $this->checkVatSettings()) {
+            $healthy = false;
+        }
+
+        if (! $this->checkScheduler($heartbeat)) {
             $healthy = false;
         }
 
@@ -81,6 +87,31 @@ class ZatcaHealthCheck extends Command
         }
 
         return $healthy ? self::SUCCESS : self::FAILURE;
+    }
+
+    /** Whether the host's scheduler is running the retry sweep (see SchedulerHeartbeat). */
+    private function checkScheduler(SchedulerHeartbeat $heartbeat): bool
+    {
+        $status = $heartbeat->status();
+
+        switch ($status['state']) {
+            case SchedulerHeartbeat::STATE_OK:
+                $this->info('[OK] Scheduler: '.$status['detail']);
+
+                return true;
+            case SchedulerHeartbeat::STATE_STALE:
+                $this->error('[FAIL] Scheduler: '.$status['detail']);
+
+                return false;
+            case SchedulerHeartbeat::STATE_NEVER:
+                $this->warn('[PENDING] Scheduler: '.$status['detail']);
+
+                return true;
+            default:
+                $this->warn('[WARN] Scheduler: '.$status['detail']);
+
+                return true;
+        }
     }
 
     /** The VAT rate and price mode every new invoice is calculated with. */

@@ -48,6 +48,7 @@ This README covers installation, configuration and everyday usage end to end. Th
 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | A symptom-first diagnosis flow (`zatca:status` → what to do), common rejection codes, the exceptions reference, and an incident-response checklist |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | The authoritative ZATCA/SDK/UBL/Laravel/PHP version matrix referenced throughout this README |
 | [`docs/run-compat-matrix.ps1`](docs/run-compat-matrix.ps1) | A PowerShell script that runs the full test suite (real SDK, no live sandbox) on every Laravel 9–12 × PHP 8.1–8.4 combination in isolated temporary copies, then prints a pass/fail matrix. Run it with `powershell -ExecutionPolicy Bypass -File docsun-compat-matrix.ps1` |
+| [`CHANGELOG.md`](CHANGELOG.md) / [`UPGRADE.md`](UPGRADE.md) | What changed in each release, and what to do when moving to a new version |
 | [`docs/DATABASE.md`](docs/DATABASE.md) | Pointer to `ZATCA_WORKFLOWS.md` §6 (kept at this path so existing bookmarks still work) |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Pointer to `ZATCA_WORKFLOWS.md` (kept at this path so existing bookmarks still work) |
 | [`docs/SERVER_REQUIREMENTS.md`](docs/SERVER_REQUIREMENTS.md) | Pointer to this README's [§4](#4-requirements) and [§14 Server Setup & Production Deployment](#server-setup) (kept at this path so existing bookmarks still work) |
@@ -199,21 +200,22 @@ Composer dependencies are installed for you: `guzzlehttp/guzzle`, `doctrine/dbal
 
 **Use Laravel 12 for new production projects.** Laravel 9, 10 and 11 stay supported by this package so that existing apps keep working while they plan their upgrade. They are not removed just because Laravel stopped maintaining them.
 
-**What was tested (2026-10-14, SQLite):** the full package suite ran in a clean install for each Laravel version, on each PHP version listed.
+**What was tested (2026-10-20, SQLite, Windows, real ZATCA SDK enabled):** the full package suite (live sandbox tests excluded) ran in a clean install for each Laravel version, on the PHP versions listed. `docs/run-compat-matrix.ps1` repeats this run.
 
-| Laravel | Framework | Testbench | PHPUnit | Carbon | PHP versions run | Result on each PHP version |
+| Laravel | Framework | Testbench | PHPUnit | Carbon | PHP versions run | Result |
 |---|---|---|---|---|---|---|
-| 9 | 9.52.22 | 7.58 | 9.6 | 2.73 | 8.1, 8.3 | 834 tests passed, 8 skipped |
-| 10 | 10.50.3 | 8.39 | 10.5 | 2.73 | 8.2, 8.3 | 834 tests passed, 8 skipped |
-| 11 | 11.57.0 | 9.18 | 11.5 | 3.14 | 8.2, 8.3 | 834 tests passed, 8 skipped |
-| 12 | 12.70.0 | 10.12 | 11.5 | 3.14 | 8.2, 8.3, 8.4 | 834 tests passed, 8 skipped |
-| 12 | 12.70.0 | 10.12 | 12.5 | 3.14 | 8.3 | 834 tests passed, 8 skipped |
+| 9 | 9.52.22 | 7.58 | 9.6 | 2.73 | 8.1, 8.2 | 890 tests passed, 2 skipped on 8.1, 1 on 8.2 |
+| 10 | 10.50.3 | 8.39 | 10.5 | 2.73 | 8.1, 8.3 | 890 tests passed, 2 skipped on 8.1, 1 on 8.3 |
+| 11 | 11.57.0 | 9.18 | 11.5 | 3.15 | 8.2, 8.4 | 890 tests passed, 1 skipped on each |
+| 12 | 12.70.0 | 10.12 | 11.5 | 3.15 | 8.2, 8.4 | 890 tests passed, 1 skipped on each |
 
-Every run gave 2,706 assertions and no PHPUnit warnings or deprecations. Full version details are in [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
+Every run used Guzzle 7.16.0 and Doctrine DBAL 3.10.6, and every run passed with no failures. The matrix tests each Laravel version on the PHP versions shown, not on every possible pairing. Together they cover every Laravel from 9 to 12 and every PHP from 8.1 to 8.4. The GitHub Actions workflow in `.github/workflows/tests.yml` repeats a representative subset on every push.
 
-Since that matrix, the suite has grown to 847 tests (the onboarding failure cases and the fixes found in the sandbox). The new count was run on Laravel 10 / PHP 8.2 only. The matrix above has not been re-run yet.
+The skipped tests are:
+- One test checks Unix file permissions and skips on Windows. It runs on Linux and macOS.
+- On PHP 8.1 only, one test checks that secrets are kept out of exception stack traces. PHP honours `#[SensitiveParameter]` from 8.2, so that test skips on 8.1. A second test checks the attribute is in place on every secret-bearing parameter, and runs on all versions.
 
-Of the 8 skipped tests, 7 drive the real ZATCA Java SDK and skip unless you point them at an SDK install (see [Running the package tests](#18-running-the-package-tests)). The other one checks Unix file permissions and skips on Windows, where these runs were made. So these results show the package code works on each Laravel version. They **do not** prove that real SDK signing works on each version. Real signing, and the SDK validator on invoices whose VAT the package calculated, were checked separately with the bundled SDK 3.4.8 on Laravel 10 / PHP 8.3 (see [`SDKs/README.md`](SDKs/README.md)). Run `composer smoke` and the onboarding sandbox steps on your own Laravel version before you go live.
+The real-SDK tests ran in these runs, so signing, hashing, QR extraction and the SDK validator were exercised on every combination above. They skip unless you point them at an SDK install (see [Running the package tests](#18-running-the-package-tests)). Real ZATCA acceptance still needs the onboarding sandbox steps and a simulation rehearsal: run `composer smoke` and those steps on your own Laravel version before you go live.
 
 The package's own tests run on PHPUnit 9 to 12. Each data provider and group is written twice: as a PHP attribute (`#[DataProvider]`, `#[Group]`) for PHPUnit 10+, and as a docblock tag (`@dataProvider`, `@group`) for PHPUnit 9, which Laravel 9 needs. Keep both when you add a test.
 
@@ -454,6 +456,8 @@ ZATCA_B2B_ENVIRONMENT=                 # optional, defaults to ZATCA_ENVIRONMENT
 | `ZATCA_ACCEPT_LANGUAGE` | `ar` | Language of ZATCA's messages (`ar` or `en`). |
 | `ZATCA_GENERATION_RETRY_TRIES` | `5` | How many times a generation job may retry (back-off: 5s, 30s, 2m, 10m). |
 | `ZATCA_REPORTING_RETRY_ATTEMPTS` | `12` | How many sends before an invoice stops and waits for a human. With a 5-minute sweep, that's about 1 hour of ZATCA downtime. |
+| `ZATCA_SCHEDULER_STALE_MINUTES` | `30` | `zatca:status` and `zatca:health-check` report a failure when `zatca:report-pending` has not run for this many minutes (a missing or broken cron entry). |
+| `ZATCA_REPORTING_DEADLINE_WARN_HOURS` | `20` | `zatca:status` warns about B2C documents still unreported after this many hours (1–23). It fails once one is past ZATCA's 24-hour limit. |
 | `ZATCA_AUTO_RENEWAL_ENABLED` | `false` | Lets `zatca:certificate:renew` call ZATCA. Leave it `false` (see [Certificates](#certificates)). |
 | `ZATCA_CREDENTIAL_ENCRYPTER` | `laravel` | Label only. To use Vault or KMS, bind your own encrypter (see [Custom bindings](#custom-bindings)). |
 | `ZATCA_PRUNE_ATTEMPTS_AFTER_DAYS` | `180` | Age after which old attempt rows of accepted invoices are deleted. |
@@ -1531,7 +1535,8 @@ It takes no options. It checks:
 - that `ZATCA_ORG_IDENTIFIER` equals `ZATCA_VAT_NUMBER`,
 - the formats of the VAT number, CR number, building number, additional number and postal code,
 - the address,
-- the credentials and certificate state of every EGS.
+- the credentials and certificate state of every EGS,
+- that the scheduler is running the retry sweep (`zatca:report-pending` must have run within `ZATCA_SCHEDULER_STALE_MINUTES`).
 
 It prints `[OK]`, `[PENDING]`, `[WARN]` or `[FAIL]` lines and exits with code 1 if anything fails. Run it after every deployment.
 
@@ -1549,7 +1554,7 @@ It takes no options. It checks Java, the SDK files and the fingerprint. Then, us
 php artisan zatca:report-pending
 ```
 
-It takes no options. It re-dispatches every document in `pending_reporting`, `retrying`, `pending_clearance`, `clearance_retrying` or `clearance_in_doubt`. It never touches `manual_review` or rejected documents, and it never signs again. Schedule it every 5 minutes. When ZATCA is disabled, it does nothing.
+It takes no options. It re-dispatches every document in `pending_reporting`, `retrying`, `pending_clearance`, `clearance_retrying` or `clearance_in_doubt`. It never touches `manual_review` or rejected documents, and it never signs again. Schedule it every 5 minutes. When ZATCA is disabled, it sends nothing. Every run, including a disabled one, records its time in the cache so `zatca:status` can tell a stalled scheduler from a healthy one.
 
 ### `zatca:requeue`
 
@@ -1635,7 +1640,12 @@ php artisan zatca:status --json
 | `--strict` | off | Exit with code 1 on warnings too |
 | `--json` | off | Machine-readable output for monitoring |
 
-It checks for documents waiting for a human (`manual_review`, `clearance_manual_review`, `clearance_rejected`), documents stuck on their way to ZATCA, certificate expiry and failed jobs. It exits with code 1 only on failures (or on warnings with `--strict`).
+It checks for documents waiting for a human (`manual_review`, `clearance_manual_review`, `clearance_rejected`), documents stuck on their way to ZATCA, certificate expiry and failed jobs. It also checks two things that are easy to miss:
+
+- **Reporting deadline.** ZATCA wants a Simplified (B2C) document reported within 24 hours. Unreported B2C documents (including ones in `manual_review`) older than `ZATCA_REPORTING_DEADLINE_WARN_HOURS` (default 20) show as a warning, and any past 24 hours show as a failure. Replaced (superseded) documents and B2B documents are not counted. The check reports the current picture on every run, so it never repeats an alert by itself.
+- **Scheduler.** `zatca:report-pending` records each run in the Laravel cache. If the last run is older than `ZATCA_SCHEDULER_STALE_MINUTES` (default 30), the row fails, because failed submissions are no longer being retried. Before the first run it is a warning. With the `array` or `null` cache store it cannot be checked and shows as a warning.
+
+It exits with code 1 only on failures (or on warnings with `--strict`).
 
 ### `zatca:inspect {resource}`
 
@@ -2028,6 +2038,12 @@ $schedule->command('zatca:prune-sdk-files')->daily();
 | `zatca:prune-submission-attempts` | Deletes old attempt-log rows for invoices that already succeeded (default: older than 180 days) |
 | `zatca:prune-sdk-files` | Deletes leftover SDK temp files from `storage/app/private/zatca` (default: older than 7 days) — never touches the database |
 
+**Who is responsible for what.** The package records when `zatca:report-pending` last ran and tells you, through `zatca:status` and `zatca:health-check`, when that is too long ago. It cannot install the cron entry, keep the queue worker alive or send you an alert. Those stay with your application:
+
+- install the cron entry above, and keep a queue worker running;
+- use a cache store that survives between processes (`file`, `database`, `redis`, `memcached`), not `array`, or the scheduler check cannot work;
+- run `zatca:status` from a monitor or an hourly job that notifies you when it exits non-zero (it is already in the schedule above).
+
 Full flags and behavior for each are in [§13 Console commands](#13-console-commands).
 
 **Verify it's actually installed and running:**
@@ -2106,7 +2122,7 @@ Read the changelog. If a release adds migrations, run `zatca:check-source-unique
 - [ ] The queue worker is running continuously under Supervisor or systemd (see [§5](#server-setup-supervisor))
 - [ ] The scheduler cron is installed for the right user, and `schedule:list` shows all six commands (see [§6](#server-setup-cron))
 - [ ] `APP_KEY` is backed up somewhere safe, and database backups are on
-- [ ] Alerts are wired for `ZatcaInvoiceNeedsAttention` / `zatca:status`
+- [ ] Alerts are wired for `ZatcaInvoiceNeedsAttention` / `zatca:status`, and the cache store is not `array` (so `zatca:status` can see the scheduler)
 - [ ] A calendar reminder to re-onboard before the certificate expires
 - [ ] `ZATCA_B2B_ENABLED=false` unless B2B has passed `composer test:sandbox` and a simulation rehearsal (see [Known limitations](#known-limitations))
 - [ ] One real sale reported successfully
@@ -2211,7 +2227,7 @@ The package does not check that the three compliance checks passed before it ask
 
 **Other**
 - Laravel 12 is recommended. Laravel 9, 10 and 11 work but no longer get security fixes from Laravel, and need an explicit Composer override to install. See [Laravel compatibility](#laravel-compatibility).
-- Real ZATCA SDK signing is not covered by the default automated suite (the 7 real-SDK tests skip unless an SDK is configured, and the sandbox tests are opt-in). It was checked with SDK 3.4.8 on Laravel 10 only (PHP 8.3 for the real-SDK tests, PHP 8.2 for the sandbox tests), not on every Laravel version.
+- Real ZATCA SDK signing is not covered by the default automated suite (the real-SDK tests skip unless an SDK is configured, and the sandbox tests are opt-in). With SDK 3.4.8 enabled, the real-SDK tests passed on Laravel 9 to 12 and PHP 8.1 to 8.4 (2026-10-20). The sandbox tests were last run on Laravel 10 / PHP 8.2.
 - Certificate renewal through the API is turned off. Renew by onboarding again.
 - No PDF generation.
 
@@ -2269,7 +2285,7 @@ composer install
 composer test
 ```
 
-The suite uses Orchestra Testbench and SQLite and never calls ZATCA or the real SDK. It has 847 tests, 8 of them skipped (7 real-SDK tests plus a Unix-only test). The 13 [sandbox tests](#sandbox-tests) are separate. On PHP 8.2+, `composer install` picks Laravel 12. To run the suite against an older Laravel version, install into a separate copy of the package with `composer update --with "orchestra/testbench:^9.0" -W` (Laravel 11; use `^8.0` for 10 and `^7.0` for 9). Laravel 9–11 need the security override described in [Laravel compatibility](#laravel-compatibility), so keep that copy throwaway and never ship its settings.
+The suite uses Orchestra Testbench and SQLite and never calls ZATCA or the real SDK. It has 890 tests. With the real SDK configured, 1 is skipped on Windows (a Unix-only file-permission test); without it, the 9 real-SDK tests are skipped too. The 13 [sandbox tests](#sandbox-tests) are separate. On PHP 8.2+, `composer install` picks Laravel 12. To run the suite against an older Laravel version, install into a separate copy of the package with `composer update --with "orchestra/testbench:^9.0" -W` (Laravel 11; use `^8.0` for 10 and `^7.0` for 9). Laravel 9–11 need the security override described in [Laravel compatibility](#laravel-compatibility), so keep that copy throwaway and never ship its settings.
 
 To also test the real SDK on your machine, set `ZATCA_SDK_EXECUTABLE` and `ZATCA_SDK_ROOT` and run `composer smoke` and `composer test`. To use the SDK bundled in this repository:
 
@@ -2357,3 +2373,7 @@ More operational detail is in [`docs/OPERATIONS.md`](docs/OPERATIONS.md), [`docs
 ## License
 
 Proprietary. Internal use only.
+
+The ZATCA SDK in [`SDKs/`](SDKs/) is a separate work by ZATCA under the GNU LGPL v3. Its license text is [`SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/LICENSE.txt`](SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/LICENSE.txt), and the package's own license does not apply to it (see [`SDKs/README.md`](SDKs/README.md)).
+
+Release notes are in [`CHANGELOG.md`](CHANGELOG.md), and upgrade steps are in [`UPGRADE.md`](UPGRADE.md).

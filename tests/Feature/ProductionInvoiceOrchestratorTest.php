@@ -89,6 +89,27 @@ class ProductionInvoiceOrchestratorTest extends TestCase
         $this->assertSame(1, $invoice->icv);
     }
 
+    /**
+     * The signed document lives in the database. A file copy on disk would hold the
+     * buyer's personal data with nobody responsible for deleting it.
+     */
+    public function test_signing_leaves_no_copy_of_the_signed_invoice_on_disk(): void
+    {
+        $this->seedDummyProductionCredentials();
+
+        $directory = storage_path('app/private/zatca/sdk-output');
+        $before = glob($directory.'/*.xml') ?: [];
+
+        $invoice = app(ProductionInvoiceOrchestrator::class)->generate(
+            $this->fakeInvoiceSource(),
+            (object) ['id' => 5003],
+            self::EGS
+        );
+
+        $this->assertNotEmpty($invoice->signed_xml_base64);
+        $this->assertSame($before, glob($directory.'/*.xml') ?: []);
+    }
+
     private function seedDummyProductionCredentials(): void
     {
         $sdkRoot = Config::get('zatca.sdk.root');

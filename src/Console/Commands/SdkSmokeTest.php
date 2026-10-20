@@ -91,7 +91,7 @@ class SdkSmokeTest extends Command
             $failed = ! $this->check('QR extraction', fn () => $signResult && ! empty($signResult['qrCode'])) || $failed;
 
             if ($signResult) {
-                $signedXmlPath = $signResult['signedXmlPath'];
+                $signedXmlPath = $this->tempFile((string) base64_decode($signResult['signedXmlBase64']), 'xml');
 
                 $failed = ! $this->check('Invoice validation runs (result may legitimately be PASS or FAIL)', function () use ($sdk, $signedXmlPath, $sampleCert) {
                     $result = $sdk->validateInvoice($signedXmlPath, $sampleCert);

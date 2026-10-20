@@ -57,7 +57,7 @@ class ZatcaCredentialStore
      *              certificate?:string,sdk_fingerprint?:string,certificate_issued_at?:\DateTimeInterface,
      *              certificate_expires_at?:\DateTimeInterface,certificate_state?:ZatcaCertificateState} $data
      */
-    public function store(string $egsIdentifier, ZatcaEnvironment $environment, ZatcaCredentialType $type, array $data): void
+    public function store(string $egsIdentifier, ZatcaEnvironment $environment, ZatcaCredentialType $type, #[\SensitiveParameter] array $data): void
     {
         $attributes = [];
 

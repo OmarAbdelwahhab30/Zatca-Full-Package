@@ -4,6 +4,7 @@ namespace Zatca\Console\Commands;
 
 use Zatca\Enums\ZatcaInvoiceStatus;
 use Zatca\Models\ZatcaInvoice;
+use Zatca\Support\SchedulerHeartbeat;
 use Zatca\Support\SubmissionRetry;
 use Zatca\Support\ZatcaGate;
 use Illuminate\Console\Command;
@@ -41,8 +42,12 @@ class ReportPendingInvoices extends Command
 
     protected $description = 'Re-dispatch ZATCA reporting/clearance for invoices still pending (never regenerates them, never touches manual_review).';
 
-    public function handle(ZatcaGate $gate): int
+    public function handle(ZatcaGate $gate, SchedulerHeartbeat $heartbeat): int
     {
+        // Proves the scheduler is alive, so it is recorded even when invoicing is disabled
+        // below. zatca:status and zatca:health-check read it back.
+        $heartbeat->record();
+
         // Runs every five minutes on the scheduler. Exits SUCCESS rather than FAILURE so a
         // deliberately disabled system does not fill the scheduler's log with failures.
         if ($gate->disabled()) {

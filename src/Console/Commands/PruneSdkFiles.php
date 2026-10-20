@@ -14,8 +14,10 @@ use Illuminate\Support\Facades\Config;
  * retry — RetryZatcaInvoiceJob re-sends the stored column, not a file.
  *
  * Two kinds of leftovers exist:
- *  - sdk-output/ — signed-XML copies the adapter persists out of a workspace
- *    and then abandons; only zatca:sdk-smoke-test cleans up after itself.
+ *  - sdk-output/ — files the adapter copies out of a workspace (the generated
+ *    CSR and key, which CsrGenerator deletes after reading). Earlier versions also
+ *    left a signed-XML copy here for every signed invoice, so old installs may
+ *    still hold some.
  *  - runtime/, tmp/, csr-config-*.properties — normally deleted in a `finally`
  *    block, but a killed process (OOM, reboot, timeout) leaves them behind.
  *    Those contain certificate and private-key material, so clearing them is a

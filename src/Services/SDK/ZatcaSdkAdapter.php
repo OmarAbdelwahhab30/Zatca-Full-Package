@@ -83,10 +83,11 @@ class ZatcaSdkAdapter implements ZatcaSdkInterface
             $invoiceHash = $this->hashParser->parse($output);
             $signedXml = file_get_contents($signedOutputPath);
             $qrCode = $this->xmlReader->extractQrCode($signedXml);
-            $finalSignedPath = $this->persistOutsideWorkspace($signedOutputPath, 'xml');
 
+            // The signed document is returned in memory only. A copy persisted outside the
+            // workspace would hold the buyer's personal data on disk with nobody owning its
+            // deletion, and the caller stores signedXmlBase64 in the database anyway.
             return [
-                'signedXmlPath' => $finalSignedPath,
                 'signedXmlBase64' => base64_encode($signedXml),
                 'invoiceHash' => $invoiceHash,
                 'qrCode' => $qrCode,

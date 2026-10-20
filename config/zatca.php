@@ -158,6 +158,21 @@ return [
         ],
     ],
 
+    // Scheduler monitoring. zatca:report-pending (every 5 minutes on the README schedule)
+    // records each run in the Laravel cache; zatca:status and zatca:health-check report a
+    // sweep that has not run for this many minutes, i.e. a missing or broken cron entry.
+    // Needs a cache store that persists between processes (not `array`).
+    'scheduler' => [
+        'stale_after_minutes' => (int) env('ZATCA_SCHEDULER_STALE_MINUTES', 30),
+    ],
+
+    // ZATCA requires a Simplified (B2C) document to be reported within 24 hours of issue.
+    // zatca:status warns about unreported B2C documents older than this many hours
+    // (1-23) and fails once one is past 24 hours.
+    'reporting_deadline' => [
+        'warn_after_hours' => (int) env('ZATCA_REPORTING_DEADLINE_WARN_HOURS', 20),
+    ],
+
     'certificate' => [
         'alert_days' => [60, 30, 7],
         // Automatic certificate renewal is OFF by default. ZATCA's dedicated renewal contract
