@@ -78,7 +78,7 @@ trait ReportsZatcaInvoice
             ->where('credential_type', ZatcaCredentialType::Production->value)
             ->value('certificate_state');
 
-        if ($certificateState === ZatcaCertificateState::Expired->value) {
+        if ($certificateState === ZatcaCertificateState::Expired) {
             // Stop all reporting for this EGS/environment immediately — the invoice stays
             // Pending Reporting/Retrying, never sent with an expired cert. CertificateLifecycleManager
             // resumes it automatically once renewal succeeds.

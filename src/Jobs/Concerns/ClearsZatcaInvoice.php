@@ -83,7 +83,7 @@ trait ClearsZatcaInvoice
             ->where('credential_type', ZatcaCredentialType::Production->value)
             ->value('certificate_state');
 
-        if ($certificateState === ZatcaCertificateState::Expired->value) {
+        if ($certificateState === ZatcaCertificateState::Expired) {
             Log::warning("[ZATCA] Skipped clearing invoice #{$invoice->id}: production certificate is Expired.");
 
             return;

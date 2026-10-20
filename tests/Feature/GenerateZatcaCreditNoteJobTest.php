@@ -2,20 +2,27 @@
 
 namespace Zatca\Tests\Feature;
 
+use GuzzleHttp\Client;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Psr7\Response;
 use Zatca\Contracts\ZatcaSdkInterface;
 use Zatca\Enums\ZatcaCreditNoteType;
 use Zatca\Enums\ZatcaCreditNoteDisplayStatus;
 use Zatca\Enums\ZatcaInvoiceStatus;
+use Zatca\Events\ZatcaCreditNoteAccepted;
 use Zatca\Exceptions\ZatcaSdkProcessException;
 use Zatca\Jobs\GenerateZatcaCreditNoteJob;
 use Zatca\Jobs\ReportZatcaInvoiceJob;
 use Zatca\Models\ZatcaInvoice;
+use Zatca\Services\Connectors\ConnectorFactory;
 use Zatca\Services\CreditNote\CreditNoteIssuer;
 use Zatca\Services\CreditNote\CreditNoteStatusResolver;
 use Zatca\Services\Execute\ProductionInvoiceOrchestrator;
 use Zatca\Support\ZatcaGate;
 use Zatca\Tests\Concerns\BuildsProductionInvoices;
 use Zatca\Tests\TestCase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
@@ -112,6 +119,62 @@ class GenerateZatcaCreditNoteJobTest extends TestCase
         $creditNote->update(['accepted_at' => now()]);
 
         $this->assertSame(ZatcaCreditNoteDisplayStatus::Accepted, app(CreditNoteStatusResolver::class)->resolve($creditNote->fresh()));
+    }
+
+    /**
+     * The B2C acceptance path end to end: a real reporting attempt through the real
+     * connector. accepted_at is the only thing that makes a credit count and the event is
+     * what host apps refund from, so it must be written once and announced once.
+     */
+    public function test_reporting_success_accepts_the_credit_note_once_and_announces_it(): void
+    {
+        Event::fake([ZatcaCreditNoteAccepted::class]);
+        [$creditNote, $document] = $this->generatedCreditNote(6205);
+
+        $this->zatca(new Response(200, [], '{"validationResults":{"infoMessages":[],"warningMessages":[],"errorMessages":[],"status":"PASS"},"reportingStatus":"REPORTED"}'));
+        $this->report($document);
+
+        $acceptedAt = $creditNote->fresh()->accepted_at;
+        $this->assertNotNull($acceptedAt);
+        $this->assertSame(ZatcaCreditNoteDisplayStatus::Accepted, app(CreditNoteStatusResolver::class)->resolve($creditNote->fresh()));
+
+        // A second job for the same, already reported document changes nothing.
+        $this->report($document);
+
+        $this->assertEquals($acceptedAt, $creditNote->fresh()->accepted_at);
+        Event::assertDispatchedTimes(ZatcaCreditNoteAccepted::class, 1);
+    }
+
+    public function test_a_rejected_report_does_not_accept_the_credit_note(): void
+    {
+        Event::fake([ZatcaCreditNoteAccepted::class]);
+        [$creditNote, $document] = $this->generatedCreditNote(6206);
+
+        $this->zatca(new Response(400, [], '{"validationResults":{"infoMessages":[],"warningMessages":[],"errorMessages":[{"code":"BR-KSA-37","message":"a rule failed"}],"status":"ERROR"},"reportingStatus":"NOT_REPORTED"}'));
+        $this->report($document);
+
+        $this->assertNull($creditNote->fresh()->accepted_at);
+        Event::assertNotDispatched(ZatcaCreditNoteAccepted::class);
+    }
+
+    /** @return array{0: \Zatca\Models\ZatcaCreditNote, 1: ZatcaInvoice} */
+    private function generatedCreditNote(int $sourceId): array
+    {
+        $original = $this->reportedInvoice($sourceId);
+        $creditNote = app(CreditNoteIssuer::class)->issue($original, ZatcaCreditNoteType::Full, [], 'x', (string) Str::uuid());
+        $this->runJob($creditNote->id);
+
+        return [$creditNote->fresh(), ZatcaInvoice::where('credit_note_id', $creditNote->id)->firstOrFail()];
+    }
+
+    private function zatca(Response $response): void
+    {
+        $this->app->instance(Client::class, new Client(['handler' => HandlerStack::create(new MockHandler([$response]))]));
+    }
+
+    private function report(ZatcaInvoice $document): void
+    {
+        (new ReportZatcaInvoiceJob($document->id))->handle(app(ConnectorFactory::class));
     }
 
     private function runJob(int $creditNoteId): void
