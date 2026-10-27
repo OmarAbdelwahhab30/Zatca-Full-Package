@@ -1,6 +1,6 @@
 # Usage Examples: Beyond the Basics
 
-The README's [§9 Complete usage examples](../README.md#9-complete-usage-examples) already walks through the core flow end to end — B2C invoice, B2C credit note (including a partial price adjustment), B2C debit note, and the B2B equivalents of each, using a real `OrderInvoiceSource` mapper. **Start there** if you haven't yet.
+The README's [§9 Complete usage examples](../README_SIMPLE.md#create-and-read-invoices) already walks through the core flow end to end — B2C invoice, B2C credit note (including a partial price adjustment), B2C debit note, and the B2B equivalents of each, using a real `OrderInvoiceSource` mapper. **Start there** if you haven't yet.
 
 This page covers patterns that come up once you're integrating the package into a real app: previewing VAT before you commit to a sale, building an admin refund screen, checking on invoices programmatically, and recovering from a stuck one. Every class and method below is quoted from the actual package source — file paths are given so you can verify them yourself.
 
@@ -189,11 +189,11 @@ For a health-check cron or external monitor, `zatca:status --json` gives the sam
 php artisan zatca:status --json
 ```
 
-See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for reading its output, and README [§13](../README.md#13-console-commands) for every flag.
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for reading its output, and README [§13](COMMANDS.md#13-console-commands) for every flag.
 
 ## 5. Recovering and regenerating from code
 
-The Artisan commands `zatca:recover` and `zatca:requeue` (README [§13](../README.md#13-console-commands), [ZATCA_WORKFLOWS.md](ZATCA_WORKFLOWS.md)) are the normal way to fix a stuck document. The two jobs behind the "finish this" and "replace this" actions are also dispatchable directly from your own admin code, if you want a button instead of a terminal command:
+The Artisan commands `zatca:recover` and `zatca:requeue` (README [§13](COMMANDS.md#13-console-commands), [ZATCA_WORKFLOWS.md](ZATCA_WORKFLOWS.md)) are the normal way to fix a stuck document. The two jobs behind the "finish this" and "replace this" actions are also dispatchable directly from your own admin code, if you want a button instead of a terminal command:
 
 ```php
 use Zatca\Jobs\CompleteZatcaInvoiceGenerationJob;

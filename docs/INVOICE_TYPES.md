@@ -1,6 +1,6 @@
 # Invoice Types: Which One Do I Need?
 
-The package supports six ZATCA document types. This page helps you decide which one applies to a given sale, with real business scenarios. For the formal definitions, codes and enum values, see the README's [table of the six documents](../README.md#2-zatca-basics-in-5-minutes). For working code, see [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) and the README's [§9 Complete usage examples](../README.md#9-complete-usage-examples).
+The package supports six ZATCA document types. This page helps you decide which one applies to a given sale, with real business scenarios. For the formal definitions, codes and enum values, see the README's [table of the six documents](../README_SIMPLE.md#understand-the-two-flows). For working code, see [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) and the README's [§9 Complete usage examples](../README_SIMPLE.md#create-and-read-invoices).
 
 ---
 
@@ -28,7 +28,7 @@ It is **not** about the amount of the sale, how it was paid, or whether it "feel
 | A SaaS company sells a subscription to a freelancer who gives only their personal name | B2C | No company identity was given — treat as an individual sale unless your checkout explicitly captures a company VAT/CR number |
 | The same SaaS company sells a subscription to "Al Noor Trading Co." with their VAT number | B2B | A company identity was captured |
 
-**The deciding signal in your own code is usually a flag you already have** — `buyer_type`, "is this a company account?", or whether a VAT/CR number was captured at checkout — not anything ZATCA tells you. See the `OrderInvoiceSource` example in the README's [§9.1](../README.md#91-shared-setup-do-this-once) for exactly how that flag selects `documentType`.
+**The deciding signal in your own code is usually a flag you already have** — `buyer_type`, "is this a company account?", or whether a VAT/CR number was captured at checkout — not anything ZATCA tells you. See the `OrderInvoiceSource` example in the README's [§9.1](../README_SIMPLE.md#connect-your-laravel-app) for exactly how that flag selects `documentType`.
 
 ### A company that buys like an individual
 
@@ -45,7 +45,7 @@ You never pick "Reporting" or "Clearance" directly — the **document type** you
 | Time limit | ZATCA's rule is "within 24 hours"; the package does it within seconds via the queue | No fixed external deadline, but the buyer is waiting on it |
 | What if ZATCA rejects it? | The sale already happened; you fix the cause and regenerate | The buyer never got an invoice at all — nothing to "undo" |
 
-This is why the field names differ: a B2C `ZatcaInvoice` has `reported_at`, a B2B one has `cleared_at` and `clearance_status`. See README [§11 Understanding ZATCA responses](../README.md#11-understanding-zatca-responses) for the full status tables.
+This is why the field names differ: a B2C `ZatcaInvoice` has `reported_at`, a B2B one has `cleared_at` and `clearance_status`. See README [§11 Understanding ZATCA responses](RESPONSES.md#11-understanding-zatca-responses) for the full status tables.
 
 ## 3. Credit notes vs. debit notes
 
@@ -72,7 +72,7 @@ Once ZATCA has accepted (reported or cleared) an invoice, you can never edit it.
 ### Rules that shape which note you can issue
 
 - **The original must already be accepted** (`reported`/`cleared`, or their "with warnings" variants) — you can't issue a note against a draft or a rejected invoice.
-- **Only one credit *or* debit note can be in progress per invoice at a time.** You can't fire off two refunds for the same invoice simultaneously; the second call is refused until the first resolves. See `CreditNoteEligibilityPolicy`/`DebitNoteEligibilityPolicy` in README [§12](../README.md#12-more-features).
+- **Only one credit *or* debit note can be in progress per invoice at a time.** You can't fire off two refunds for the same invoice simultaneously; the second call is refused until the first resolves. See `CreditNoteEligibilityPolicy`/`DebitNoteEligibilityPolicy` in README [§12](INTEGRATION_REFERENCE.md#12-more-features).
 - **`issue()` on a credit note always credits whole lines.** To credit *part* of a line's value (a partial refund, a damage discount), use a price adjustment instead — see [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md).
 - **Reducing a line to zero is a return, not an adjustment** — use `issue()`, not `issuePriceAdjustment()`, when the customer is giving the item back entirely.
 - **Debit notes have no such "one line, one adjustment" ceiling** — multiple debit notes against the same original line are allowed; only the idempotency key prevents accidental duplicates.

@@ -6,7 +6,7 @@ The full lifecycle of a ZATCA document, how Reporting and Clearance actually dif
 
 ## 1. The full invoice lifecycle
 
-The README's [§7 How the package works](../README.md#7-how-the-package-works) shows the happy path for generating one invoice. In practice, a document can take more branches than that diagram shows — here's the full picture, including rejection and regeneration:
+The README's [§7 How the package works](../README_SIMPLE.md#create-and-read-invoices) shows the happy path for generating one invoice. In practice, a document can take more branches than that diagram shows — here's the full picture, including rejection and regeneration:
 
 ```text
  dispatch(GenerateZatcaInvoiceJob)
@@ -55,7 +55,7 @@ Both routes end with an accepted document in `zatca_invoices`, but what happens 
 See [ZATCA_CONCEPTS.md](ZATCA_CONCEPTS.md#5-three-environments-and-why-they-exist) for *why* three environments exist. Operationally, moving through them looks like this:
 
 1. **Sandbox** — build and test your integration. Use ZATCA's shared test VAT number (`399999999900003`) and test OTP; run `composer test:sandbox` to exercise onboarding, invoices, and notes against the real developer-portal sandbox. Nothing here is legally binding, and the sandbox's leniency means it **cannot** prove your real signature works.
-2. **Simulation** — the first rehearsal that uses your real company data and checks your real certificate/signature. This is the environment to run before touching production, especially for B2B (see README [§16 Known limitations](../README.md#known-limitations) for exactly what sandbox leaves unproven).
+2. **Simulation** — the first rehearsal that uses your real company data and checks your real certificate/signature. This is the environment to run before touching production, especially for B2B (see README [§16 Known limitations](LIMITATIONS.md#known-limitations) for exactly what sandbox leaves unproven).
 3. **Production** — real, legally binding invoices. Each environment keeps separate credentials, counters, and hash chains — switching `ZATCA_ENVIRONMENT` means onboarding from zero in that environment, not promoting data from the last one.
 
 **Golden rule before any onboarding step, in any environment:** prove the server can sign *before* you request an OTP.
@@ -75,7 +75,7 @@ Onboarding needs an OTP, and OTPs are effectively single-use. If Java or the SDK
 
 ## 4. Onboarding and certificate management
 
-The command sequence itself is in the README's [§8 ZATCA onboarding](../README.md#8-zatca-onboarding) — this section covers the operational judgment around it.
+The command sequence itself is in the README's [§8 ZATCA onboarding](INTEGRATION_REFERENCE.md#8-zatca-onboarding) — this section covers the operational judgment around it.
 
 ### Why production is refused until all three test steps pass
 
@@ -148,11 +148,11 @@ $schedule->command('zatca:prune-submission-attempts')->weekly();
 $schedule->command('zatca:prune-sdk-files')->daily();
 ```
 
-`--only-transient` on the hourly requeue is important: it retries only outage victims (last HTTP `0`/`5xx`) and never retries a genuine rejection, so it's safe to leave running unattended. See README [§13 Console commands](../README.md#13-console-commands) for every flag, and [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for reading what these commands report.
+`--only-transient` on the hourly requeue is important: it retries only outage victims (last HTTP `0`/`5xx`) and never retries a genuine rejection, so it's safe to leave running unattended. See README [§13 Console commands](COMMANDS.md#13-console-commands) for every flag, and [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for reading what these commands report.
 
 ## 6. Tracing a document through the database
 
-The package writes to tables listed in the README's [installation step 4](../README.md#5-installation) (`zatca_egs_credentials`, `zatca_egs_states`, `zatca_invoices`, `zatca_submission_attempts`, `zatca_compliance_documents`, plus the credit/debit note tables). Here's what actually happens to them, end to end, starting from an empty database:
+The package writes to tables listed in the README's [installation step 4](SERVER_REQUIREMENTS.md#3-install-and-configure) (`zatca_egs_credentials`, `zatca_egs_states`, `zatca_invoices`, `zatca_submission_attempts`, `zatca_compliance_documents`, plus the credit/debit note tables). Here's what actually happens to them, end to end, starting from an empty database:
 
 | Step | Command (or automatic trigger) | What changes |
 |---|---|---|
@@ -175,7 +175,7 @@ php artisan zatca:inspect invoice --id=5 # What happened to invoice 5?
 
 ## 7. Deploying and updating the package itself
 
-The README's [§14 Server Setup & Production Deployment](../README.md#server-setup) covers server prerequisites, user accounts, the SDK, Supervisor/cron, and the standard first-deploy and every-deploy steps. Two situations it doesn't cover:
+The README's [§14 Server Setup & Production Deployment](SERVER_REQUIREMENTS.md#setup-order) covers server prerequisites, user accounts, the SDK, Supervisor/cron, and the standard first-deploy and every-deploy steps. Two situations it doesn't cover:
 
 ### When the ZATCA SDK version changes
 
@@ -198,4 +198,4 @@ php artisan optimize:clear
 php artisan queue:restart
 ```
 
-Both commands matter — the flag is config-cached, and running queue workers hold the old config in memory until restarted. It's safe to flip with work in flight: queued jobs exit quietly, no invoice status or attempt count is written, and onboarding/diagnostic commands stay available so an EGS can still be repaired while invoicing is off. Full behavior is in the README's [Kill switch](../README.md#kill-switch) section.
+Both commands matter — the flag is config-cached, and running queue workers hold the old config in memory until restarted. It's safe to flip with work in flight: queued jobs exit quietly, no invoice status or attempt count is written, and onboarding/diagnostic commands stay available so an EGS can still be repaired while invoicing is off. Full behavior is in the README's [Kill switch](INTEGRATION_REFERENCE.md#kill-switch) section.

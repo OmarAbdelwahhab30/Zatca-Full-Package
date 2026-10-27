@@ -1,6 +1,6 @@
 # VAT Guide
 
-How the package turns the prices and quantities you give it into net amounts, VAT, and invoice totals — with worked examples beyond the ones in the README. For the `.env` settings themselves, see README [§6 VAT settings](../README.md#vat-settings). All the math here comes from `Zatca\Services\Tax\InvoiceCalculator`, the one place in the package that calculates VAT.
+How the package turns the prices and quantities you give it into net amounts, VAT, and invoice totals — with worked examples beyond the ones in the README. For the `.env` settings themselves, see README [§6 VAT settings](CONFIGURATION.md#vat-settings). All the math here comes from `Zatca\Services\Tax\InvoiceCalculator`, the one place in the package that calculates VAT.
 
 ---
 
@@ -51,7 +51,7 @@ $items = [
 ];
 ```
 
-Both `zeroRated()` and `exempt()` **require** an exemption reason code and text (ZATCA rule `BR-KSA-69`) — it's not optional for either category. See README [§10 VAT categories table](../README.md#vat-categories) for real ZATCA exemption codes.
+Both `zeroRated()` and `exempt()` **require** an exemption reason code and text (ZATCA rule `BR-KSA-69`) — it's not optional for either category. See README [§10 VAT categories table](INTEGRATION_REFERENCE.md#vat-categories) for real ZATCA exemption codes.
 
 Zero-rated and exempt items **never accept a nonzero rate** — passing one throws a `ZatcaException` naming the line (`rateFor()` refuses it on purpose, so a mapper bug can't silently tax an exempt item).
 
@@ -110,10 +110,10 @@ In inclusive mode, VAT is calculated as the *remainder* (`charged amount − net
 Yes — `vatRate:` on an individual `ZatcaInvoiceItem` overrides the configured default for that line only. This only applies to standard-rated items; zero-rated and exempt items are always 0% and reject an explicit rate.
 
 **What happens to old invoices when I change `ZATCA_VAT_PERCENTAGE` or `ZATCA_VAT_MODE`?**
-Nothing — a signed invoice has its rate and mode frozen in it forever. A config change only affects invoices generated *after* the change; its credit notes, debit notes, and any regeneration continue to use the rates that were frozen in the original. See README's [VAT settings](../README.md#vat-settings).
+Nothing — a signed invoice has its rate and mode frozen in it forever. A config change only affects invoices generated *after* the change; its credit notes, debit notes, and any regeneration continue to use the rates that were frozen in the original. See README's [VAT settings](CONFIGURATION.md#vat-settings).
 
 **Can quantity be a fraction, like 1.5 kg?**
 No — `quantity` must be a whole number of at least 1 (`InvoiceCalculator::line()` rejects anything less than 1). If you sell by weight or another fractional unit, fold the fraction into the unit price instead (e.g. price per kg × 1, described as "1.5kg of X").
 
 **Does the package support a currency other than SAR?**
-No — `currency` on `ZatcaInvoiceInput` must be `'SAR'`; this is a known limitation, not a configurable option (see README [§16 Known limitations](../README.md#known-limitations)).
+No — `currency` on `ZatcaInvoiceInput` must be `'SAR'`; this is a known limitation, not a configurable option (see README [§16 Known limitations](LIMITATIONS.md#known-limitations)).

@@ -1,6 +1,6 @@
 # ZATCA Concepts Explained
 
-This page explains **why** ZATCA e-invoicing works the way it does — the ideas behind the words you see in `.env`, in Artisan output, and in ZATCA's own messages. For the practical glossary, the six document types, and the quick setup table, see the README's [ZATCA basics in 5 minutes](../README.md#2-zatca-basics-in-5-minutes). This page is the "why", that page is the "what".
+This page explains **why** ZATCA e-invoicing works the way it does — the ideas behind the words you see in `.env`, in Artisan output, and in ZATCA's own messages. For the practical glossary, the six document types, and the quick setup table, see the README's [ZATCA basics in 5 minutes](../README_SIMPLE.md#understand-the-two-flows). This page is the "why", that page is the "what".
 
 ---
 
@@ -56,7 +56,7 @@ Each environment keeps its own certificates, counters and hash chains — moving
 
 Before ZATCA gives you a production certificate, it makes you prove — with your compliance certificate — that you can produce a correct invoice, a correct credit note, and a correct debit note. This isn't bureaucracy for its own sake: credit and debit notes have different mandatory fields (for example, a required reason at a specific XML path) than invoices, so passing an invoice test alone doesn't prove the note XML is right too.
 
-That's why `zatca:onboard production` refuses to run until all three `test-*` steps have passed for that EGS — see the README's [ZATCA onboarding](../README.md#8-zatca-onboarding) for the exact command sequence.
+That's why `zatca:onboard production` refuses to run until all three `test-*` steps have passed for that EGS — see the README's [ZATCA onboarding](INTEGRATION_REFERENCE.md#8-zatca-onboarding) for the exact command sequence.
 
 ## 7. XML and UBL — the actual shape of an e-invoice
 
@@ -70,18 +70,18 @@ Signing an invoice with your private key does two things at once:
 1. It proves the invoice came from your EGS (authenticity).
 2. It proves the invoice content hasn't been changed since it was signed (integrity) — which is also why a rejected invoice can never simply be edited and resent; it has to be regenerated as a new, separately-signed document (see [ZATCA_WORKFLOWS.md](ZATCA_WORKFLOWS.md)).
 
-This package never asks you to touch cryptography directly — signing happens inside ZATCA's own Java SDK, which the package calls as a subprocess. That's also why Java must be installed and on the `PATH` of whatever process runs your queue workers (see the README's [Requirements](../README.md#4-requirements)).
+This package never asks you to touch cryptography directly — signing happens inside ZATCA's own Java SDK, which the package calls as a subprocess. That's also why Java must be installed and on the `PATH` of whatever process runs your queue workers (see the README's [Requirements](SERVER_REQUIREMENTS.md#1-requirements)).
 
 ## 9. QR codes — what the buyer actually gets
 
 Every ZATCA invoice carries a **QR code** encoded in TLV (Tag-Length-Value) format, containing a small, fixed set of fields: seller name, VAT number, timestamp, invoice total, and VAT total (plus, for B2B, cryptographic fields once simulation/production use is verified). It exists so a buyer — or a ZATCA inspector — can scan the receipt and immediately see the invoice's declared totals, without needing access to ZATCA's systems.
 
-The package generates this for you (`$invoice->qr_code`, a base64 string) — you print it on your own receipt or PDF. The package does not generate PDFs itself; see the README's [What is this package?](../README.md#1-what-is-this-package).
+The package generates this for you (`$invoice->qr_code`, a base64 string) — you print it on your own receipt or PDF. The package does not generate PDFs itself; see the README's [What is this package?](../README_SIMPLE.md).
 
 ## 10. Where to go next
 
-- The practical glossary, document-type table, and `.env` settings → README [§2](../README.md#2-zatca-basics-in-5-minutes) and [§6](../README.md#6-configuration).
+- The practical glossary, document-type table, and `.env` settings → README [§2](../README_SIMPLE.md#understand-the-two-flows) and [§6](CONFIGURATION.md#6-configuration).
 - Which invoice type applies to your sale, and credit vs. debit notes → [INVOICE_TYPES.md](INVOICE_TYPES.md).
 - VAT math in detail → [VAT_GUIDE.md](VAT_GUIDE.md).
 - The full lifecycle, environments in practice, and certificate renewal → [ZATCA_WORKFLOWS.md](ZATCA_WORKFLOWS.md).
-- Working code → README [§9](../README.md#9-complete-usage-examples) and [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md).
+- Working code → README [§9](../README_SIMPLE.md#create-and-read-invoices) and [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md).

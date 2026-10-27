@@ -22,10 +22,10 @@ Do not mix ZATCA versions outside the table in section 1. Do not treat a flow as
 |---|---|---|---|
 | Simplified Tax Invoice (B2C) | Reporting | Supported | End-to-end for 1.0.x, plus package tests and golden XML fixtures |
 | Simplified Credit Note / Debit Note (B2C), for real sales | Reporting | Supported | Package tests, golden XML fixtures, and the developer-portal sandbox (`composer test:sandbox`: full and partial credit notes, debit note, all reported with no warnings). Onboarding (`zatca:onboard test-credit-note` / `test-debit-note`) submits compliance samples of both types. |
-| Standard Tax Invoice (B2B) | Clearance | Built, **off by default** (`ZATCA_B2B_ENABLED=false`) | Package tests, and the developer-portal sandbox (`composer test:sandbox`: B2B EGS onboarding with invoice type `1000`, invoices cleared with no warnings, cleared copy stored). **Not yet run in simulation**, which is the only place the production signature is checked. See the README's [Known limitations](../README.md#known-limitations). |
+| Standard Tax Invoice (B2B) | Clearance | Built, **off by default** (`ZATCA_B2B_ENABLED=false`) | Package tests, and the developer-portal sandbox (`composer test:sandbox`: B2B EGS onboarding with invoice type `1000`, invoices cleared with no warnings, cleared copy stored). **Not yet run in simulation**, which is the only place the production signature is checked. See the README's [Known limitations](LIMITATIONS.md#known-limitations). |
 | Standard Credit Note / Debit Note (B2B) | Clearance | Built, **off by default** | Package tests, and the developer-portal sandbox (full and partial credit notes, debit note, all cleared with no warnings). Not yet run in simulation. |
 
-Before turning B2B on in production, run `composer test:sandbox` and a simulation rehearsal, as described under "Known limitations" in the [README](../README.md#known-limitations). The developer-portal sandbox is lenient: it accepts any OTP, and its production certificate is shared and does not match your key, so it does not check the production signature.
+Before turning B2B on in production, run `composer test:sandbox` and a simulation rehearsal, as described under "Known limitations" in the [README](LIMITATIONS.md#known-limitations). The developer-portal sandbox is lenient: it accepts any OTP, and its production certificate is shared and does not match your key, so it does not check the production signature.
 
 ## 3. Laravel and PHP
 
@@ -41,7 +41,7 @@ Two separate questions:
 | 10 | Legacy Compatibility | 8.1+ | ✅ Tested | ❌ No (open advisories, no fixed 10.x release) | ❌ No |
 | 9 | Legacy Compatibility | 8.1+ | ✅ Tested | ❌ No (open advisories, no fixed 9.x release) | ❌ No |
 
-Laravel 9–11 are kept so existing apps keep working while they plan an upgrade. Use Laravel 12 for new production projects. The README section [Laravel compatibility](../README.md#laravel-compatibility) lists the open advisories and explains how an app owner can override Composer's security block. This package never turns that block off for you.
+Laravel 9–11 are kept so existing apps keep working while they plan an upgrade. Use Laravel 12 for new production projects. The README section [Laravel compatibility](SERVER_REQUIREMENTS.md#laravel-compatibility) lists the open advisories and explains how an app owner can override Composer's security block. This package never turns that block off for you.
 
 **Test runs (2026-10-20, SQLite, Windows, real ZATCA SDK enabled, clean install per Laravel version):**
 
@@ -77,3 +77,26 @@ Together these cover every Laravel from 9 to 12 and every PHP from 8.1 to 8.4. `
 2. Run the full suite in a clean install on that Laravel version and on the lowest and highest PHP version it allows.
 3. Run `composer audit` on that install and record the security status.
 4. Only then add a row to section 3 here and to the README's "Laravel compatibility" table.
+
+
+## Legacy Laravel installation and security record
+
+The following is the repository's recorded audit and installation guidance, moved from the server guide. It is historical evidence; run Composer's audit in your application for its current dependency status.
+
+**Known Laravel security advisories (checked 2026-10-14 with `composer audit`):** the newest release of each legacy version still has these open. They are bugs in Laravel, not in this package.
+
+| Advisory | Severity | Laravel 9 | Laravel 10 | Laravel 11 |
+|---|---|---|---|---|
+| CRLF injection in the default `email` validation rule (CVE-2026-48019) | High | ✅ affected | ✅ affected | ✅ affected |
+| Temporary signed URL path confusion | Medium | ✅ affected | ✅ affected | ✅ affected |
+| XSS on the debug error page (CVE-2026-102279) | Low | ✅ affected | ✅ affected | ✅ affected |
+| File validation bypass (CVE-2025-27515) | Medium | ✅ affected | — | — |
+
+Laravel 12.70.0 had no open advisories on the same date. New advisories can appear at any time; run `composer audit` in your own app to see the current list.
+
+**Installing on Laravel 9, 10 or 11.** Composer 2.9 and newer refuses to install a package version that has an open security advisory. Because every 9.x, 10.x and 11.x release has one, `composer require` in a Laravel 9–11 app will fail with *"these were not loaded, because they are affected by security advisories"*. This package cannot change that, and it does not turn the check off for you. If your app must stay on Laravel 9–11 for now, your app's owner has to decide to accept the risk and override the check in **the app's own** `composer.json`:
+
+- Prefer ignoring only the advisory IDs that Composer printed, under `config.audit.ignore`, after reading what each one means for your app.
+- Avoid turning blocking off completely (`config.audit.block-insecure: false`). It also hides advisories in every other package.
+
+Treat this as temporary and plan the move to Laravel 12.

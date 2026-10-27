@@ -1,6 +1,6 @@
 # Troubleshooting
 
-A guide for the moment something goes wrong. Run a command, read the answer, follow the step. For the master list of ZATCA rejection codes and config errors, see the README's [§15 Troubleshooting](../README.md#15-troubleshooting) — this page focuses on diagnosis flow, operational judgment calls, and the problems not already covered there.
+A guide for the moment something goes wrong. Run a command, read the answer, follow the step. For the master list of ZATCA rejection codes and config errors, see the README's [§15 Troubleshooting](#15-troubleshooting) — this page focuses on diagnosis flow, operational judgment calls, and the problems not already covered there.
 
 ---
 
@@ -50,7 +50,7 @@ Look at the **Last HTTP** column:
 | `0` or `500`–`599` | ZATCA was down | Nothing — it restarts itself if `zatca:requeue --only-transient` is scheduled, or run it now |
 | `400`–`499` | **ZATCA rejected the invoice** | Fix the underlying cause, then regenerate — see below |
 
-If rejected: `php artisan zatca:inspect invoice --id=41` and read `last_error` — it names the specific rule ZATCA didn't accept (see the [error-code reference](#common-rejection-codes) below and README [§15](../README.md#15-troubleshooting) for the full table). Fix that cause first, then regenerate the document (`RegenerateZatcaInvoiceJob` — see [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md#5-recovering-and-regenerating-from-code)). **Re-sending the same rejected XML with `zatca:requeue` fails identically every time** — `RetryZatcaInvoiceJob` resends the exact stored signed bytes, it never re-signs. Every regeneration spends a new ICV that can never be given back.
+If rejected: `php artisan zatca:inspect invoice --id=41` and read `last_error` — it names the specific rule ZATCA didn't accept (see the [error-code reference](#common-rejection-codes) below and README [§15](#15-troubleshooting) for the full table). Fix that cause first, then regenerate the document (`RegenerateZatcaInvoiceJob` — see [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md#5-recovering-and-regenerating-from-code)). **Re-sending the same rejected XML with `zatca:requeue` fails identically every time** — `RetryZatcaInvoiceJob` resends the exact stored signed bytes, it never re-signs. Every regeneration spends a new ICV that can never be given back.
 
 ## Certificate problem
 
@@ -107,7 +107,7 @@ It's safe to run more than once — it continues from wherever the last run stop
 
 ## Common rejection codes
 
-The README's [§15 Troubleshooting](../README.md#15-troubleshooting) has the full table. These four come up often enough, and with fixes specific enough, to call out here:
+The README's [§15 Troubleshooting](#15-troubleshooting) has the full table. These four come up often enough, and with fixes specific enough, to call out here:
 
 | Error | What it means | Fix |
 |---|---|---|
@@ -118,7 +118,7 @@ The README's [§15 Troubleshooting](../README.md#15-troubleshooting) has the ful
 
 ## Exceptions reference
 
-Full behavior for each is in README [§11](../README.md#exceptions-you-may-catch). Quick lookup:
+Full behavior for each is in README [§11](RESPONSES.md#exceptions-you-may-catch). Quick lookup:
 
 | Exception | Typically means |
 |---|---|
@@ -172,4 +172,43 @@ Every command above is safe to run more than once.
 
 ## Still stuck?
 
-See the README's [§15 Troubleshooting](../README.md#15-troubleshooting) for the complete error-code table, and [§16 Known limitations](../README.md#known-limitations) for what's genuinely unproven (vs. broken) in B2B today. If you're pasting any of this into an AI assistant for help, redact secrets first (see [Incident response checklist](#incident-response-checklist) above) and point it at this file plus the README — don't rely on an assistant's prior assumptions about what the package does or doesn't implement.
+See the README's [§15 Troubleshooting](#15-troubleshooting) for the complete error-code table, and [§16 Known limitations](LIMITATIONS.md#known-limitations) for what's genuinely unproven (vs. broken) in B2B today. If you're pasting any of this into an AI assistant for help, redact secrets first (see [Incident response checklist](#incident-response-checklist) above) and point it at this file plus the README — don't rely on an assistant's prior assumptions about what the package does or doesn't implement.
+
+<a id="15-troubleshooting"></a>
+## Full error and rejection reference
+
+Server and infrastructure problems (Java, the SDK, storage permissions, the queue worker, cron) have their own table in [§14.9](SERVER_REQUIREMENTS.md#9-troubleshooting). These are the rest: business-rule rejections, onboarding, VAT/data validation, and the data chain itself.
+
+| Problem | Reason | Fix |
+|---|---|---|
+| `composer require` fails on Laravel 9, 10 or 11 with "affected by security advisories" | Every release of those Laravel versions has open security advisories, and Composer blocks them by default | Upgrade the app to Laravel 12 (recommended), or have the app's owner accept the risk as described in [Laravel compatibility](SERVER_REQUIREMENTS.md#laravel-compatibility) |
+| `composer require` fails on Laravel 11 or 12 with a PHP version error | Laravel 11 and 12 need PHP 8.2 or newer | Upgrade PHP to 8.2+ |
+| `Call to undefined function openssl_x509_parse` (or similar) | Missing PHP extension | Install or enable `openssl` / `dom` / `mbstring` |
+| `Unknown ZATCA EGS identifier` | The EGS name doesn't match `.env` | Use `config('zatca.primary_egs')` / `config('zatca.b2b.egs_identifier')` |
+| `No CSR on record ... Run zatca:generate-credentials first` | Step 1 skipped | Run `zatca:generate-credentials` |
+| CSR generation fails | Bad or empty CSR fields, or non-English characters in `ZATCA_ORG_NAME` | Fill every CSR field, and keep the English name in `ZATCA_ORG_NAME` |
+| `Compliance CSID request failed` / invalid OTP | The OTP expired, is from the wrong portal, or was already used | Create a new OTP in the portal for the **same** environment |
+| Compliance test shows `ERROR` | Seller data or address is wrong | Read the printed errors, fix `.env`, run `zatca:health-check`, retry the step |
+| `No Compliance CSID on record ... Run zatca:onboard compliance first` | A `test-*` step was run before the compliance step | Run `zatca:onboard compliance --otp=...` first. No counter value was used. |
+| `No compliant ... invoice on record ... Run zatca:onboard test-invoice first` | A note check was run before the invoice check | Run `zatca:onboard test-invoice` first |
+| Production CSID fails | Compliance steps incomplete | Run all three `test-*` steps with PASS first |
+| `ZatcaCredentialsMissingException` / job fails at once | No production certificate for this EGS and environment | Finish onboarding in the current environment |
+| `ZATCA_VAT_PERCENTAGE must be a number` / `ZATCA_VAT_MODE must be "inclusive" or "exclusive"` | Invalid VAT setting in `.env` | Fix it (or remove it for the default), then `php artisan config:cache` |
+| `does not reconcile — BR-S-09` | Many discounts on few items push a VAT breakdown outside ZATCA's rounding tolerance | Merge the discounts into one, or give each its own `lineIndexes` |
+| `item N has quantity 0` / `negative price` | Bad item data | Quantity at least 1, price not negative. Use credit notes for refunds. |
+| `has more than two decimals (BR-KSA-DEC-02)` / `must be between 0 and 100` | An item's `vatRate` is not a valid ZATCA rate | Use a rate like `15` or `5` |
+| `standard-rated (S) with a 0% rate` | A 0% item without a VAT category | Use `ZatcaInvoiceItem::zeroRated()` or `exempt()` with a `VATEX-SA-...` code and reason |
+| `cannot have a 15% rate. Zero-rated and exempt items are always 0%` | A zero-rated/exempt item with a `vatRate` | Remove `vatRate` from that item |
+| `needs a ZATCA exemption reason code` / `reason text` | A `Z`/`E` item without its reason | Pass the code and reason to `zeroRated()` / `exempt()` |
+| `only SAR is supported` | `currency` is not `SAR` | Invoice in SAR |
+| `has no items` / `has no lines` / `negative` | Empty or negative invoice data | Don't invoice orders without items. Use credit notes for refunds. |
+| Invoice in `manual_review` with BR-KSA codes | ZATCA rejected the content (for example line math, VAT number) | Fix the mapper or data, then [regenerate](INTEGRATION_REFERENCE.md#re-issuing-a-rejected-invoice-regeneration) |
+| `buyer VAT number must be 15 digits...` | Invalid buyer VAT | Ask the buyer for the correct VAT, or use `BuyerOtherId` (CR number) |
+| Warning `BR-KSA-F-13` ("Other Seller/Buyer ID ... invalid value") | A seller or buyer ID (for example a CR number) contains 8 equal digits (`00000000`) or 8 sequential digits (`12345678`). ZATCA treats it as a fake ID. | Use the real number. The invoice is accepted with a warning, but fix the data. |
+| `Standard document ... has no buyer / no supply date` | B2B data missing | Set `buyer` and `supplyDate` in the mapper |
+| Credit note: `not eligible` | Original not accepted yet, another note is in progress, or the original is fully credited | Check `CreditNoteEligibilityPolicy::verdict()->reason` |
+| Missing original invoice reference | Not possible from this API | Notes always take the reference from `$original`, so pass the right `ZatcaInvoice` |
+| Wrong previous hash / counter problems | The database was restored or edited, or two environments are mixed | Never edit `zatca_egs_states`. Check `zatca:inspect state`. Contact ZATCA if the chain broke. |
+| Signing works in sandbox, fails in production | Production not onboarded, a different OTP or portal, or wrong environment value. Also, the sandbox does not check the production signature (its production certificate is shared), so a signing problem can stay hidden there. | Onboard again in production. Credentials are per environment. Rehearse in simulation first. |
+| `composer test:sandbox` skips every test | `ZATCA_SDK_ROOT` / `ZATCA_SDK_EXECUTABLE` not set or wrong | Set both (see [Sandbox tests](TESTING.md#sandbox-tests)) |
+| `composer test:sandbox` fails at `generate-credentials` (the first SDK step) | Java is missing from the PATH, or the version is outside what the SDK supports (11 up to, not including, 15) | Install Java 11 and put it first on the PATH |
