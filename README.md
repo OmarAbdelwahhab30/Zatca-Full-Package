@@ -72,22 +72,35 @@ Laravel 9–11 remain technically compatible, but the repository records expired
 
 ### Install
 
-Run these commands in **your Laravel application**:
+Run these commands in **your Laravel application**. Choose **one** of the two ways to get the package, then run the common steps below.
+
+**Option A: from Packagist (recommended).** No extra setup:
 
 ```bash
 composer require omarabdelwahhab30/zatca -W
-php artisan vendor:publish --tag=zatca-config
-php artisan migrate
 ```
 
-`-W` (`--with-all-dependencies`) is needed on a fresh **Laravel 12** app: without it Composer can refuse with a `doctrine/dbal` / `carbonphp/carbon-doctrine-types` conflict because those packages are still locked by the new project.
-
-Installing straight from GitHub instead of Packagist (for example your own fork or a private copy)? Add the repository to the app's `composer.json` first, replacing the URL:
+**Option B: straight from GitHub** (your own fork or a private copy, or before it is on Packagist). Add the repository to the app's `composer.json`, replacing the URL, then require it:
 
 ```json
 "repositories": [
     { "type": "vcs", "url": "https://github.com/OmarAbdelwahhab30/Zatca-Full-Package" }
 ]
+```
+
+```bash
+composer require omarabdelwahhab30/zatca:dev-main -W
+```
+
+Do not do both: the `repositories` entry is only for Option B. With Option A, leave it out.
+
+`-W` (`--with-all-dependencies`) is needed on a fresh **Laravel 12** app: without it Composer can refuse with a `doctrine/dbal` / `carbonphp/carbon-doctrine-types` conflict because those packages are still locked by the new project.
+
+Then, for either option:
+
+```bash
+php artisan vendor:publish --tag=zatca-config
+php artisan migrate
 ```
 
 Laravel discovers `Zatca\ZatcaServiceProvider` automatically. Migrations load automatically; do not publish them. On an **existing installation**, run `php artisan zatca:check-source-uniqueness` before upgrade migrations and resolve any duplicates first.
