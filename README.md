@@ -20,7 +20,7 @@ All listed runs passed with no failures; platform-specific skips are documented 
 ## Start here
 
 1. [Understand the two flows](#understand-the-two-flows)
-2. [Install and configure](#install-and-configure)
+2. [Install and configure](#install-and-configure) (or [try the built-in dashboard](#try-it-built-in-dashboard))
 3. [Connect your Laravel app](#connect-your-laravel-app)
 4. [Onboard with ZATCA](#onboard-with-zatca)
 5. [Create and read invoices](#create-and-read-invoices)
@@ -85,6 +85,8 @@ composer require zatca/zatca
 php artisan vendor:publish --tag=zatca-config
 php artisan migrate
 ```
+
+On a fresh **Laravel 12** app, Composer may refuse with a `doctrine/dbal` / `carbonphp/carbon-doctrine-types` conflict. Install with `composer require zatca/zatca carbonphp/carbon-doctrine-types:^2.1`.
 
 Laravel discovers `Zatca\ZatcaServiceProvider` automatically. Migrations load automatically; do not publish them. On an **existing installation**, run `php artisan zatca:check-source-uniqueness` before upgrade migrations and resolve any duplicates first.
 
@@ -220,6 +222,35 @@ php artisan zatca:sdk-smoke-test
 ```
 
 Missing onboarding credentials are expected at this stage. The smoke test makes no ZATCA calls: read its output and require all nine checks to show `[OK]`. `SKIPPED` can still exit successfully.
+
+### Try it: built-in dashboard
+
+Want to see the package work before writing any code? It ships an **optional dashboard** with an overview, an onboarding wizard, invoice history (response, attempts, XML download) and **six buttons**: B2C invoice, credit note, debit note and B2B invoice, credit note, debit note. Each button creates a sample sale, signs it, sends it to ZATCA and shows the real response.
+
+It is **off by default** and has **no login**, so use it only on a local or test machine, in `sandbox` or `simulation`. It answers 404 unless enabled and 403 if `APP_ENV` or any EGS is `production`.
+
+```dotenv
+ZATCA_DASHBOARD_ENABLED=true
+# ZATCA_DASHBOARD_PATH=zatca-dashboard   # optional URL prefix
+```
+
+```bash
+php artisan config:clear
+php artisan migrate        # adds 4 small zatca_demo_* tables, only while the dashboard is enabled
+```
+
+Open `http://your-app.test/zatca-dashboard`.
+
+1. **Onboarding** page: run the steps for `default` (and `b2b` if `ZATCA_B2B_ENABLED=true`). In sandbox use OTP `123345`. This does the same as the [Artisan commands](#onboard-with-zatca).
+2. **Overview** or **Invoices** page: press a scenario button. It takes roughly 5 to 30 seconds. Notes are issued against an accepted demo invoice; one is created automatically if none is eligible.
+
+Things to know:
+
+- No queue worker is needed for the demo: the button runs the real database queue in the same request. Real sales still need a worker and the scheduler.
+- Demo sales use their own tables and a `DEMO-<id>` reference. If your app already binds `InvoiceSourceContract`, your mapper is kept for all your own sales; the dashboard only maps its demo orders.
+- B2C demo prices include VAT; B2B demo prices exclude VAT (the dashboard sets the price mode itself, whatever `ZATCA_VAT_MODE` says).
+- Add your own middleware (for example `auth`) through `zatca.dashboard.middleware` in the published config if you must expose it. Customise the pages with `php artisan vendor:publish --tag=zatca-dashboard-views`.
+- Remove it when done: set `ZATCA_DASHBOARD_ENABLED=false`. The `zatca_demo_*` tables are harmless and can be dropped.
 
 ### Environments and B2B configuration
 

@@ -240,4 +240,15 @@ return [
     'compatibility' => [
         ['api_version' => 'V2', 'sdk_version' => '3.4.8', 'ubl_version' => '2.1'],
     ],
+
+    // Optional built-in dashboard (onboarding, invoice history, six demo scenario buttons).
+    // OFF by default. It has NO authentication, so it answers 404 unless enabled and 403
+    // whenever APP_ENV or any EGS environment is production. Local/sandbox/simulation tool only.
+    // See README, "Try it: built-in dashboard".
+    'dashboard' => [
+        'enabled' => env('ZATCA_DASHBOARD_ENABLED', false),
+        'path' => env('ZATCA_DASHBOARD_PATH', 'zatca-dashboard'),
+        // Add your own guards here if you expose it beyond localhost (e.g. 'auth', 'can:...').
+        'middleware' => ['web'],
+    ],
 ];

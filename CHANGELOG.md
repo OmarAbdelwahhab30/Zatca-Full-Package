@@ -8,6 +8,7 @@ First tagged release. Set the date here when the tag is created.
 
 ### Added
 
+- **Optional built-in dashboard** (`ZATCA_DASHBOARD_ENABLED=true`, off by default): overview, onboarding wizard, invoice history with ZATCA responses and XML download, and six one-click demo scenarios (B2C/B2B invoice, credit note, debit note). No authentication, so it is refused in production. Adds four `zatca_demo_*` tables only while enabled.
 - **B2C (Simplified) documents, sent by Reporting:** invoices, credit notes and debit notes. The package calculates VAT, numbers and chains each document (ICV and PIH), builds the UBL XML, signs it with the ZATCA SDK, adds the QR code, stores it, and reports it to ZATCA from the queue.
 - **B2B (Standard) documents, sent by Clearance:** invoices, credit notes and debit notes, with ZATCA's cleared copy stored. Off by default (`ZATCA_B2B_ENABLED=false`). See *Known limitations* in the README before turning it on.
 - **Onboarding:** `zatca:generate-credentials` and `zatca:onboard` (compliance CSID, compliance test documents, production CSID) for a primary EGS and an optional separate B2B EGS.

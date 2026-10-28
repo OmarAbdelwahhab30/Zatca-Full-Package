@@ -16,6 +16,10 @@ use Zatca\Console\Commands\RequeueInvoices;
 use Zatca\Console\Commands\SdkSmokeTest;
 use Zatca\Console\Commands\ZatcaHealthCheck;
 use Zatca\Console\Commands\ZatcaStatus;
+use Illuminate\Support\Facades\Route;
+use Zatca\Contracts\InvoiceSourceContract;
+use Zatca\Dashboard\Demo\DemoInvoiceSource;
+use Zatca\Dashboard\Http\Middleware\EnsureDashboardIsAllowed;
 use Zatca\Contracts\CredentialEncrypterInterface;
 use Zatca\Contracts\InvoiceSourceResolverContract;
 use Zatca\Contracts\OwnerResolverInterface;
@@ -88,6 +92,48 @@ class ZatcaServiceProvider extends ServiceProvider
         $this->app->singleton(CertificateLifecycleManager::class);
     }
 
+    /**
+     * The optional dashboard: nothing is registered (no routes, views, migrations or
+     * bindings) unless ZATCA_DASHBOARD_ENABLED is true.
+     */
+    private function bootDashboard(): void
+    {
+        $this->publishes([
+            __DIR__.'/../resources/views/dashboard' => resource_path('views/vendor/zatca-dashboard'),
+        ], 'zatca-dashboard-views');
+
+        if (! config('zatca.dashboard.enabled')) {
+            return;
+        }
+
+        $this->loadMigrationsFrom(__DIR__.'/../database/dashboard-migrations');
+        $this->loadViewsFrom(__DIR__.'/../resources/views/dashboard', 'zatca-dashboard');
+
+        Route::middleware(array_merge(
+            (array) config('zatca.dashboard.middleware', ['web']),
+            [EnsureDashboardIsAllowed::class],
+        ))
+            ->prefix(trim((string) config('zatca.dashboard.path', 'zatca-dashboard'), '/'))
+            ->name('zatca.dashboard.')
+            ->group(__DIR__.'/../routes/dashboard.php');
+
+        // Let the demo orders be mapped without taking over the host app's own mapper:
+        // anything that is not a DemoOrder is delegated to the binding the app already had.
+        $previous = $this->app->bound(InvoiceSourceContract::class)
+            ? $this->app->getBindings()[InvoiceSourceContract::class]['concrete'] ?? null
+            : null;
+
+        $this->app->bind(InvoiceSourceContract::class, function ($app) use ($previous) {
+            $fallback = match (true) {
+                $previous instanceof \Closure => $previous($app),
+                is_string($previous) && $previous !== DemoInvoiceSource::class => $app->build($previous),
+                default => null,
+            };
+
+            return new DemoInvoiceSource($fallback);
+        });
+    }
+
     public function boot(): void
     {
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
@@ -95,6 +141,8 @@ class ZatcaServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__.'/../config/zatca.php' => config_path('zatca.php'),
         ], 'zatca-config');
+
+        $this->bootDashboard();
 
         if ($this->app->runningInConsole()) {
             $this->commands([

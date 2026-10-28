@@ -123,6 +123,8 @@ ZATCA_B2B_ENVIRONMENT=                 # optional, defaults to ZATCA_ENVIRONMENT
 | `ZATCA_API_BASE_URL_SIMULATION` | ZATCA simulation URL | Same. |
 | `ZATCA_API_BASE_URL_PRODUCTION` | ZATCA core URL | Same. |
 | `ZATCA_TIMEOUT` | `30` | HTTP timeout in seconds. |
+| `ZATCA_DASHBOARD_ENABLED` | `false` | Turns on the optional built-in dashboard (no login; refused in production). See the README, "Try it: built-in dashboard". |
+| `ZATCA_DASHBOARD_PATH` | `zatca-dashboard` | URL prefix of the dashboard. Extra middleware is set in `zatca.dashboard.middleware` (published config). |
 | `ZATCA_ACCEPT_LANGUAGE` | `ar` | Language of ZATCA's messages (`ar` or `en`). |
 | `ZATCA_GENERATION_RETRY_TRIES` | `5` | How many times a generation job may retry (back-off: 5s, 30s, 2m, 10m). |
 | `ZATCA_REPORTING_RETRY_ATTEMPTS` | `12` | How many sends before an invoice stops and waits for a human. With a 5-minute sweep, that's about 1 hour of ZATCA downtime. |
