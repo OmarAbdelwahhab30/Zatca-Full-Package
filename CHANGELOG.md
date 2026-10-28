@@ -2,9 +2,9 @@
 
 All notable changes to this package are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows [Semantic Versioning](https://semver.org/).
 
-## [1.0.0] - 2026-10-29
+## [1.0.1] - 2026-10-29
 
-First tagged release. Published on Packagist as `omarabdelwahhab30/zatca` under the MIT license.
+First release published on Packagist as `omarabdelwahhab30/zatca` under the MIT license. (`1.0.0` was withdrawn before use because its tag was rewritten; the code is the same.)
 
 ### Added
 
