@@ -72,21 +72,23 @@ Laravel 9–11 remain technically compatible, but the repository records expired
 
 ### Install
 
-Run these commands in **your Laravel application**. This is a private package: configure your actual Composer registry or VCS repository first. For example, add this entry to the app's `composer.json`, replacing the URL:
-
-```json
-"repositories": [
-    { "type": "vcs", "url": "git@github.com:your-company/zatca-package.git" }
-]
-```
+Run these commands in **your Laravel application**:
 
 ```bash
-composer require zatca/zatca
+composer require omarabdelwahhab30/zatca -W
 php artisan vendor:publish --tag=zatca-config
 php artisan migrate
 ```
 
-On a fresh **Laravel 12** app, Composer may refuse with a `doctrine/dbal` / `carbonphp/carbon-doctrine-types` conflict. Install with `composer require zatca/zatca carbonphp/carbon-doctrine-types:^2.1`.
+`-W` (`--with-all-dependencies`) is needed on a fresh **Laravel 12** app: without it Composer can refuse with a `doctrine/dbal` / `carbonphp/carbon-doctrine-types` conflict because those packages are still locked by the new project.
+
+Installing straight from GitHub instead of Packagist (for example your own fork or a private copy)? Add the repository to the app's `composer.json` first, replacing the URL:
+
+```json
+"repositories": [
+    { "type": "vcs", "url": "https://github.com/OmarAbdelwahhab30/Zatca-Full-Package" }
+]
+```
 
 Laravel discovers `Zatca\ZatcaServiceProvider` automatically. Migrations load automatically; do not publish them. On an **existing installation**, run `php artisan zatca:check-source-uniqueness` before upgrade migrations and resolve any duplicates first.
 
@@ -96,7 +98,7 @@ Install Java 11 for your OS (`java -version` should work). On a Linux system wit
 sudo apt-get install -y openjdk-11-jre-headless
 ```
 
-The SDK already ships under `vendor/zatca/zatca/SDKs/`. It needs its complete `Apps/`, `Configuration/` and `Data/` folders. No SDK installer is needed. Use absolute paths and keep it outside `public/`.
+The SDK already ships under `vendor/omarabdelwahhab30/zatca/SDKs/`. It needs its complete `Apps/`, `Configuration/` and `Data/` folders. No SDK installer is needed. Use absolute paths and keep it outside `public/`.
 
 ### Configure `.env`
 
@@ -106,8 +108,8 @@ Replace the example business values with your own. `399999999900003` is ZATCA's 
 ZATCA_ENABLED=true
 ZATCA_ENVIRONMENT=sandbox
 
-ZATCA_SDK_ROOT=/var/www/your-app/vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8
-ZATCA_SDK_EXECUTABLE=/var/www/your-app/vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar
+ZATCA_SDK_ROOT=/var/www/your-app/vendor/omarabdelwahhab30/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8
+ZATCA_SDK_EXECUTABLE=/var/www/your-app/vendor/omarabdelwahhab30/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar
 ZATCA_SDK_VERSION=3.4.8
 
 ZATCA_EGS_IDENTIFIER=default
@@ -238,6 +240,8 @@ ZATCA_DASHBOARD_ENABLED=true
 php artisan config:clear
 php artisan migrate        # adds 4 small zatca_demo_* tables, only while the dashboard is enabled
 ```
+
+A plain `php artisan migrate` with the dashboard **off** (the default) creates only the package's core tables. The `zatca_demo_*` tables are created only while `ZATCA_DASHBOARD_ENABLED=true`, and switching it on later adds just those four tables. After changing the value, run `php artisan config:clear` first if your config is cached.
 
 Open `http://your-app.test/zatca-dashboard`.
 
@@ -862,4 +866,4 @@ Some older linked files contain earlier test counts or readiness wording. Use th
 
 ## License
 
-Proprietary; internal use only. The bundled ZATCA SDK is a separate work under [GNU LGPL v3](SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/LICENSE.txt).
+Released under the [MIT License](LICENSE). The bundled ZATCA SDK is a separate work under [GNU LGPL v3](SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/LICENSE.txt).

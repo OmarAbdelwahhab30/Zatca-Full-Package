@@ -1,8 +1,8 @@
 {
-    "name": "zatca/zatca",
+    "name": "omarabdelwahhab30/zatca",
     "description": "ZATCA (FATOORA) e-invoicing integration package: compliance/production onboarding, XML generation, signing via the ZATCA SDK, reporting, certificate lifecycle.",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
     "require": {
         "php": "^8.1",
         "illuminate/support": "^9.0|^10.0|^11.0|^12.0",

@@ -9,7 +9,7 @@
 ### 1. Update Composer dependencies
 
 ```bash
-composer update zatca/zatca guzzlehttp/guzzle
+composer update omarabdelwahhab30/zatca guzzlehttp/guzzle
 ```
 
 The package now requires `guzzlehttp/guzzle ^7.15.2`. If your application pins an older Guzzle, raise the pin. On Laravel 9, 10 and 11 Composer refuses to install because those Laravel versions have open security advisories; the README explains the override and why Laravel 12 is recommended.

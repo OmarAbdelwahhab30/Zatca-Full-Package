@@ -28,11 +28,11 @@ ZATCA_SDK_EXECUTABLE=/path/to/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/Ap
 
 You do not need to run the SDK's `install.sh` / `install.bat`. The package calls the jar directly and writes its own SDK config for each call.
 
-**This folder ships with the package** (about 58 MB). After `composer require`, it is at `vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8` in your app, so you can point the `.env` paths there:
+**This folder ships with the package** (about 58 MB). After `composer require`, it is at `vendor/omarabdelwahhab30/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8` in your app, so you can point the `.env` paths there:
 
 ```dotenv
-ZATCA_SDK_ROOT=/var/www/your-app/vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8
-ZATCA_SDK_EXECUTABLE=/var/www/your-app/vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar
+ZATCA_SDK_ROOT=/var/www/your-app/vendor/omarabdelwahhab30/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8
+ZATCA_SDK_EXECUTABLE=/var/www/your-app/vendor/omarabdelwahhab30/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar
 ```
 
 The package never writes into this folder, so `composer install` replacing `vendor/` is safe. If you use a deploy layout where the release path changes on each deploy, use the current release path, or copy the folder to a fixed place such as `/var/www/zatca-sdk`. Never put it under `public/`.

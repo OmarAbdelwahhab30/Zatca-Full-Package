@@ -71,7 +71,7 @@ Configure your private Composer registry/VCS source first, then run as the appli
 
 ```bash
 cd /var/www/your-app
-composer require zatca/zatca
+composer require omarabdelwahhab30/zatca
 php artisan vendor:publish --tag=zatca-config
 php artisan migrate
 ```
@@ -115,8 +115,8 @@ sudo -u deploy -- java -version
 Java must be on the **worker account's** `PATH`, not only your SSH user's. The SDK already ships with the installed package. Add these absolute paths to `.env`:
 
 ```dotenv
-ZATCA_SDK_ROOT=/var/www/your-app/vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8
-ZATCA_SDK_EXECUTABLE=/var/www/your-app/vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar
+ZATCA_SDK_ROOT=/var/www/your-app/vendor/omarabdelwahhab30/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8
+ZATCA_SDK_EXECUTABLE=/var/www/your-app/vendor/omarabdelwahhab30/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar
 ZATCA_SDK_VERSION=3.4.8
 ```
 
@@ -125,7 +125,7 @@ No SDK installer is needed. Keep the complete `Apps/`, `Configuration/` and `Dat
 For terminal checks, explicitly define a shell variable: Laravel's `.env` does **not** define shell variables automatically.
 
 ```bash
-SDK_ROOT=/var/www/your-app/vendor/zatca/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8
+SDK_ROOT=/var/www/your-app/vendor/omarabdelwahhab30/zatca/SDKs/zatca-einvoicing-sdk-Java-238-R3.4.8
 sudo -u deploy -- ls "$SDK_ROOT/Apps" "$SDK_ROOT/Configuration" "$SDK_ROOT/Data"
 sudo -u deploy -- test -r "$SDK_ROOT/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar"
 sha256sum "$SDK_ROOT/Apps/zatca-einvoicing-sdk-238-R3.4.8.jar"
